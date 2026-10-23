@@ -6526,5 +6526,80 @@
         "name": "matrix_deep_dimensions",
         "source": "program p; var m:array[1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1] of integer; begin m[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]:=7; writeln(m[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]) end.",
         "output": "7\n"
+    },
+    {
+        "name": "numeric_character_controls",
+        "source": "program p; begin writeln(ord(#13),',',ord(#27),',',ord(#0)) end.",
+        "output": "13,27,0\n",
+        "portable": true
+    },
+    {
+        "name": "numeric_character_unicode",
+        "source": "program p; begin writeln(#128512,#233,ord(#1114111)) end.",
+        "output": "😀é1114111\n"
+    },
+    {
+        "name": "numeric_character_constant",
+        "source": "program p; const key=#65; number=ord(key); begin writeln(key,number) end.",
+        "output": "A65\n",
+        "portable": true
+    },
+    {
+        "name": "numeric_character_concatenation",
+        "source": "program p; begin writeln(#65+'b',#13=#13,#27>#13) end.",
+        "output": "AbTRUETRUE\n",
+        "portable": true
+    },
+    {
+        "name": "numeric_character_parameters",
+        "source": "program p; var value:char; function get:char; begin get:=#65 end; procedure set_value(var c:char); begin c:=#66 end; begin value:=get; writeln(value); set_value(value); writeln(value) end.",
+        "output": "A\nB\n",
+        "portable": true
+    },
+    {
+        "name": "numeric_character_leading_zeros",
+        "source": "program p; begin writeln(ord(#00065)) end.",
+        "output": "65\n",
+        "portable": true
+    },
+    {
+        "name": "numeric_character_reference_literal",
+        "source": "program p; procedure take(var c:char); begin end; begin take(#65) end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "numeric_character_surrogate_start",
+        "source": "program p;\nbegin writeln(#55296) end.",
+        "error": "E_CHARACTER"
+    },
+    {
+        "name": "numeric_character_surrogate_end",
+        "source": "program p;\nbegin writeln(#57343) end.",
+        "error": "E_CHARACTER"
+    },
+    {
+        "name": "numeric_character_past_unicode",
+        "source": "program p;\nbegin writeln(#1114112) end.",
+        "error": "E_CHARACTER"
+    },
+    {
+        "name": "numeric_character_huge",
+        "source": "program p;\nbegin writeln(#99999999999999999999999999999999999999999) end.",
+        "error": "E_CHARACTER"
+    },
+    {
+        "name": "numeric_character_missing",
+        "source": "program p;\nbegin writeln(#) end.",
+        "error": "E_CHARACTER"
+    },
+    {
+        "name": "numeric_character_negative",
+        "source": "program p;\nbegin writeln(#-1) end.",
+        "error": "E_CHARACTER"
+    },
+    {
+        "name": "numeric_character_hex",
+        "source": "program p;\nbegin writeln(#$0D) end.",
+        "error": "E_CHARACTER"
     }
 ]

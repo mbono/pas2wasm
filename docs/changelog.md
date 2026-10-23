@@ -4,6 +4,9 @@
 
 ### Added
 
+- Decimal Unicode character literals such as `#13`, `#27`, and `#128512`, with
+  compile-time scalar validation and existing character/string operations.
+
 - Checked `inc(integer_storage)` with once-evaluated destinations, alias/control
   protection, and the unchanged tutorial multiplication-table example.
 - Interleaved declaration sections and routines in global/local scopes, preserving

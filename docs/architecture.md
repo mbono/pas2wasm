@@ -72,6 +72,8 @@ Boolean comparisons retain Boolean operand types and use ordinal `false < true`
 ordering in both constant evaluation and lowering; they introduce no numeric coercion.
 Mixed character/string relations insert the same explicit one-scalar string widening
 used by concatenation, reusing lexical comparison and its alias-safe snapshots.
+Decimal numeric character literals are validated as Unicode scalars by the lexer and
+become ordinary typed character constants; runtime layouts and imports remain shared.
 
 ## Lvalues, frames, and value semantics
 

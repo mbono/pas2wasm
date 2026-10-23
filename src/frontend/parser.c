@@ -16,6 +16,7 @@ typedef enum {
     TK_NUMBER,
     TK_REAL_NUMBER,
     TK_STRING,
+    TK_CHARACTER_LITERAL,
     TK_STRING_TYPE,
     TK_LENGTH,
     TK_CHARACTER,
@@ -442,6 +443,24 @@ static void next(Parser *p)
         }
     } else if (c >= '0' && c <= '9') {
         scan_number(p, &t);
+    } else if (c == '#') {
+        t.kind = TK_CHARACTER_LITERAL;
+        advance(p);
+        if (peek(p, 0) < '0' || peek(p, 0) > '9') {
+            fail_at(p, "E_CHARACTER", "Expected a decimal character code after '#'.",
+                    t.line, t.column);
+        }
+        while (peek(p, 0) >= '0' && peek(p, 0) <= '9') {
+            t.number = t.number * 10 + (peek(p, 0) - '0');
+            if (t.number > 0x10ffff) {
+                fail_at(p, "E_CHARACTER", "Character code is outside Unicode.", t.line, t.column);
+            }
+            advance(p);
+        }
+        if (!character_valid((int32_t)t.number)) {
+            fail_at(p, "E_CHARACTER", "Character code is not a Unicode scalar.", t.line, t.column);
+        }
+        t.length = p->offset - start;
     } else if (c == '\'') {
         t.kind = TK_STRING;
         advance(p);
@@ -888,7 +907,11 @@ static Expr *factor(Parser *p)
     enter(p);
     Token t = p->token;
     Expr *e = NULL;
-    if (t.kind == TK_NIL) {
+    if (t.kind == TK_CHARACTER_LITERAL) {
+        e = expression_node(p, EX_INTEGER, TYPE_CHARACTER, t, NULL, NULL);
+        e->integer = (int32_t)t.number;
+        next(p);
+    } else if (t.kind == TK_NIL) {
         e = expression_node(p, EX_NIL, TYPE_NIL, t, NULL, NULL);
         next(p);
     } else if (t.kind == TK_STRING) {

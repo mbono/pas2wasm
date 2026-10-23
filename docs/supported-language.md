@@ -53,6 +53,7 @@ end.
 | Source encoding | UTF-8, LF/CRLF line endings, optional BOM. | Diagnostic columns count UTF-8 bytes from 1. |
 | Comments | Braces or parenthesized stars; no nesting. | `{ note }`, `(* note *)` |
 | Text literals | Single quotes; double a quote to escape it. | `'Pascal'`, `'don''t'` |
+| Numeric character literals | `#` followed by a decimal Unicode scalar code; a typed character constant. | `#13`, `#27`, `#128512` |
 | Scope | Globals have program-wide scope; each routine call has private locals. | Local declarations may shadow outer ones. |
 | Initialization | Variables must be initialized before reading. | `n := 1; writeln(n)` |
 
@@ -472,6 +473,10 @@ frames or expressions can fail with `R_MEMORY`.
 ### Unicode characters, indexing, and slicing
 
 `char` is one Unicode scalar (U+0000 through U+10FFFF, excluding surrogates).
+Decimal `#n` literals have type char, including `#0`, `#13`, and `#27`. Leading zeros
+are allowed. Missing digits, negative/hexadecimal spellings, surrogates, and codes above
+1114111 report `E_CHARACTER` at `#`. Combine literals with `+` when needed; implicit
+adjacent literal concatenation is unsupported.
 `c:=chr(128512); writeln(c,ord(c));` prints `😀128512`. Quoted one-scalar literals and
 named constants convert to char where a char value is required. Other string expressions
 need indexing. Chars widen to strings for value assignment, `+`, and comparisons with
@@ -797,11 +802,12 @@ expression  = simple [relation simple] ;
 simple      = ["+" | "-"] term {("+" | "-" | "or") term} ;
 term        = factor {("*" | "/" | "div" | "mod" | "and") factor} ;
 factor      = primary {selector} ;
-primary     = integer_literal | real_literal | text_literal | "true" | "false" | "nil" | call | identifier
+primary     = integer_literal | real_literal | text_literal | character_literal | "true" | "false" | "nil" | call | identifier
             | ("real" | "trunc" | "round" | "length" | "chr" | "ord") "(" expression ")"
             | "copy" "(" expression "," expression "," expression ")"
             | "random" "(" expression ")"
             | "(" expression ")" | "not" factor ;
 relation    = "=" | "<>" | "<" | "<=" | ">" | ">=" ;
+character_literal = "#" ASCII_digit {ASCII_digit} ;
 identifier  = (ASCII_letter | "_") {ASCII_letter | ASCII_digit | "_"} ;
 ```

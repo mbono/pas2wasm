@@ -161,6 +161,16 @@ add unchanged source text only for examples resolved by the current increment.
 | Random integers | Reserve `randomize` and `random`; accept `randomize`/`randomize()` and `random(integer_bound)` for bounds 1..2147483647. Evaluate bounds once and return 0..bound-1 using per-runtime xorshift32 state with rejection sampling; invalid bounds report located `R_RANDOM_RANGE`. Initial seed is 1; randomize selects a nonzero seed with built-in Math.random. An optional host `limits.randomSeed` (u32, zero normalized to 1) fixes initial/reseed state for reproducible tests. Never evaluate randomness as a constant. Append two synchronous imports, preserve fresh runs and offline behavior, and make no cryptographic claim. Accept unchanged `vettori.pas` using a fixed test seed, plus range, independence, reset, evaluation, and UI/live/offline checks. |
 | Multidimensional array syntax | Parse `array[l1..h1,l2..h2,...] of T` as nested nominal array constructors and `m[i,j,...]` as consecutive existing index selectors. Permit mixed bracket/comma selectors and ordinary subarray copies/references; every dimension keeps its checked bounds, source-order single evaluation, partial initialization, and alias/borrow rules. Nested array/string selectors retain their ordinary meaning. Attribute bounds failures to the relevant opening bracket or comma. Count each dimension toward existing depth/layout limits; reject reversed/noninteger/nonconstant bounds, excess indexes, malformed lists, and oversized layouts. Accept unchanged seeded `vettori_multi.pas`, matrix value/reference/heap interactions, both hosts, WAT and browsers/offline. No new runtime ABI or backend representation. |
 
+## Remaining tutorial compatibility gates
+
+These increments complete requirements 8–16 from the tutorial review. Resolve and
+accept each independently; add each remaining original tutorial source only when its
+dependencies are implemented. Preserve the full acceptance gate and separate commits.
+
+| Increment | Resolved contract and acceptance |
+| --- | --- |
+| Numeric character literals | Accept decimal `#n` as a typed Unicode character constant, including NUL, CR, Escape, and supplementary scalars. Validate 0..1114111 excluding surrogates while lexing; malformed, negative, hexadecimal, or out-of-range spellings use located `E_CHARACTER`. Leading zeros are allowed. Use existing character folding, comparisons, concatenation with `+`, storage, and I/O; adjacent literal concatenation is not introduced. Cover constants, parameters/results, Unicode and invalid boundaries, both hosts, WAT, browsers, and offline exports. No new ABI. |
+
 ## Future scope and design gates
 
 The following are deferred, without effort or delivery promises:
