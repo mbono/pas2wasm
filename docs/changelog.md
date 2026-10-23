@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+## [0.3.1] - 2026-10-23
+
 ### Added
 
 - MIT project license, source SPDX headers, and license notices in built sites
   and standalone HTML exports.
+- GitHub Pages deployment of the example playground when a `v*` tag is pushed.
 
 ### Changed
 
