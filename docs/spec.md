@@ -41,7 +41,7 @@ implementation is accepted, and references are updated.
 | Browser privacy | Source and program input remain in the browser. Fetch only assets from the same deployment; compilation/execution need no network after they load. |
 | Browser isolation | Compiler and program run in terminable workers with separate memories. Stop/timeout must recover, and every Run uses fresh program/input/output state. |
 | Checked execution | Preserve the language reference's evaluation, initialization, arithmetic, bounds, lifetime, and I/O rules. Limits and metadata remain inside the documented budgets; diagnose failures instead of relying on raw Wasm traps. |
-| Capabilities | Programs receive bounded I/O, pseudorandom integers, and located failures, with no filesystem, network, DOM, or arbitrary-JavaScript capability. Render source-derived text safely. |
+| Capabilities | Programs receive bounded I/O, pseudorandom integers, and located failures, with no host/OS filesystem, network, DOM, or arbitrary-JavaScript capability. Virtual file I/O remains planned below. Render source-derived text safely. |
 | Version identity | Embed VERSION at build time in both hosts. Display the loaded compiler version in the example heading/tab; no duplicated UI literal or runtime version-file fetch. Generated Pascal programs have no assigned compiler version. |
 | Licensing | Repository-owned code/docs use MIT. Include the full license with site assets and inside standalone HTML; preserve third-party notices. |
 | Maintainability | Keep code small, readable, documented, and free of speculative backend frameworks or unused dependencies. Follow contributor conventions. |
@@ -172,7 +172,8 @@ The following are deferred, without effort or delivery promises:
 | Dynamic/open arrays, resizable strings, variant records | Runtime layout, allocation, bounds, copying, initialization, and lifetime rules. |
 | Sets, enumerations, subranges, `with`, broader Pascal dialects | Chosen syntax, type identity, operations, conversions, and compatibility scope. |
 | Native CPU/OS output | Instruction/object/executable formats, calling conventions, runtime services, and linking. Preserve the backend boundary without placeholder targets or a promised native ABI. |
-| Virtual files, broader I/O, WASI | Capabilities, host interfaces, portability, and offline behavior. |
+| Virtual files | Use bounded in-memory storage for one program execution: each Run starts empty, close preserves contents for reopening, and completion/failure/Stop/timeout releases everything. No host filesystem access or persistence across Runs/HTML sessions. See the [planned architecture](architecture.md#planned-virtual-filesystem); resolve types, operations, encoding, limits, and diagnostics before implementation. |
+| Broader I/O, WASI | Capabilities, host interfaces, portability, and offline behavior. |
 | Partial CRT compatibility | Start with a documented subset and directly emitted helpers; extract a separate module if it grows. Browser services retain host imports. See the [planned architecture](architecture.md#planned-crt-compatibility); resolve raw-key input, JSPI, cancellation, and offline behavior before implementation. |
 | Tooling and examples | Debug information, completion, shareable programs/tutorial links, localization, and a Pascal REPL. ANSI emulation/raw keypress input are separate from the current line console. |
 

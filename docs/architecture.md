@@ -227,6 +227,21 @@ preventing drift without adding a build-time code generator or runtime fetch.
 Third-party support notices accompany compiler assets; the standalone export contains
 only the program and repository-owned host code.
 
+## Planned virtual filesystem
+
+Planned Pascal file I/O uses bounded in-memory storage owned by one program execution.
+Each Run starts with an empty filesystem, including repeated Runs in the same HTML
+session. Closing a file releases its open handle but preserves its named contents, so
+the program can reopen it during that execution. Completion, failure, Stop, or timeout
+releases all file contents and handles.
+
+Filenames identify virtual files and grant no access to the PC's filesystem. The initial
+design has no persistence between executions, browser storage, or file import/download.
+The same execution-scoped behavior must work with either compiler host and in standalone
+offline HTML, without external dependencies. This records the agreed storage lifetime;
+file types, operations, encoding, limits, and diagnostics still require their design gate.
+File I/O remains planned rather than currently supported.
+
 ## Planned CRT compatibility
 
 CRT support is planned as a built-in compatibility unit exposing a documented subset,
