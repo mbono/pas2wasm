@@ -1,0 +1,59 @@
+name: Deploy example playground to GitHub Pages
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Emscripten
+        uses: emscripten-core/setup-emsdk@v15
+        with:
+          version: 6.0.12
+
+      - name: Build site
+        run: make site
+
+      - name: Stage site assets
+        run: |
+          mkdir -p _site/runtime
+          cp build/index.html build/style.css build/app.js build/compiler.js \
+            build/compiler-worker.js build/export.js build/pas2wasm.js \
+            build/pas2wasm.wasm build/supported-language.md build/LICENSE \
+            build/THIRD_PARTY_NOTICES.txt _site/
+          cp build/runtime/host.js build/runtime/terminal.js \
+            build/runtime/session.js _site/runtime/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

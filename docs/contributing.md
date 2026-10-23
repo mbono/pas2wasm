@@ -132,6 +132,13 @@ Run `make site` and publish only the following `build/` assets together: `index.
 screenshots. The language reference is copied from docs while preserving its public URL.
 Preserve relative paths and serve Wasm as `application/wasm`.
 
+The GitHub Pages workflow builds and deploys this allowlisted site when a `v*` version
+tag is pushed; pushes to `main` do not publish. In repository settings, choose
+**Settings → Pages → Build and deployment → Source → GitHub Actions**. The deploy job
+publishes to the `github-pages` environment using the workflow token; no personal
+access token is needed. The site is the example playground, while the compiler remains
+the project.
+
 Static hosting such as GitHub Pages needs no compiler service. The standalone export is
 different: it embeds an already compiled program, runtime, worker, console/styles, and
 license for offline local-file use. Preserve the [export
