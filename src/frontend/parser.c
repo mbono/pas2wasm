@@ -1098,7 +1098,7 @@ static Expr *simple(Parser *p)
     return left;
 }
 
-/* Parse at most one comparison, enforcing Boolean comparison restrictions. */
+/* Parse at most one comparison, retaining distinct numeric/Boolean/text types. */
 static Expr *expression(Parser *p)
 {
     Expr *left = simple(p);
@@ -1123,8 +1123,7 @@ static Expr *expression(Parser *p)
             right = coerce(p, right, TYPE_CHARACTER, op);
         } else if (left->type->kind == TYPE_KIND_STRING && right->type->kind == TYPE_KIND_STRING) {
             /* Capacity does not affect lexicographic value comparison. */
-        } else if (left->type != TYPE_BOOLEAN || right->type != TYPE_BOOLEAN ||
-                   (op.kind != TK_EQUAL && op.kind != TK_UNEQUAL)) {
+        } else if (left->type != TYPE_BOOLEAN || right->type != TYPE_BOOLEAN) {
             fail_at(p, "E_TYPE", "Invalid comparison operand types.", op.line, op.column);
         }
         ExprKind kind = op.kind == TK_EQUAL     ? EX_EQUAL

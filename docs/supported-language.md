@@ -143,7 +143,7 @@ Parentheses select an explicit grouping.
 | Factor | `not` | Boolean negation; applies to a factor. |
 | Multiplicative | `*`, `/`, `div`, `mod`, `and` | `/` performs real division even for integer operands. |
 | Additive | `+`, `-`, `or` | Unary `+`/`-` start a simple expression. |
-| Comparison | `=`, `<>`, `<`, `<=`, `>`, `>=` | Booleans support only `=` and `<>`; chained comparisons are rejected. |
+| Comparison | `=`, `<>`, `<`, `<=`, `>`, `>=` | Booleans use `false < true`; chained comparisons are rejected. |
 
 Binary operators at the same precedence associate left-to-right. Operands and routine
 arguments evaluate left-to-right. Boolean `and`/`or` evaluation is eager. Use

@@ -8,6 +8,7 @@
   protection, and the unchanged tutorial multiplication-table example.
 - Interleaved declaration sections and routines in global/local scopes, preserving
   source-order visibility and counted-control effects for globals declared later.
+- All six Boolean comparisons in runtime and constant expressions, with `false < true`.
 
 ### Compatibility changes
 

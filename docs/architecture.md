@@ -68,6 +68,9 @@ independent of locale or `strtod`; stored binary64 intermediates and bitwise con
 avoid excess precision and external libm/parser dependencies. Widening is explicit in
 typed nodes. Character folding uses owned bounded UTF-8 helpers.
 
+Boolean comparisons retain Boolean operand types and use ordinal `false < true`
+ordering in both constant evaluation and lowering; they introduce no numeric coercion.
+
 ## Lvalues, frames, and value semantics
 
 Loads and writable storage paths are explicit typed IR nodes. The parser retains

@@ -183,7 +183,8 @@
     {
         "name": "bool_order",
         "source": "program bad; begin writeln(false < true) end.",
-        "error": "E_TYPE"
+        "output": "TRUE\n",
+        "portable": true
     },
     {
         "name": "chain",
@@ -6093,5 +6094,48 @@
         "source": "program p; var first:integer; procedure early; begin first:=1 end; var g0,g1,g2,g3,g4,g5,g6,g7,g8,g9,g10,g11,g12,g13,g14,g15,g16,g17,g18,g19,g20,g21,g22,g23,g24,g25,g26,g27,g28,g29,g30,g31,g32,g33,g34,g35,g36,g37,g38,g39,g40,g41,g42,g43,g44,g45,g46,g47,g48,g49,g50,g51,g52,g53,g54,g55,g56,g57,g58,g59,g60,g61,g62,g63,g64,g65,g66,g67,g68,g69:integer; procedure late; begin inc(g69) end; begin g69:=4; for first:=1 to 2 do late; writeln(g69) end.",
         "output": "6\n",
         "portable": true
+    },
+    {
+        "name": "boolean_order_runtime",
+        "source": "program p; type Flag=boolean; var a,b:Flag; begin a:=false; b:=false; writeln(a = b,' ',a <> b,' ',a < b,' ',a <= b,' ',a > b,' ',a >= b); a:=false; b:=true; writeln(a = b,' ',a <> b,' ',a < b,' ',a <= b,' ',a > b,' ',a >= b); a:=true; b:=false; writeln(a = b,' ',a <> b,' ',a < b,' ',a <= b,' ',a > b,' ',a >= b); a:=true; b:=true; writeln(a = b,' ',a <> b,' ',a < b,' ',a <= b,' ',a > b,' ',a >= b) end.",
+        "output": "TRUE FALSE FALSE TRUE FALSE TRUE\nFALSE TRUE TRUE TRUE FALSE FALSE\nFALSE TRUE FALSE FALSE TRUE TRUE\nTRUE FALSE FALSE TRUE FALSE TRUE\n",
+        "portable": true
+    },
+    {
+        "name": "boolean_order_constants",
+        "source": "program p; const a=false<true; b=true>false; c=false<=false; d=true>=true; e=true<false; f=false>true; begin writeln(a,b,c,d,e,f) end.",
+        "output": "TRUETRUETRUETRUEFALSEFALSE\n",
+        "portable": true
+    },
+    {
+        "name": "boolean_order_evaluation",
+        "source": "program p; var n:integer; function left:boolean; begin n:=n*10+1; left:=false end; function right:boolean; begin n:=n*10+2; right:=true end; begin n:=0; writeln(left<right); writeln(n) end.",
+        "output": "TRUE\n12\n",
+        "portable": true
+    },
+    {
+        "name": "boolean_order_uninitialized",
+        "source": "program p; var b:boolean; begin writeln(b<true) end.",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "boolean_order_integer_rejected",
+        "source": "program p; begin writeln(false<1) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "boolean_order_real_rejected",
+        "source": "program p; begin writeln(0.0<true) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "boolean_order_string_rejected",
+        "source": "program p; begin writeln(false<'true') end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "boolean_order_chain_rejected",
+        "source": "program p; begin writeln(false<true<true) end.",
+        "error": "E_SYNTAX"
     }
 ]
