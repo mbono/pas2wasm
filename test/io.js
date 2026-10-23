@@ -54,5 +54,17 @@ module.exports = async function verifyIO() {
     await accumulated.imports.stream_string(0, 8, 0, 1, 1);
     accumulated.imports.discard_line(1, 1);
     await assert.rejects(accumulated.imports.stream_string(0, 8, 0, 2, 1), e => e.code === 'R_INPUT_LIMIT');
-    console.log('Shared input cursor, atomic storage, Unicode, provider, EOF, and input limits passed.');
+    let formattedOutput = '';
+    const formatted = createPas2WasmRuntime('', text => { formattedOutput += text; }, {output:8});
+    formatted.imports.write_formatted(0, 12, 5, 0, 4, 6);
+    assert.equal(formattedOutput, '   12');
+    assert.throws(() => formatted.imports.write_formatted(0, 1, 4, 0, 4, 6),
+        e => e.code === 'R_OUTPUT_LIMIT' && e.line === 4 && e.column === 6);
+    assert.equal(formattedOutput, '   12', 'An over-budget formatted field must not emit a prefix');
+    for (const args of [[0,1,-1,0], [5,1,0,-1], [5,1,0,1001], [0,1,1048577,0],
+                        [0,1.5,0,0], [2,2,0,0], [99,1,0,0]]) {
+        assert.throws(() => formatted.imports.write_formatted(...args, 7, 9),
+            e => e.code === 'R_FORMAT' && e.line === 7 && e.column === 9);
+    }
+    console.log('Shared input cursor, atomic storage/output, Unicode, provider, EOF, and limits passed.');
 };

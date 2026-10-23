@@ -11,6 +11,8 @@
 - All six Boolean comparisons in runtime and constant expressions, with `false < true`.
 - Character/string comparisons in either order using Unicode lexical ordering and
   existing operand snapshots, including the unchanged tutorial `if_else` source.
+- Output field widths and fixed real precision with bounded Unicode padding, exact
+  binary64 rounding, and unchanged tutorial `formatted_io`/`io` examples.
 
 ### Compatibility changes
 

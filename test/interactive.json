@@ -137,5 +137,14 @@
     "output": "",
     "runtime": "R_FOR_CONTROL",
     "transcript": ""
+  },
+  {
+    "name": "formatted_real",
+    "source": "program p; var r:real; begin write('Real: '); readln(r); writeln(r:8:2) end.",
+    "lines": [
+      "1.25"
+    ],
+    "output": "Real:     1.25\n",
+    "transcript": "Real: 1.25\n    1.25\n"
   }
 ]

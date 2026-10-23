@@ -346,6 +346,13 @@ int main(void)
     assert(strcmp(diagnostic.code, "E_TYPE_FORWARD") == 0);
     assert(diagnostic.line == 2 && diagnostic.column == 9);
     program_destroy(&program);
+    const char *formatted = "program p; begin writeln(1.25:8:2, 3:4) end.";
+    assert(frontend_parse(&program, formatted, strlen(formatted), &diagnostic));
+    Expr *field = program.body->body->expression;
+    assert(field->type == TYPE_REAL && field->width->integer == 8);
+    assert(field->precision->integer == 2 && field->next->width->integer == 4);
+    assert(field->next->precision == NULL);
+    program_destroy(&program);
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));
     assert(!frontend_parse(&program, invalid, strlen(invalid), &diagnostic));

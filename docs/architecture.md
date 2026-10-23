@@ -85,6 +85,12 @@ target in a synthetic assignment. Lowering captures the path once, applies ordin
 control/initialization checks, and commits the increment only after overflow checks.
 The existing selector leases and owning-result root carry alias and lifetime behavior.
 
+Output roots retain optional typed width/precision expressions. Lowering snapshots the
+value and consumes its borrows before those expressions execute, retaining operands on
+the Wasm stack until one formatted-write import. The self-contained host rounds exact
+binary64 rationals with bounded built-in BigInt arithmetic for fixed decimals, then
+checks Unicode padding and the complete UTF-8 field against the output budget.
+
 The backend captures each destination path before evaluating its source or consuming
 input. Indexes are checked before address arithmetic. Scalar loads test the selected
 initialization flag; aggregate loads provide copy addresses without reading unwritten

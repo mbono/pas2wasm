@@ -54,6 +54,59 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         }
         return value < 0 ? '-' + text : text;
     }
+    /* Round the exact finite binary64 value to fixed decimals, ties to even.
+     * Bounded BigInt arithmetic avoids locale, exponent shortcuts, and toFixed's
+     * precision/large-value restrictions. The caller caps precision at 1000. */
+    function formatFixed(value, precision) {
+        const negative = value < 0 || Object.is(value, -0);
+        const view = new DataView(new ArrayBuffer(8));
+        view.setFloat64(0, Math.abs(value), true);
+        const bits = view.getBigUint64(0, true);
+        const exponentBits = Number(bits >> 52n);
+        let significand = bits & ((1n << 52n) - 1n);
+        const exponent = exponentBits ? exponentBits - 1075 : -1074;
+        if (exponentBits) significand |= 1n << 52n;
+        let scaled = significand * 10n ** BigInt(precision);
+        if (exponent >= 0) scaled <<= BigInt(exponent);
+        else {
+            const divisor = 1n << BigInt(-exponent);
+            const quotient = scaled / divisor, remainder = scaled % divisor;
+            scaled = quotient;
+            if (remainder * 2n > divisor ||
+                (remainder * 2n === divisor && (quotient & 1n))) scaled++;
+        }
+        let text = scaled.toString();
+        if (precision) {
+            text = text.padStart(precision + 1, '0');
+            text = text.slice(0, -precision) + '.' + text.slice(-precision);
+        }
+        return (negative ? '-' : '') + text;
+    }
+    /* Format one complete field before publishing it. Width counts Unicode scalars;
+     * padding is bounded before allocation and shares the cumulative output budget. */
+    function writeFormatted(kind, value, width, precision, line, column) {
+        if (!Number.isInteger(width) || width < 0 || width > 1048576 ||
+            !Number.isInteger(precision) || precision < 0 || precision > 1000 ||
+            (kind !== 5 && precision !== 0))
+            fail('R_FORMAT', 'Invalid output width or decimal precision.', line, column);
+        let text;
+        if (kind === 1 || kind === 5) {
+            if (!Number.isFinite(value))
+                fail('R_REAL_RANGE', 'Cannot print a nonfinite real.', line, column);
+            text = kind === 5 ? formatFixed(value, precision) : formatReal(value);
+        } else if (kind === 0 && Number.isInteger(value) &&
+                   value >= -2147483648 && value <= 2147483647) text = String(value);
+        else if (kind === 2 && (value === 0 || value === 1)) text = value ? 'TRUE' : 'FALSE';
+        else if (kind === 3) text = character(value, line, column);
+        else if (kind === 4 && Number.isInteger(value)) text = stringText(value, line, column);
+        else fail('R_FORMAT', 'Invalid formatted value.', line, column);
+        let characterCount = 0;
+        for (const scalar of text) characterCount++;
+        const padding = Math.max(0, width - characterCount);
+        if (padding + encoder.encode(text).length > outputLimit - outputBytes)
+            fail('R_OUTPUT_LIMIT', 'Program output exceeds the output limit.', line, column);
+        write(' '.repeat(padding) + text);
+    }
     /* Fetch one line only when needed. The optional provider owns delivery, not
      * parsing; null closes it permanently. Batch imports never return Promises. */
     function ensureLine(line, column) {
@@ -224,6 +277,10 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         write_f64(value) {
             if (!Number.isFinite(value)) fail('R_REAL_RANGE', 'Cannot print a nonfinite real.');
             write(formatReal(value));
+        },
+        /* Kinds and the f64 transport for exact i32/scalar/string addresses are ABI-defined. */
+        write_formatted(kind, value, width, precision, line, column) {
+            writeFormatted(kind, value, width, precision, line, column);
         },
         /* Boolean output uses Pascal's uppercase spelling. */
         write_bool(value) { write(value ? 'TRUE' : 'FALSE'); },

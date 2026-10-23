@@ -42,7 +42,8 @@ static const Import imports[] = {{"write_utf8", "ii", 0},
                                  {"stream_i32", "iii", 0x7f},
                                  {"stream_f64", "iii", 0x7c},
                                  {"stream_char", "iii", 0x7f},
-                                 {"stream_string", "iiiii", 0}};
+                                 {"stream_string", "iiiii", 0},
+                                 {"write_formatted", "idiiii", 0}};
 enum {
     IMPORT_COUNT = sizeof(imports) / sizeof(*imports),
     RUN_TYPE = IMPORT_COUNT,
@@ -1286,6 +1287,38 @@ static void emit_case(Wasm *w, const Stmt *s)
     w->next_local = selector;
 }
 
+/* Retain the value beneath formatting operands on the Wasm stack. String snapshots
+ * outlive alias-changing width/precision calls; consumed pointee leases can end now. */
+static void emit_formatted(Wasm *w, const Expr *e)
+{
+    size_t saved = w->next_local, pins = borrow_checkpoint(w);
+    int kind = e->type == TYPE_INTEGER     ? 0
+               : e->type == TYPE_REAL     ? (e->precision ? 5 : 1)
+               : e->type == TYPE_BOOLEAN  ? 2
+               : e->type == TYPE_CHARACTER ? 3
+                                           : 4;
+    constant(w, 0, kind);
+    emit_expression(w, e);
+    if (e->type->kind == TYPE_KIND_STRING) {
+        size_t value = snapshot_string(w, e->line, e->column);
+        indexed(w, 0x20, "local.get", value);
+    }
+    if (e->type != TYPE_REAL) {
+        op(w, 0xb7, "f64.convert_i32_s");
+    }
+    release_borrows(w, pins);
+    emit_expression(w, e->width);
+    if (e->precision) {
+        emit_expression(w, e->precision);
+    } else {
+        constant(w, 0, 0);
+    }
+    constant(w, 0, e->line);
+    constant(w, 0, e->column);
+    indexed(w, 0x10, "call", 27);
+    w->next_local = saved;
+}
+
 /* Lower structured statements and block lists, preserving source execution order. */
 static void emit_statement(Wasm *w, const Stmt *s)
 {
@@ -1380,7 +1413,9 @@ static void emit_statement(Wasm *w, const Stmt *s)
             break;
         case ST_WRITE:
             for (const Expr *e = s->expression; e; e = e->next) {
-                if (e->kind == EX_TEXT) {
+                if (e->width) {
+                    emit_formatted(w, e);
+                } else if (e->kind == EX_TEXT) {
                     constant(w, 0, (int64_t)w->data.length);
                     constant(w, 0, (int64_t)e->length);
                     buffer_append(&w->data, e->text, e->length);

@@ -570,7 +570,20 @@ checked at runtime. `inc` is reserved; no step argument is supported.
 
 Output accepts integer, real, Boolean, character, and string expressions. Booleans print
 as `TRUE`/`FALSE`. Arrays, records, and pointers cannot be printed as whole values.
-Empty I/O parentheses and formatted output are unsupported.
+Empty I/O parentheses are unsupported.
+
+Output fields accept `value:width`; real fields also accept `value:width:precision`.
+Formatting expressions must be integers and evaluate once, after the value, left-to-right.
+String values are snapshotted before formatting expressions can change their source.
+Width is a minimum Unicode-scalar count: values are right-aligned with spaces and never
+truncated. Width 0 means no padding. With no precision, reals retain their usual decimal
+format; explicit precision produces fixed decimal places, rounding the exact binary64
+value to nearest with ties to even and retaining negative zero. For example,
+`writeln(12:5, 1.25:8:4)` prints `   12  1.2500` followed by LF.
+
+Widths must be 0..1,048,576 and decimal precision 0..1000. Invalid requests report
+`R_FORMAT` at the field expression; fields still share the cumulative UTF-8 output
+budget (`R_OUTPUT_LIMIT`). Precision on a nonreal value is a compile-time `E_TYPE`.
 
 Input destinations must be writable integer, real, character, or string storage,
 including fields, elements, dereferences, and reference character views. Boolean,
@@ -754,7 +767,7 @@ arm         = label {"," label} ":" statement ;
 label       = endpoint [".." endpoint] ;
 endpoint    = ["+" | "-"] (integer_literal | identifier) | "true" | "false" ;
 output      = ("write" | "writeln") ["(" argument {"," argument} ")"] ;
-argument    = expression ;
+argument    = expression [":" expression [":" expression]] ;
 input       = "read" "(" storage {"," storage} ")"
             | "readln" ["(" storage {"," storage} ")"] ;
 allocation  = ("new" | "dispose") "(" storage ")" ;

@@ -129,6 +129,20 @@ exhausts an unterminated final line, further value reads use `R_INPUT_EOF`; bare
 discard_line may still consume that retained line. Blank terminated lines retain their
 existing empty/invalid-input semantics.
 
+### Formatted output (index 27)
+
+`write_formatted(kind: i32, value: f64, width: i32, precision: i32, line: i32, column: i32) -> ()`
+appends one complete padded field. Kind 0 is integer, 1 is real with the existing
+formatter, 2 is Boolean, 3 is character, 4 is a string-object address, and 5 is real
+with fixed decimal precision. All i32 values/addresses are exactly representable by
+the f64 transport. Precision is zero unless kind is 5. Width counts Unicode scalars;
+the output budget counts UTF-8 bytes, including padding. The host checks the complete
+field before emission. The compiler snapshots string values and releases consumed
+value borrows before evaluating width/precision, retaining their once-only order.
+Use the bounds/rounding rules in the language reference. Invalid formatting reports
+`R_FORMAT`; invalid memory, encoding, or real values retain their existing errors.
+Legacy modules require no changes; newly generated modules need this matching import.
+
 ## Runtime diagnostics
 
 Locations use 1-based UTF-8 byte columns. The `fail` import must throw and never return.

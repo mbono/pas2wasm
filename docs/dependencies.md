@@ -4,7 +4,8 @@ Repository-owned compiler, frontend/IR, Wasm/WAT emitter, runtime, and example
 integration use the [MIT license](../LICENSE). There are no third-party parser or
 compiler libraries, frontend packages, JavaScript package dependencies, CDNs, or runtime
 services. JSPI is a browser API, not an external dependency; synchronous batch mode
-requires no JSPI. Runtime programs gain no filesystem/network/DOM or
+requires no JSPI. Fixed-decimal formatting uses built-in JavaScript BigInt and DataView,
+without a numeric library or locale dependency. Runtime programs gain no filesystem/network/DOM or
 arbitrary-JavaScript access.
 
 ## Tool inventory

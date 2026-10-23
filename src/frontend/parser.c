@@ -1513,6 +1513,20 @@ static Stmt *statement(Parser *p)
                     (*tail)->type->kind != TYPE_KIND_STRING) {
                     fail(p, "E_TYPE", "writeln requires scalar or string arguments.");
                 }
+                if (p->token.kind == TK_COLON) {
+                    Token format = p->token;
+                    next(p);
+                    (*tail)->width = expression(p);
+                    require_type(p, (*tail)->width, TYPE_INTEGER, format);
+                    if (p->token.kind == TK_COLON) {
+                        if ((*tail)->type != TYPE_REAL) {
+                            fail(p, "E_TYPE", "Decimal precision requires a real value.");
+                        }
+                        next(p);
+                        (*tail)->precision = expression(p);
+                        require_type(p, (*tail)->precision, TYPE_INTEGER, format);
+                    }
+                }
                 tail = &(*tail)->next;
                 if (p->token.kind != TK_COMMA) {
                     break;
@@ -1971,6 +1985,8 @@ static void validate_expression_calls(Parser *p, const Expr *e, const ForControl
         validate_lvalue_calls(p, e->lvalue, control);
         validate_expression_calls(p, e->left, control);
         validate_expression_calls(p, e->right, control);
+        validate_expression_calls(p, e->width, control);
+        validate_expression_calls(p, e->precision, control);
     }
 }
 

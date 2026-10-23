@@ -136,6 +136,8 @@ struct Expr {
     const char *text;
     size_t length;
     struct Expr *left, *right, *next;
+    /* Output-list roots optionally own integer formatting expressions; NULL elsewhere. */
+    struct Expr *width, *precision;
 };
 /* Supported statements, including an explicit empty statement. */
 typedef enum {
