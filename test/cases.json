@@ -5936,5 +5936,92 @@
         "source": "program demo; var a:integer; s:string; begin read(a); readln(s); writeln(a,':',length(s)) end.",
         "input": "7\n",
         "output": "7:0\n"
+    },
+    {
+        "name": "tutorial_tabellina",
+        "source": "program tabellina;\nvar i: integer;\nbegin\n\twriteln('tabellina 3');\n\ti := 1;\n\twhile (i <= 10) do\n\tbegin\n\t\twriteln(3 * i);\n\t\tinc(i);\n\tend;\nend.\n",
+        "output": "tabellina 3\n3\n6\n9\n12\n15\n18\n21\n24\n27\n30\n",
+        "portable": true
+    },
+    {
+        "name": "increment_once_index",
+        "source": "program p; var a:array[1..2] of integer; calls:integer; function index:integer; begin calls:=calls+1; index:=1 end; begin calls:=0; a[1]:=8; inc(a[index]); writeln(a[1],calls) end.",
+        "output": "91\n",
+        "portable": true
+    },
+    {
+        "name": "increment_alias_capture_heap",
+        "source": "program p; type PInt=^integer; var q:PInt; procedure outer; var n:integer; procedure step(var x:integer); begin inc(x); inc(n) end; begin n:=1; step(n); writeln(n) end; begin new(q); q^:=4; inc(q^); writeln(q^); dispose(q); outer end.",
+        "output": "5\n3\n",
+        "portable": true
+    },
+    {
+        "name": "increment_result",
+        "source": "program p; function f:integer; begin f:=2; inc(f) end; begin writeln(f) end.",
+        "output": "3\n",
+        "portable": true
+    },
+    {
+        "name": "increment_minimum",
+        "source": "program p; var n:integer; begin n:=-2147483648; inc(n); writeln(n) end.",
+        "output": "-2147483647\n",
+        "portable": true
+    },
+    {
+        "name": "increment_overflow",
+        "source": "program p; var n:integer; begin n:=2147483647; inc(n) end.",
+        "runtime": "R_OVERFLOW"
+    },
+    {
+        "name": "increment_uninitialized",
+        "source": "program p; var n:integer; begin inc(n) end.",
+        "runtime": "R_UNINITIALIZED",
+        "runtimeLine": 1,
+        "runtimeColumn": 33
+    },
+    {
+        "name": "increment_hidden_control",
+        "source": "program p; var n:integer; procedure f(var a,b:integer); begin for a:=1 to 2 do inc(b) end; begin f(n,n) end.",
+        "runtime": "R_FOR_CONTROL"
+    },
+    {
+        "name": "increment_active_control",
+        "source": "program p; var i:integer; begin for i:=1 to 2 do inc(i) end.",
+        "error": "E_FOR_CONTROL"
+    },
+    {
+        "name": "increment_call_effect",
+        "source": "program p; var i:integer; procedure f; begin inc(i) end; begin for i:=1 to 2 do f end.",
+        "error": "E_FOR_CONTROL"
+    },
+    {
+        "name": "increment_boolean",
+        "source": "program p; var b:boolean; begin b:=false; inc(b) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "increment_real",
+        "source": "program p; var r:real; begin r:=1; inc(r) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "increment_constant",
+        "source": "program p; const n=1; begin inc(n) end.",
+        "error": "E_CONST"
+    },
+    {
+        "name": "increment_literal",
+        "source": "program p; begin inc(1) end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "increment_argument_count",
+        "source": "program p; var n:integer; begin n:=1; inc(n,2) end.",
+        "error": "E_SYNTAX"
+    },
+    {
+        "name": "increment_missing_parentheses",
+        "source": "program p; begin inc end.",
+        "error": "E_SYNTAX"
     }
 ]

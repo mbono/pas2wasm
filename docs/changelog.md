@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Checked `inc(integer_storage)` with once-evaluated destinations, alias/control
+  protection, and the unchanged tutorial multiplication-table example.
+
+### Compatibility changes
+
+- `inc` is now reserved. Rename variables or routines previously named `inc`.
+
 ## [0.3.1] - 2026-10-23
 
 ### Added

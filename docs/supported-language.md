@@ -14,6 +14,7 @@ extensions and does not claim full ISO 7185 conformance.
 - [Arrays and records](#arrays-and-records)
 - [Strings and characters](#strings-and-characters)
 - [Typed pointers](#typed-pointers)
+- [Checked increment](#checked-increment)
 - [Input and output](#input-and-output)
 - [Example playground console](#example-playground-console)
 - [Storage, limits, and diagnostics](#storage-limits-and-diagnostics)
@@ -544,6 +545,15 @@ allocator. Memory remains bounded to 64 MiB, with borrowed leases in the existin
 activation arena. Simple whole-block reuse may fail under fragmentation; there is no
 garbage collector. All behavior works in offline HTML exports.
 
+## Checked increment
+
+`inc(destination)` adds one to initialized writable integer storage, including fields,
+array elements, references, and heap pointees. The destination path is evaluated once.
+Overflow reports `R_OVERFLOW`; uninitialized values report `R_UNINITIALIZED`. Constants,
+noninteger destinations, extra arguments, and writes to active counted controls are
+rejected with the usual storage/type/control diagnostics. Hidden control aliases remain
+checked at runtime. `inc` is reserved; no step argument is supported.
+
 ## Input and output
 
 ### Statement forms
@@ -730,7 +740,7 @@ selector    = "[" expression "]" | "." identifier | "^" ;
 compound    = "begin" statement {";" statement} "end" ;
 statement   = assignment | compound | conditional | loop | repeat_loop | for_loop
             | selection | "break" | "continue" | "exit" ["(" expression ")"]
-            | call | output | input | allocation | empty ;
+            | call | output | input | allocation | increment | empty ;
 assignment  = lvalue ":=" expression ;
 conditional = "if" expression "then" statement ["else" statement] ;
 loop        = "while" expression "do" statement ;
@@ -747,6 +757,7 @@ argument    = expression ;
 input       = "read" "(" storage {"," storage} ")"
             | "readln" ["(" storage {"," storage} ")"] ;
 allocation  = ("new" | "dispose") "(" storage ")" ;
+increment   = "inc" "(" storage ")" ;
 expression  = simple [relation simple] ;
 simple      = ["+" | "-"] term {("+" | "-" | "or") term} ;
 term        = factor {("*" | "/" | "div" | "mod" | "and") factor} ;

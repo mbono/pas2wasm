@@ -140,6 +140,7 @@ typedef enum {
     ST_EMPTY,
     ST_BLOCK,
     ST_ASSIGN,
+    ST_INCREMENT,
     ST_IF,
     ST_WHILE,
     ST_REPEAT,
@@ -158,6 +159,7 @@ typedef enum {
 /* Located structured statement. next links a block's statements; body/otherwise
  * are nested statements. expression is a condition, value, or output list.
  * ST_EXIT optionally holds its typed function result in expression.
+ * ST_INCREMENT updates its target once without duplicating the storage path.
  * For ST_FOR, expression/limit are the initial/final bounds, symbol is the
  * control variable, and descending selects downto rather than to. */
 typedef struct Stmt {

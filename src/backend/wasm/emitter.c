@@ -972,6 +972,36 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
     w->next_local = saved;
 }
 
+/* Increment one captured integer cell, preserving path effects and heap leases.
+ * Check the old value and overflow before committing any payload or root flag. */
+static void emit_increment(Wasm *w, const Stmt *s)
+{
+    size_t saved = w->next_local;
+    size_t destination = temporary(w), root = temporary(w);
+    emit_path(w, s->target, root);
+    indexed(w, 0x21, "local.set", destination);
+    check_target(w, destination, TYPE_INTEGER, s->line, s->column);
+    indexed(w, 0x20, "local.get", destination);
+    memory_op(w, 0x2d, "i32.load8_u", 0, 8);
+    op(w, 0x45, "i32.eqz");
+    check(w, 1, s->line, s->column);
+    indexed(w, 0x20, "local.get", destination);
+    memory_op(w, 0x28, "i32.load", 2, 0);
+    indexed(w, 0x22, "local.tee", w->left_local);
+    constant(w, 0, INT32_MAX);
+    op(w, 0x46, "i32.eq");
+    check(w, 2, s->line, s->column);
+    indexed(w, 0x20, "local.get", destination);
+    indexed(w, 0x20, "local.get", w->left_local);
+    constant(w, 0, 1);
+    op(w, 0x6a, "i32.add");
+    memory_op(w, 0x36, "i32.store", 2, 0);
+    indexed(w, 0x20, "local.get", root);
+    constant(w, 0, 1);
+    memory_op(w, 0x3a, "i32.store8", 0, 8);
+    w->next_local = saved;
+}
+
 /* Save the current borrow chain without changing frame ownership. */
 static size_t borrow_checkpoint(Wasm *w)
 {
@@ -1268,6 +1298,9 @@ static void emit_statement(Wasm *w, const Stmt *s)
             break;
         case ST_ASSIGN:
             emit_assignment(w, s->target, s->expression, s->line, s->column, 0);
+            break;
+        case ST_INCREMENT:
+            emit_increment(w, s);
             break;
         case ST_IF:
             emit_expression(w, s->expression);

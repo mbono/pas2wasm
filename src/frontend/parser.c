@@ -26,6 +26,7 @@ typedef enum {
     TK_NIL,
     TK_NEW,
     TK_DISPOSE,
+    TK_INC,
     TK_PROGRAM,
     TK_VAR,
     TK_CONST,
@@ -183,6 +184,7 @@ static const Keyword keywords[] = {{"program", TK_PROGRAM},
                                    {"nil", TK_NIL},
                                    {"new", TK_NEW},
                                    {"dispose", TK_DISPOSE},
+                                   {"inc", TK_INC},
                                    {"write", TK_WRITE},
                                    {"read", TK_READ}};
 
@@ -1512,6 +1514,16 @@ static Stmt *statement(Parser *p)
             }
             expect(p, TK_RPAREN, "Expected ')' after writeln arguments.");
         }
+    } else if (t.kind == TK_INC) {
+        s->kind = ST_INCREMENT;
+        next(p);
+        expect(p, TK_LPAREN, "Expected '(' after inc.");
+        s->target = storage_argument(p, t);
+        s->symbol = s->target->symbol;
+        if (s->target->type != TYPE_INTEGER) {
+            fail_at(p, "E_TYPE", "inc requires integer storage.", t.line, t.column);
+        }
+        expect(p, TK_RPAREN, "Expected ')' after inc destination.");
     } else if (t.kind == TK_NEW || t.kind == TK_DISPOSE) {
         s->kind = t.kind == TK_NEW ? ST_NEW : ST_DISPOSE;
         next(p);

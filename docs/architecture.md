@@ -70,6 +70,11 @@ writability separately from optimized expression values: parentheses preserve a 
 unary signs do not, and returned aggregate/string temporaries stay read-only. A returned
 pointer can still select its live writable pointee.
 
+Checked `inc` has an explicit storage-update statement rather than duplicating its
+target in a synthetic assignment. Lowering captures the path once, applies ordinary
+control/initialization checks, and commits the increment only after overflow checks.
+The existing selector leases and owning-result root carry alias and lifetime behavior.
+
 The backend captures each destination path before evaluating its source or consuming
 input. Indexes are checked before address arithmetic. Scalar loads test the selected
 initialization flag; aggregate loads provide copy addresses without reading unwritten
