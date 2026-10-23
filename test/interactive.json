@@ -1,0 +1,141 @@
+[
+  {
+    "name": "prompts",
+    "source": "program demo; var a,b:integer; begin write('First: '); read(a); readln; write('Second: '); readln(b); writeln(a+b) end.",
+    "lines": [
+      "2",
+      "3"
+    ],
+    "output": "First: Second: 5\n",
+    "transcript": "First: 2\nSecond: 3\n5\n"
+  },
+  {
+    "name": "recursive",
+    "source": "program demo; function sum(depth:integer):integer; var n:integer; begin readln(n); if depth=0 then sum:=n else sum:=n+sum(depth-1) end; begin writeln(sum(2)) end.",
+    "lines": [
+      "1",
+      "2",
+      "3"
+    ],
+    "output": "6\n",
+    "transcript": "1\n2\n3\n6\n"
+  },
+  {
+    "name": "heap_capture",
+    "source": "program demo; type P=^Node; Node=record n:integer end; var p1:P; procedure outer(var n:integer); procedure inner; begin readln(n) end; begin inner end; begin new(p1); outer(p1^.n); writeln(p1^.n); dispose(p1) end.",
+    "lines": [
+      "13"
+    ],
+    "output": "13\n",
+    "transcript": "13\n13\n"
+  },
+  {
+    "name": "borrow_once",
+    "source": "program demo; type P=^Node; Node=record n:integer end; var p1:P; calls:integer; function get:P; begin calls:=calls+1; exit(p1) end; begin calls:=0; new(p1); read(get()^.n); writeln(calls,':',p1^.n); dispose(p1) end.",
+    "lines": [
+      "9"
+    ],
+    "output": "1:9\n",
+    "transcript": "9\n1:9\n"
+  },
+  {
+    "name": "character_view",
+    "source": "program demo; var s:string[8]; procedure take(var c:char); begin read(c); readln end; begin s:='ab'; take(s[2]); writeln(s) end.",
+    "lines": [
+      "\ud83d\ude00"
+    ],
+    "output": "a\ud83d\ude00\n",
+    "transcript": "\ud83d\ude00\na\ud83d\ude00\n"
+  },
+  {
+    "name": "mixed_values",
+    "source": "program demo; var n:integer; r:real; c:char; s:string[16]; begin read(n,r,c,s); readln; writeln(n,':',r,':',ord(c),':',s) end.",
+    "lines": [
+      "12 2.5 tail"
+    ],
+    "output": "12:2.5:32:tail\n",
+    "transcript": "12 2.5 tail\n12:2.5:32:tail\n"
+  },
+  {
+    "name": "empty_line",
+    "source": "program demo; var s:string; begin write('Empty: '); readln(s); writeln(length(s)) end.",
+    "lines": [
+      ""
+    ],
+    "output": "Empty: 0\n",
+    "transcript": "Empty: \n0\n"
+  },
+  {
+    "name": "safe_text",
+    "source": "program demo; var s:string; begin write('<img src=x>'); readln(s); writeln(s) end.",
+    "lines": [
+      "</script><img src=x>"
+    ],
+    "output": "<img src=x></script><img src=x>\n",
+    "transcript": "<img src=x></script><img src=x>\n</script><img src=x>\n"
+  },
+  {
+    "name": "eof",
+    "source": "program demo; var n:integer; begin write('Number: '); readln(n) end.",
+    "lines": [],
+    "output": "Number: ",
+    "runtime": "R_INPUT_EOF",
+    "transcript": "Number: "
+  },
+  {
+    "name": "invalid",
+    "source": "program demo; var n:integer; begin readln(n) end.",
+    "lines": [
+      "bad"
+    ],
+    "output": "",
+    "runtime": "R_INPUT_INVALID",
+    "transcript": "bad\n"
+  },
+  {
+    "name": "capacity",
+    "source": "program demo; var s:string[1]; begin read(s) end.",
+    "lines": [
+      "\u00e9"
+    ],
+    "output": "",
+    "runtime": "R_STRING_CAPACITY",
+    "transcript": "\u00e9\n"
+  },
+  {
+    "name": "nil_before_wait",
+    "source": "program demo; type P=^integer; var p1:P; begin p1:=nil; read(p1^) end.",
+    "lines": [],
+    "output": "",
+    "runtime": "R_NIL",
+    "transcript": ""
+  },
+  {
+    "name": "invalid_unicode",
+    "source": "program demo; var c:char; begin read(c) end.",
+    "lines": [
+      "\ud800"
+    ],
+    "output": "",
+    "runtime": "R_ENCODING",
+    "transcript": "\ud800\n"
+  },
+  {
+    "name": "line_end_eof",
+    "source": "program demo; var c:char; begin read(c,c,c) end.",
+    "lines": [
+      "a"
+    ],
+    "output": "",
+    "runtime": "R_INPUT_EOF",
+    "transcript": "a\n"
+  },
+  {
+    "name": "guard_before_wait",
+    "source": "program demo; var n:integer; procedure p(var a,b:integer); begin for a:=1 to 2 do read(b) end; begin p(n,n) end.",
+    "lines": [],
+    "output": "",
+    "runtime": "R_FOR_CONTROL",
+    "transcript": ""
+  }
+]

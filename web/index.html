@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+Copyright (c) 2026 Mariano Bono
+SPDX-License-Identifier: MIT
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pas2Wasm — Pascal in your browser</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="compiler.js"></script>
+  <script defer src="runtime/host.js"></script>
+  <script defer src="runtime/terminal.js"></script>
+  <script defer src="runtime/session.js"></script>
+  <script defer src="export.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <main>
+    <header><p class="eyebrow">PASCAL → WEBASSEMBLY</p><h1>Pas2Wasm<span id="compiler-version"></span></h1>
+      <p class="intro">Write a little Pascal. Run it right here.</p>
+      <p class="note">Compilation and execution stay in your browser. No server receives your code.</p>
+    </header>
+    <div class="toolbar">
+      <button id="run" disabled>Run program</button><button id="stop" disabled>Stop</button>
+      <button id="reset">Reset example</button>
+      <label class="option"><input id="generate-wat" type="checkbox"> Generate WAT</label>
+      <span id="status" role="status" aria-live="polite">Loading compiler…</span>
+    </div>
+    <div class="workspace">
+      <section class="editor"><label for="source">Pascal source</label><textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="subset"></textarea></section>
+      <div class="results">
+        <section><label for="io-mode">Input mode</label><select id="io-mode"><option value="batch">Batch input</option><option value="interactive" selected>Interactive console</option></select><p id="io-note" class="hint" role="status"></p></section>
+        <section id="batch-input"><label for="input">Program input</label><p class="hint">Enter all input before Run. Each readln consumes one line.</p><textarea id="input" spellcheck="false" rows="4"></textarea></section>
+        <section class="console"><h2>Console</h2><pre id="terminal" tabindex="0" aria-label="Program console"><span id="output" role="log" aria-live="polite"></span><span id="console-input" role="textbox" aria-label="Console input line" aria-multiline="false" contenteditable="false" aria-disabled="true" tabindex="-1" spellcheck="false" autocapitalize="off"></span></pre><div id="console-controls" hidden><button id="console-eof" type="button" disabled>End input</button></div></section>
+        <section><h2>Diagnostics</h2><pre id="diagnostics" aria-live="polite"></pre></section>
+      </div>
+    </div>
+    <section class="artifacts"><h2>Take your program with you</h2>
+      <p class="hint">Runnable HTML opens locally and works offline. Wasm needs a compatible host.</p>
+      <div class="downloads"><button id="download-html" disabled>Download runnable HTML</button>
+        <button id="download-wasm" disabled>Download Wasm</button><button id="download-wat" disabled>Download WAT</button></div>
+      <details id="wat-details"><summary>WebAssembly text (WAT)</summary><pre id="wat-view"></pre></details>
+    </section>
+    <footer id="subset"><strong>Supported language:</strong> integer, boolean, real, Unicode characters and bounded UTF-8 strings, constants, named types, fixed arrays and records, structured control flow, nested procedures/functions, value/reference parameters, read/readln and write/writeln. Integer arithmetic is checked; div/mod require nonnegative dividends and positive divisors. Scalar indexing/updates, slicing, typed pointers and manual allocation are supported. Limits: 256 KiB source, 1 MiB input/output, 64 MiB program memory, 5 seconds per compile/run (input waiting excluded), 64 simultaneous routine calls. <a href="supported-language.md">Language reference</a></footer>
+  </main>
+</body>
+</html>

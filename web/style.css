@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) 2026 Mariano Bono
+ * SPDX-License-Identifier: MIT
+ */
+
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #213b37; background: #f5f3eb; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1240px; margin: auto; padding: 40px 28px; }
+.eyebrow { font-size: .72rem; letter-spacing: .18em; font-weight: 700; color: #58766a; }
+h1 { font-family: Georgia, serif; font-size: clamp(2.7rem, 5vw, 4.2rem); letter-spacing: -.04em; margin: 10px 0; }
+#compiler-version { color: #c8663b; font: .45em system-ui, sans-serif; letter-spacing: normal; white-space: nowrap; }
+.intro { font-size: 1.2rem; margin: 12px 0; }
+.note, .hint { color: #5a6d65; font-size: .86rem; line-height: 1.6; }
+.toolbar, .downloads { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.toolbar { margin: 30px 0 18px; padding: 16px 0; border-block: 1px solid #d2d9cc; }
+button { font: inherit; font-size: .86rem; cursor: pointer; border: 1px solid #9dac9d; border-radius: 5px; padding: 10px 14px; color: #213b37; background: #fffdf7; }
+#run { background: #21564b; border-color: #21564b; color: white; font-weight: 650; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, summary:focus-visible, textarea:focus-visible { outline: 3px solid #d28542; outline-offset: 3px; }
+.option { display: flex; align-items: center; gap: 6px; font-size: .86rem; margin-left: 8px; }
+#status { margin-left: auto; font-size: .82rem; font-weight: 650; }
+.workspace { display: grid; grid-template-columns: 1.25fr 1fr; gap: 20px; }
+section { min-width: 0; }
+label, h2 { display: block; font-size: .85rem; font-weight: 700; margin: 0 0 9px; }
+textarea { width: 100%; background: #fffdf8; color: #263c35; border: 1px solid #c7d0c0; border-radius: 6px; padding: 16px; font: .9rem/1.65 ui-monospace, monospace; resize: vertical; tab-size: 4; }
+#source { min-height: 490px; }
+#input { min-height: 104px; }
+.results { display: flex; flex-direction: column; gap: 20px; }
+.hint { margin: 0 0 9px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: .86rem/1.6 ui-monospace, monospace; background: #e9ede2; padding: 15px; border-radius: 6px; margin: 0; min-height: 78px; max-height: 360px; overflow: auto; }
+#diagnostics { color: #873b26; background: #f0e9dd; }
+.artifacts { margin-top: 28px; padding: 24px 0; border-block: 1px solid #d2d9cc; }
+summary { cursor: pointer; font-size: .85rem; padding: 18px 0 12px; }
+footer { max-width: 950px; font-size: .79rem; line-height: 1.8; color: #5a6d65; margin-top: 24px; }
+a { color: #21564b; }
+@media (max-width: 760px) { main { padding: 24px 16px; } .workspace { grid-template-columns: 1fr; } #source { min-height: 340px; } #status { margin-left: 0; width: 100%; } }
+
+[hidden] { display: none !important; }
+select { font: inherit; padding: 8px; border: 1px solid #9dac9d; border-radius: 5px; }
+select:focus-visible { outline: 3px solid #d28542; outline-offset: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
