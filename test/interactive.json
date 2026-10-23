@@ -146,5 +146,14 @@
     ],
     "output": "Real:     1.25\n",
     "transcript": "Real: 1.25\n    1.25\n"
+  },
+  {
+    "name": "random_values",
+    "source": "program p; var bound,i,n:integer; ok:boolean; begin randomize; write('Bound: '); readln(bound); ok:=true; for i:=1 to 100 do begin n:=random(bound); ok:=ok and (n>=0) and (n<bound) end; writeln(ok) end.",
+    "lines": [
+      "3"
+    ],
+    "output": "Bound: TRUE\n",
+    "transcript": "Bound: 3\nTRUE\n"
   }
 ]

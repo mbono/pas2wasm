@@ -6307,5 +6307,98 @@
         "name": "format_precision_control_effect",
         "source": "program p; var i:integer; function precision:integer; begin inc(i); precision:=2 end; begin for i:=1 to 2 do writeln(3.0:0:precision) end.",
         "error": "E_FOR_CONTROL"
+    },
+    {
+        "name": "tutorial_vettori",
+        "source": "program vettori;\nvar a,b: array [1..10] of integer;\n\ti: integer;\nbegin\n\trandomize;\n\tfor i := 1 to 10 do begin\n\t\ta[i] := random(100);\n\t\twriteln('a[',i,'] = ',a[i]);\n\tend;\n\tb := a;\n\tfor i := 1 to 10 do a[i] := 0;\n\twriteln;\n\tfor i := 1 to 10 do\n\t\twriteln('a[', i,'] = ', a[i]);\n\twriteln;\n\tfor i := 1 to 10 do\n\t\twriteln('b[', i,'] = ', b[i]);\nend.\n",
+        "randomSeed": 1,
+        "output": "a[1] = 68\na[2] = 88\na[3] = 60\na[4] = 94\na[5] = 32\na[6] = 3\na[7] = 81\na[8] = 9\na[9] = 28\na[10] = 31\n\na[1] = 0\na[2] = 0\na[3] = 0\na[4] = 0\na[5] = 0\na[6] = 0\na[7] = 0\na[8] = 0\na[9] = 0\na[10] = 0\n\nb[1] = 68\nb[2] = 88\nb[3] = 60\nb[4] = 94\nb[5] = 32\nb[6] = 3\nb[7] = 81\nb[8] = 9\nb[9] = 28\nb[10] = 31\n"
+    },
+    {
+        "name": "random_default_stream",
+        "source": "program p; begin writeln(random(100),',',random(100),',',random(1)) end.",
+        "output": "68,88,0\n"
+    },
+    {
+        "name": "random_seed_zero",
+        "source": "program p; begin randomize; writeln(random(100)) end.",
+        "randomSeed": 0,
+        "output": "68\n"
+    },
+    {
+        "name": "random_seed_maximum",
+        "source": "program p; begin randomize; writeln(random(100)) end.",
+        "randomSeed": 4294967295,
+        "output": "82\n"
+    },
+    {
+        "name": "random_rejection_bucket",
+        "source": "program p; begin writeln(random(2147483647)) end.",
+        "randomSeed": 1584200935,
+        "output": "253982\n"
+    },
+    {
+        "name": "random_reseed",
+        "source": "program p; var a:integer; begin randomize; a:=random(2147483647); randomize(); writeln(a=random(2147483647),random(1)) end.",
+        "randomSeed": 42,
+        "output": "TRUE0\n"
+    },
+    {
+        "name": "random_bound_once",
+        "source": "program p; var calls,n:integer; function bound:integer; begin inc(calls); bound:=100 end; begin calls:=0; n:=random(bound); writeln(n,calls) end.",
+        "output": "681\n"
+    },
+    {
+        "name": "random_range_checks",
+        "source": "program p; var i,n:integer; ok:boolean; begin randomize; ok:=true; for i:=1 to 1000 do begin n:=random(2147483647); ok:=ok and (n>=0) and (n<2147483647) end; writeln(ok) end.",
+        "output": "TRUE\n",
+        "portable": true
+    },
+    {
+        "name": "random_zero_bound",
+        "source": "program p;\nbegin writeln(random(0)) end.",
+        "runtime": "R_RANDOM_RANGE",
+        "runtimeLine": 2,
+        "runtimeColumn": 15
+    },
+    {
+        "name": "random_negative_bound",
+        "source": "program p; begin writeln(random(-1)) end.",
+        "runtime": "R_RANDOM_RANGE"
+    },
+    {
+        "name": "random_uninitialized_bound",
+        "source": "program p; var n:integer; begin writeln(random(n)) end.",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "random_constant_rejected",
+        "source": "program p; const n=random(10); begin end.",
+        "error": "E_CONST"
+    },
+    {
+        "name": "random_real_bound",
+        "source": "program p; begin writeln(random(1.0)) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "random_boolean_bound",
+        "source": "program p; begin writeln(random(true)) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "random_missing_bound",
+        "source": "program p; begin writeln(random()) end.",
+        "error": "E_SYNTAX"
+    },
+    {
+        "name": "random_extra_bound",
+        "source": "program p; begin writeln(random(2,3)) end.",
+        "error": "E_SYNTAX"
+    },
+    {
+        "name": "randomize_argument",
+        "source": "program p; begin randomize(1) end.",
+        "error": "E_SYNTAX"
     }
 ]

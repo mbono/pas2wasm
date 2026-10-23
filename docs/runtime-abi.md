@@ -143,6 +143,17 @@ Use the bounds/rounding rules in the language reference. Invalid formatting repo
 `R_FORMAT`; invalid memory, encoding, or real values retain their existing errors.
 Legacy modules require no changes; newly generated modules need this matching import.
 
+### Random integers (indices 28–29)
+
+`randomize: () -> ()` reseeds private per-runtime state; `random_i32(bound: i32,
+line: i32, column: i32) -> i32` draws a checked bounded integer. Invalid bounds use
+`R_RANDOM_RANGE` without advancing state. Both imports are synchronous in batch and
+JSPI hosts and provide no filesystem/network access. `limits.randomSeed` optionally
+fixes initial and reseeding behavior for reproducible hosts/tests; values must be
+unsigned 32-bit integers, with zero normalized to 1. Without it, the initial seed is 1
+and randomize uses Math.random. The algorithm/ranges are in the language reference.
+Legacy modules remain compatible with the updated host.
+
 ## Runtime diagnostics
 
 Locations use 1-based UTF-8 byte columns. The `fail` import must throw and never return.

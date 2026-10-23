@@ -43,7 +43,9 @@ static const Import imports[] = {{"write_utf8", "ii", 0},
                                  {"stream_f64", "iii", 0x7c},
                                  {"stream_char", "iii", 0x7f},
                                  {"stream_string", "iiiii", 0},
-                                 {"write_formatted", "idiiii", 0}};
+                                 {"write_formatted", "idiiii", 0},
+                                 {"randomize", "", 0},
+                                 {"random_i32", "iii", 0x7f}};
 enum {
     IMPORT_COUNT = sizeof(imports) / sizeof(*imports),
     RUN_TYPE = IMPORT_COUNT,
@@ -607,6 +609,13 @@ static void emit_expression(Wasm *w, const Expr *e)
     }
     if (e->kind == EX_REAL) {
         real_constant(w, e->real_bits);
+        return;
+    }
+    if (e->kind == EX_RANDOM) {
+        emit_expression(w, e->left);
+        constant(w, 0, e->line);
+        constant(w, 0, e->column);
+        indexed(w, 0x10, "call", 29);
         return;
     }
     if (e->kind == EX_ORDINAL) {
@@ -1334,6 +1343,9 @@ static void emit_statement(Wasm *w, const Stmt *s)
             break;
         case ST_INCREMENT:
             emit_increment(w, s);
+            break;
+        case ST_RANDOMIZE:
+            indexed(w, 0x10, "call", 28);
             break;
         case ST_IF:
             emit_expression(w, s->expression);

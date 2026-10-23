@@ -284,7 +284,8 @@ def verify_browser(kind, base_url, cases, directory):
                         const {result}=await request({id:i,source:cases[i].source,emitWat:true});
                         if(result.diagnostic) {results.push({diagnostic:result.diagnostic});continue;}
                         let output='', diagnostic=null;
-                        const host=createPas2WasmRuntime(cases[i].input||'',text=>output+=text);
+                        const host=createPas2WasmRuntime(cases[i].input||'',text=>output+=text,
+                            {randomSeed:cases[i].randomSeed});
                         const {instance}=await WebAssembly.instantiate(result.binary,{pas2wasm_v1:host.imports});
                         host.attach(instance);
                         try{instance.exports.run();}catch(error){diagnostic={code:error.code,line:error.line,column:error.column};}
@@ -320,6 +321,7 @@ def verify_browser(kind, base_url, cases, directory):
                         'booleanorder':'boolean_order_runtime',
                         'mixedtext':'tutorial_if_else',
                         'formatting':'tutorial_formatted_io', 'formatio':'tutorial_io',
+                        'randomvalues':'random_range_checks',
                         'loops':'for_mixed_loops', 'routines':'procedure_recursion',
                         'functions':'function_factorial', 'exit':'exit_recursive_function',
                         'case':'case_exit_function', 'constants':'constant_scopes',

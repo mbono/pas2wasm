@@ -13,10 +13,13 @@
   existing operand snapshots, including the unchanged tutorial `if_else` source.
 - Output field widths and fixed real precision with bounded Unicode padding, exact
   binary64 rounding, and unchanged tutorial `formatted_io`/`io` examples.
+- `randomize` and checked `random(n)` with per-runtime streams, reproducible host
+  seeds, and the unchanged tutorial `vettori` source.
 
 ### Compatibility changes
 
 - `inc` is now reserved. Rename variables or routines previously named `inc`.
+- `random` and `randomize` are now reserved; rename existing declarations using them.
 
 ## [0.3.1] - 2026-10-23
 

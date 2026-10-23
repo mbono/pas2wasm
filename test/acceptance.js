@@ -14,9 +14,9 @@ const createCompiler = require('../web/compiler.js');
 const {createPas2WasmRuntime} = require('../web/runtime/host.js');
 
 /* Execute bounded acceptance programs with the same production runtime as browsers. */
-async function execute(bytes, input = '') {
+async function execute(bytes, input = '', randomSeed) {
     let output = '';
-    const host = createPas2WasmRuntime(input, text => { output += text; });
+    const host = createPas2WasmRuntime(input, text => { output += text; }, {randomSeed});
     const {instance} = await WebAssembly.instantiate(bytes, {pas2wasm_v1: host.imports});
     host.attach(instance);
     assert.equal(output, '', 'Instantiation must not execute the program');
@@ -110,7 +110,7 @@ async function main() {
             const plain = compile(test.source);
             assert.equal(plain.wat, null, test.name);
             assert.deepEqual(plain.binary, result.binary, test.name);
-            const actual = await execute(result.binary, test.input);
+            const actual = await execute(result.binary, test.input, test.randomSeed);
             if (test.runtime) {
                 assert.equal(actual.code, test.runtime, test.name);
                 if (test.runtimeLine !== undefined) assert.equal(actual.line, test.runtimeLine, test.name);
@@ -120,7 +120,7 @@ async function main() {
             tool('wasm-as', [watFile, '-o', assembled]);
             const roundtrip = fs.readFileSync(assembled);
             assert(WebAssembly.validate(roundtrip));
-            assert.deepEqual(await execute(roundtrip, test.input), actual, test.name);
+            assert.deepEqual(await execute(roundtrip, test.input, test.randomSeed), actual, test.name);
             roundtrips++;
             if (test.portable) {
                 const executable = path.join(directory, test.name);
@@ -129,7 +129,7 @@ async function main() {
                 assert.equal(fpc.stdout, test.output, `Free Pascal: ${test.name}`);
                 comparisons++;
             }
-            if (!test.runtime) assert.deepEqual(await execute(result.binary, test.input), actual, 'fresh repeated run');
+            if (!test.runtime) assert.deepEqual(await execute(result.binary, test.input, test.randomSeed), actual, 'fresh repeated run');
         }
         assert.equal(compile('program p; begin end.', false, 'x86_64').diagnostic.code, 'E_TARGET');
         assert.equal(compile(' '.repeat(262145)).diagnostic.code, 'E_LIMIT');

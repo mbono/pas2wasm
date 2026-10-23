@@ -27,6 +27,8 @@ typedef enum {
     TK_NEW,
     TK_DISPOSE,
     TK_INC,
+    TK_RANDOM,
+    TK_RANDOMIZE,
     TK_PROGRAM,
     TK_VAR,
     TK_CONST,
@@ -185,6 +187,8 @@ static const Keyword keywords[] = {{"program", TK_PROGRAM},
                                    {"new", TK_NEW},
                                    {"dispose", TK_DISPOSE},
                                    {"inc", TK_INC},
+                                   {"random", TK_RANDOM},
+                                   {"randomize", TK_RANDOMIZE},
                                    {"write", TK_WRITE},
                                    {"read", TK_READ}};
 
@@ -876,6 +880,16 @@ static Expr *factor(Parser *p)
         e->text = decoded;
         e->length = length;
         next(p);
+    } else if (t.kind == TK_RANDOM) {
+        if (p->constant_expression) {
+            fail(p, "E_CONST", "Random values are not constant expressions.");
+        }
+        next(p);
+        expect(p, TK_LPAREN, "random requires one integer bound.");
+        Expr *bound = expression(p);
+        require_type(p, bound, TYPE_INTEGER, t);
+        expect(p, TK_RPAREN, "Expected ')' after random bound.");
+        e = expression_node(p, EX_RANDOM, TYPE_INTEGER, t, bound, NULL);
     } else if (t.kind == TK_LENGTH) {
         next(p);
         expect(p, TK_LPAREN, "length requires parentheses.");
@@ -1534,6 +1548,13 @@ static Stmt *statement(Parser *p)
                 next(p);
             }
             expect(p, TK_RPAREN, "Expected ')' after writeln arguments.");
+        }
+    } else if (t.kind == TK_RANDOMIZE) {
+        s->kind = ST_RANDOMIZE;
+        next(p);
+        if (p->token.kind == TK_LPAREN) {
+            next(p);
+            expect(p, TK_RPAREN, "randomize takes no arguments.");
         }
     } else if (t.kind == TK_INC) {
         s->kind = ST_INCREMENT;

@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* Create a version-1 runtime with private input/output state. Imports expose only
- * I/O and located failure reporting; attach supplies the instance's own memory.
+/* Create a version-1 runtime with private input/output and pseudorandom state.
+ * Imports expose bounded services and failures; attach supplies the instance's own memory.
  * This function is self-contained so it can be embedded in exported HTML. */
 function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     const inputLimit = limits.input ?? 1048576;
@@ -24,6 +24,27 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     }
     if (encoder.encode(input).length > inputLimit)
         fail('R_INPUT_LIMIT', 'Program input exceeds the input limit.');
+    const configuredSeed = limits.randomSeed;
+    if (configuredSeed !== undefined &&
+        (!Number.isInteger(configuredSeed) || configuredSeed < 0 || configuredSeed > 0xffffffff))
+        fail('R_RANDOM_RANGE', 'Random seed must be an unsigned 32-bit integer.');
+    let randomState = (configuredSeed ?? 1) || 1;
+    /* Xorshift32 visits every nonzero u32. Reject the incomplete final bucket
+     * before reducing to the bound, avoiding modulo bias without external services. */
+    function randomInteger(bound, line, column) {
+        if (!Number.isInteger(bound) || bound < 1 || bound > 2147483647)
+            fail('R_RANDOM_RANGE', 'Random bound must be 1..2147483647.', line, column);
+        const ceiling = 0xffffffff - (0xffffffff % bound);
+        let value;
+        do {
+            randomState ^= randomState << 13;
+            randomState ^= randomState >>> 17;
+            randomState ^= randomState << 5;
+            randomState >>>= 0;
+            value = randomState - 1;
+        } while (value >= ceiling);
+        return value % bound;
+    }
     /* Bound output by UTF-8 bytes before forwarding any new text. */
     function write(text) {
         outputBytes += encoder.encode(text).length;
@@ -282,6 +303,13 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         write_formatted(kind, value, width, precision, line, column) {
             writeFormatted(kind, value, width, precision, line, column);
         },
+        /* Fresh state belongs to this runtime; explicit seeds make tests reproducible. */
+        randomize() {
+            randomState = (configuredSeed === undefined
+                ? Math.floor(Math.random() * 0x100000000) : configuredSeed) || 1;
+        },
+        /* Bounds fail before advancing the stream; each successful call advances it. */
+        random_i32(bound, line, column) { return randomInteger(bound, line, column); },
         /* Boolean output uses Pascal's uppercase spelling. */
         write_bool(value) { write(value ? 'TRUE' : 'FALSE'); },
         /* Each writeln appends precisely one LF. */

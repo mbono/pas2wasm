@@ -14,6 +14,7 @@ extensions and does not claim full ISO 7185 conformance.
 - [Arrays and records](#arrays-and-records)
 - [Strings and characters](#strings-and-characters)
 - [Typed pointers](#typed-pointers)
+- [Pseudorandom integers](#pseudorandom-integers)
 - [Checked increment](#checked-increment)
 - [Input and output](#input-and-output)
 - [Example playground console](#example-playground-console)
@@ -545,6 +546,19 @@ allocator. Memory remains bounded to 64 MiB, with borrowed leases in the existin
 activation arena. Simple whole-block reuse may fail under fragmentation; there is no
 garbage collector. All behavior works in offline HTML exports.
 
+## Pseudorandom integers
+
+`random(n)` evaluates its integer bound once and returns an integer in `0..n-1`.
+Bounds must be 1..2147483647; invalid bounds report located `R_RANDOM_RANGE` without
+advancing the stream. Random calls are not constant expressions (`E_CONST`).
+`randomize` or `randomize()` reseeds the stream. Both names are reserved.
+
+Each runtime starts a private xorshift32 stream with seed 1. Rejection sampling avoids
+modulo bias. `randomize` obtains a nonzero seed using built-in JavaScript Math.random;
+this is not cryptographic randomness. Embedders/tests can set host `limits.randomSeed`
+to an unsigned 32-bit integer to fix both initial and randomize seeds; zero means 1.
+Fresh runs never share state. Free Pascal sequences are not a compatibility guarantee.
+
 ## Checked increment
 
 `inc(destination)` adds one to initialized writable integer storage, including fields,
@@ -719,8 +733,8 @@ resolution also have bounded complexity. Exceeding a compiler work budget uses
 | Terminal protocols | ANSI terminal commands and raw keypress input |
 
 Reserved built-ins include `trunc`, `round`, `length`, `char`, `chr`, `ord`, `copy`,
-`nil`, `new`, and `dispose`; `record` is also reserved. Rename earlier identifiers that
-use these names.
+`nil`, `new`, `dispose`, `inc`, `random`, and `randomize`; `record` is also reserved.
+Rename earlier identifiers that use these names.
 
 ## Formal grammar
 
@@ -754,7 +768,7 @@ selector    = "[" expression "]" | "." identifier | "^" ;
 compound    = "begin" statement {";" statement} "end" ;
 statement   = assignment | compound | conditional | loop | repeat_loop | for_loop
             | selection | "break" | "continue" | "exit" ["(" expression ")"]
-            | call | output | input | allocation | increment | empty ;
+            | call | output | input | allocation | increment | "randomize" ["(" ")"] | empty ;
 assignment  = lvalue ":=" expression ;
 conditional = "if" expression "then" statement ["else" statement] ;
 loop        = "while" expression "do" statement ;
@@ -779,6 +793,7 @@ factor      = primary {selector} ;
 primary     = integer_literal | real_literal | text_literal | "true" | "false" | "nil" | call | identifier
             | ("real" | "trunc" | "round" | "length" | "chr" | "ord") "(" expression ")"
             | "copy" "(" expression "," expression "," expression ")"
+            | "random" "(" expression ")"
             | "(" expression ")" | "not" factor ;
 relation    = "=" | "<>" | "<" | "<=" | ">" | ">=" ;
 identifier  = (ASCII_letter | "_") {ASCII_letter | ASCII_digit | "_"} ;

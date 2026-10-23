@@ -91,6 +91,11 @@ the Wasm stack until one formatted-write import. The self-contained host rounds 
 binary64 rationals with bounded built-in BigInt arithmetic for fixed decimals, then
 checks Unicode padding and the complete UTF-8 field against the output budget.
 
+Random operations lower to two synchronous runtime services. Each host owns a bounded
+u32 xorshift state; rejection sampling maps its nonzero cycle into unbiased bounded
+integers. A host seed override enables exact cross-engine/WAT tests while production
+randomize uses the browser's built-in random source. No state leaks between runs.
+
 The backend captures each destination path before evaluating its source or consuming
 input. Indexes are checked before address arithmetic. Scalar loads test the selected
 initialization flag; aggregate loads provide copy addresses without reading unwritten

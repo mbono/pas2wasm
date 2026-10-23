@@ -66,5 +66,27 @@ module.exports = async function verifyIO() {
         assert.throws(() => formatted.imports.write_formatted(...args, 7, 9),
             e => e.code === 'R_FORMAT' && e.line === 7 && e.column === 9);
     }
-    console.log('Shared input cursor, atomic storage/output, Unicode, provider, EOF, and limits passed.');
+    const random = createPas2WasmRuntime('', () => {});
+    const independent = createPas2WasmRuntime('', () => {});
+    assert.equal(random.imports.random_i32(100, 1, 1), 68);
+    assert.equal(independent.imports.random_i32(100, 1, 1), 68, 'Fresh runtimes own independent streams');
+    const seeded = createPas2WasmRuntime('', () => {}, {randomSeed:0});
+    for (const bound of [0,-1,2147483648,1.5]) {
+        assert.throws(() => seeded.imports.random_i32(bound, 6, 8),
+            e => e.code === 'R_RANDOM_RANGE' && e.line === 6 && e.column === 8);
+    }
+    assert.equal(seeded.imports.random_i32(100, 1, 1), 68, 'Invalid bounds do not advance state');
+    seeded.imports.randomize();
+    assert.equal(seeded.imports.random_i32(100, 1, 1), 68, 'Zero seed normalizes to one on reseed');
+    for (const randomSeed of [-1,4294967296,1.5,NaN]) {
+        assert.throws(() => createPas2WasmRuntime('', () => {}, {randomSeed}),
+            e => e.code === 'R_RANDOM_RANGE');
+    }
+    const originalRandom = Math.random;
+    try {
+        Math.random = () => 0.5;
+        random.imports.randomize();
+        assert.equal(random.imports.random_i32(100, 1, 1), 19, 'Reseeding obtains the built-in random source');
+    } finally { Math.random = originalRandom; }
+    console.log('Shared I/O, atomic output, Unicode, provider limits, and isolated random streams passed.');
 };
