@@ -15,6 +15,8 @@
   binary64 rounding, and unchanged tutorial `formatted_io`/`io` examples.
 - `randomize` and checked `random(n)` with per-runtime streams, reproducible host
   seeds, and the unchanged tutorial `vettori` source.
+- Comma-separated multidimensional array bounds and indexes using existing checked
+  nested-array storage, including the unchanged tutorial `vettori_multi` source.
 
 ### Compatibility changes
 

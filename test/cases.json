@@ -2557,7 +2557,8 @@
     {
         "name": "array_comma_index",
         "source": "program demo; var a:array[1..2] of array[1..2] of integer; begin a[1,2]:=1 end.",
-        "error": "E_SYNTAX"
+        "output": "",
+        "portable": true
     },
     {
         "name": "array_wrong_element",
@@ -6400,5 +6401,130 @@
         "name": "randomize_argument",
         "source": "program p; begin randomize(1) end.",
         "error": "E_SYNTAX"
+    },
+    {
+        "name": "tutorial_vettori_multi",
+        "source": "program vettori_multi;\nconst\n\tn = 10;\n\tp=10;\nvar\n\tm : array[1..n, 1..p] of integer;\n\ti,j: integer;\nbegin\n\trandomize;\n\tfor i := 1 to p do begin\n\t\tfor j := 1 to n do begin\n\t\t\tm[i,j] := random(100)+1;\n\t\t\twrite(m[i,j]:4);\n\t\tend;\n\t\twriteln;\n\tend;\nend.\n",
+        "randomSeed": 1,
+        "output": "  69  89  61  95  33   4  82  10  29  32\n  99  43  42  98  69  93  12  24  29  17\n  19  85  47  99  18  85  25  16  91  22\n   3  52  93  80  40 100  34  54  14  63\n  33  42  99  99   3  93  93  60   5  65\n  55  71  44  77  24  56  48  88  27  61\n  65   6   8  83  20  36  56  30  29  36\n  74  21  20  44  36  33  22  81  35  32\n  29   4  30  92 100  60  23  51  37  51\n  64  21   7  81  84  50  79  21  76  59\n"
+    },
+    {
+        "name": "matrix_mixed_selectors",
+        "source": "program p; type Matrix=array[-1..0,2..3,4..5] of integer; var m:Matrix; begin m[-1,2,4]:=7; m[-1][2,5]:=8; writeln(m[-1,2][4],m[-1][2][5]) end.",
+        "output": "78\n",
+        "portable": true
+    },
+    {
+        "name": "matrix_value_copy",
+        "source": "program p; type Matrix=array[1..2,1..2] of integer; var a,b:Matrix; begin a[1,1]:=3; b:=a; a[1,1]:=9; writeln(b[1,1]) end.",
+        "output": "3\n",
+        "portable": true
+    },
+    {
+        "name": "matrix_row_copy",
+        "source": "program p; var a:array[1..2,1..2] of integer; begin a[1,1]:=3; a[1,2]:=4; a[2]:=a[1]; a[1,1]:=9; writeln(a[2,1],a[2,2]) end.",
+        "output": "34\n",
+        "portable": true
+    },
+    {
+        "name": "matrix_heap_reference",
+        "source": "program p; type PM=^Matrix; Matrix=array[1..2,1..2] of integer; var q:PM; procedure step(var n:integer); begin inc(n) end; function get:PM; begin get:=q end; begin new(q); q^[1,2]:=3; step(q^[1,2]); inc(get()^[1,2]); writeln(q^[1,2]); dispose(q) end.",
+        "output": "5\n"
+    },
+    {
+        "name": "matrix_record_copy",
+        "source": "program p; type RecordValue=record m:array[1..2,1..2] of string[4] end; var r,c:RecordValue; begin r.m[1,2]:='é'; c:=r; r.m[1,2]:='x'; writeln(c.m[1][2]) end.",
+        "output": "é\n",
+        "portable": true
+    },
+    {
+        "name": "matrix_string_comma",
+        "source": "program p; var s:array[1..2] of string[8]; begin s[1]:='ab'; s[1,2]:='é'; writeln(s[1,2],s[1]) end.",
+        "output": "éaé\n"
+    },
+    {
+        "name": "matrix_index_once",
+        "source": "program p; var m:array[1..2,1..2] of integer; trace:integer; function row:integer; begin trace:=trace*10+1; row:=1 end; function column:integer; begin trace:=trace*10+2; column:=1 end; begin trace:=0; m[1,1]:=2; inc(m[row,column]); writeln(m[1,1],trace) end.",
+        "output": "312\n",
+        "portable": true
+    },
+    {
+        "name": "matrix_return_value",
+        "source": "program p; type Matrix=array[1..2,1..2] of integer; function make:Matrix; begin make[1,2]:=7 end; begin writeln(make()[1,2]) end.",
+        "output": "7\n"
+    },
+    {
+        "name": "matrix_row_reference",
+        "source": "program p; type Row=array[1..2] of integer; Matrix=array[1..2] of Row; var m:Matrix; procedure fill(var r:Row); begin r[2]:=6 end; begin fill(m[1]); writeln(m[1,2]) end.",
+        "output": "6\n",
+        "portable": true
+    },
+    {
+        "name": "matrix_range_checks",
+        "source": "program p; type Matrix=array[1..3,1..4] of integer; var a,b:Matrix; i,j:integer; ok:boolean; begin randomize; for i:=1 to 3 do for j:=1 to 4 do a[i,j]:=random(100)+1; b:=a; for i:=1 to 3 do for j:=1 to 4 do a[i,j]:=0; ok:=true; for i:=1 to 3 do for j:=1 to 4 do ok:=ok and (a[i,j]=0) and (b[i,j]>=1) and (b[i,j]<=100); writeln(ok:6) end.",
+        "output": "  TRUE\n",
+        "portable": true
+    },
+    {
+        "name": "matrix_second_dimension_bounds",
+        "source": "program p;\nvar m:array[1..2,1..2] of integer;\nbegin\n  m[1,3]:=1\nend.",
+        "runtime": "R_BOUNDS",
+        "runtimeLine": 4,
+        "runtimeColumn": 6
+    },
+    {
+        "name": "matrix_first_dimension_precedence",
+        "source": "program p; var m:array[1..2,1..2] of integer; function later:integer; begin later:=2147483647+1 end; begin m[0,later]:=1 end.",
+        "runtime": "R_BOUNDS"
+    },
+    {
+        "name": "matrix_partial_initialization",
+        "source": "program p; type Matrix=array[1..2,1..2] of integer; var a,b:Matrix; begin a[1,1]:=3; b:=a; writeln(b[2,2]) end.",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "matrix_excess_indexes",
+        "source": "program p; var a:array[1..2,1..2] of integer; begin a[1,1,1]:=2 end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "matrix_index_type",
+        "source": "program p; var a:array[1..2,1..2] of integer; begin a[1,true]:=2 end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "matrix_bound_type",
+        "source": "program p; type Matrix=array[1..2,false..true] of integer; begin end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "matrix_nonconstant_bound",
+        "source": "program p; var n:integer; type Matrix=array[1..2,1..n] of integer; begin end.",
+        "error": "E_CONST"
+    },
+    {
+        "name": "matrix_reversed_dimension",
+        "source": "program p; type Matrix=array[1..2,3..2] of integer; begin end.",
+        "error": "E_ARRAY_RANGE"
+    },
+    {
+        "name": "matrix_missing_dimension",
+        "source": "program p; type Matrix=array[1..2,] of integer; begin end.",
+        "error": "E_SYNTAX"
+    },
+    {
+        "name": "matrix_oversized_layout",
+        "source": "program p; type Matrix=array[1..100000,1..100000] of integer; begin end.",
+        "error": "E_LAYOUT"
+    },
+    {
+        "name": "matrix_depth_limit",
+        "source": "program p; type Matrix=array[1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1] of integer; begin end.",
+        "error": "E_LIMIT"
+    },
+    {
+        "name": "matrix_deep_dimensions",
+        "source": "program p; var m:array[1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1,1..1] of integer; begin m[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]:=7; writeln(m[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]) end.",
+        "output": "7\n"
     }
 ]

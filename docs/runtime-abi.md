@@ -196,6 +196,9 @@ structure only. Compound layout uses a 16-byte root followed by aligned children
 counts, strides, and sums are bounded by 64 MiB. Invalid, recursive by-value, or
 oversized layouts fail compilation with `E_LAYOUT`.
 
+Comma-separated array dimensions use these same nested objects and child headers;
+index-list syntax introduces no flattened matrix representation or new host imports.
+
 Addresses 0..262143 are reserved for decoded literals. Global objects follow, then a 32
 KiB active-control address table and a 128 KiB frame arena. The remaining region is the
 checked heap; these regions cannot overlap. Initial pages cover globals/frames, with

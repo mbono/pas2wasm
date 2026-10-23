@@ -376,6 +376,7 @@ active counters retain runtime alias protection.
 | --- | --- | --- |
 | Fixed array | `type Row = array[-2..2] of integer;` | Bounds are integer constant expressions. |
 | Nested array | `type Matrix = array[1..3] of Row;` | Select with `m[i][j]`. |
+| Multiple dimensions | `type Matrix = array[1..3, -2..2] of integer;` | Shorthand nested constructors; select with `m[i,j]` or mixed brackets. |
 | Record | `type Pair = record x, y: integer; ready: boolean end;` | Select with `p.x`. |
 | Nested field | `p.rows[i].ready` | Field and index selectors compose. |
 | Value copy | `b := a` | Same aggregate type; copied storage is independent. |
@@ -387,10 +388,15 @@ Bounds are checked integer constant expressions; negative/nonzero lower bounds a
 supported. Declare global/local values and access them with `a[i]` or nested `m[i][j]`.
 Indexes are integers and checked at runtime (`R_BOUNDS`); reversed bounds fail with
 `E_ARRAY_RANGE`, wrong/nonconstant bounds with `E_TYPE`/`E_CONST`, and oversized storage
-with `E_LAYOUT`, including unused named types. Comma-separated dimensions/indexes are
-unsupported; use nested constructors/selectors.
+with `E_LAYOUT`, including unused named types. Comma-separated dimensions construct
+nested arrays; comma-separated indexes expand to consecutive selectors. Mixed forms
+such as `m[i][j,k]` are accepted, including ordinary array/string selection paths.
+Each index evaluates once, left-to-right, with its bounds checked before the next index
+is evaluated. Bounds failures locate the relevant opening `[` or comma. Excess indexes
+on a scalar are `E_TYPE`; every dimension counts toward existing depth/layout limits.
 
-Array aliases share identity; separately constructed array types are distinct. `var
+Array aliases share identity; separately constructed array types are distinct, even
+when one uses comma syntax and the other uses explicit nesting. `var
 a,b:array[1..2] of integer` shares one constructed type, whereas separate constructors
 do not. Index failures locate the opening `[`, before address computation; combined
 selector/expression depth is bounded. Whole/subarray copies require the same type,
@@ -760,11 +766,12 @@ parameter_group = ["var"] declaration_group ;
 declaration_group = identifier {"," identifier} ":" type ;
 call        = identifier ["(" [expression {"," expression}] ")"] ;
 type        = "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier
-            | "array" "[" expression ".." expression "]" "of" type
+            | "array" "[" dimension {"," dimension} "]" "of" type
             | "record" declaration_group {";" declaration_group} [";"] "end" ;
 lvalue      = identifier {selector} | call selector {selector} ;
 storage     = factor ; (* must resolve to writable storage *)
-selector    = "[" expression "]" | "." identifier | "^" ;
+dimension   = expression ".." expression ;
+selector    = "[" expression {"," expression} "]" | "." identifier | "^" ;
 compound    = "begin" statement {";" statement} "end" ;
 statement   = assignment | compound | conditional | loop | repeat_loop | for_loop
             | selection | "break" | "continue" | "exit" ["(" expression ")"]

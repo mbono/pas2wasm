@@ -322,6 +322,7 @@ def verify_browser(kind, base_url, cases, directory):
                         'mixedtext':'tutorial_if_else',
                         'formatting':'tutorial_formatted_io', 'formatio':'tutorial_io',
                         'randomvalues':'random_range_checks',
+                        'matrices':'matrix_range_checks',
                         'loops':'for_mixed_loops', 'routines':'procedure_recursion',
                         'functions':'function_factorial', 'exit':'exit_recursive_function',
                         'case':'case_exit_function', 'constants':'constant_scopes',

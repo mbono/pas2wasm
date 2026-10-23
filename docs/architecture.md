@@ -96,6 +96,11 @@ u32 xorshift state; rejection sampling maps its nonzero cycle into unbiased boun
 integers. A host seed override enables exact cross-engine/WAT tests while production
 randomize uses the browser's built-in random source. No state leaks between runs.
 
+Comma-separated array constructors and indexes normalize in the frontend to ordinary
+nested descriptors and selector chains. Each dimension retains its source location and
+consumes the existing depth budget. The backend uses the same checked child strides,
+copies, reference paths, and initialization flags without a separate matrix layout.
+
 The backend captures each destination path before evaluating its source or consuming
 input. Indexes are checked before address arithmetic. Scalar loads test the selected
 initialization flag; aggregate loads provide copy addresses without reading unwritten

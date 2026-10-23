@@ -784,6 +784,31 @@ static void numeric_pair(Parser *p, Expr **left, Expr **right, int force_real, T
 /* Parse a relational expression; forward declaration allows parentheses. */
 static Expr *expression(Parser *p);
 
+/* One comma or bracket index becomes the same logical, checked storage selector.
+ * The caller owns separators; preserving each location identifies its dimension. */
+static Lvalue *index_selector(Parser *p, Lvalue *base, Token at)
+{
+    if (base->type->kind != TYPE_KIND_ARRAY && base->type->kind != TYPE_KIND_STRING) {
+        fail_at(p, "E_TYPE", "Indexing requires an array or string.", at.line, at.column);
+    }
+    Lvalue *value = allocate(p, sizeof(*value));
+    value->symbol = base->symbol;
+    value->line = at.line;
+    value->column = at.column;
+    value->base = base;
+    value->indirect = base->indirect;
+    value->kind = base->type->kind == TYPE_KIND_STRING ? LV_CHARACTER : LV_INDEX;
+    value->type =
+        value->kind == LV_CHARACTER ? TYPE_CHARACTER : type_canonical(base->type->element);
+    value->index = expression(p);
+    require_type(p, value->index, TYPE_INTEGER, at);
+    value->depth = 1 + (base->depth > value->index->depth ? base->depth : value->index->depth);
+    if (value->depth >= 128) {
+        fail_at(p, "E_LIMIT", "Combined expression/selector path is too deep.", at.line, at.column);
+    }
+    return value;
+}
+
 /* Parse a typed selector chain after its base name has already been consumed. */
 static Lvalue *selectors(Parser *p, Lvalue *base)
 {
@@ -792,6 +817,22 @@ static Lvalue *selectors(Parser *p, Lvalue *base)
         Token at = p->token;
         if (++depth > 128) {
             fail(p, "E_LIMIT", "Lvalue path is too deep.");
+        }
+        if (at.kind == TK_LBRACKET) {
+            next(p);
+            for (;;) {
+                base = index_selector(p, base, at);
+                if (p->token.kind != TK_COMMA) {
+                    break;
+                }
+                at = p->token;
+                if (++depth > 128) {
+                    fail(p, "E_LIMIT", "Lvalue path is too deep.");
+                }
+                next(p);
+            }
+            expect(p, TK_RBRACKET, "Expected ']' after array index.");
+            continue;
         }
         Lvalue *value = allocate(p, sizeof(*value));
         value->symbol = base->symbol;
@@ -808,7 +849,7 @@ static Lvalue *selectors(Parser *p, Lvalue *base)
             value->type = type_canonical(base->type->element);
             value->depth = base->depth + 1;
             value->indirect = 1;
-        } else if (at.kind == TK_DOT) {
+        } else {
             if (base->type->kind != TYPE_KIND_RECORD) {
                 fail_at(p, "E_TYPE", "Field selection requires a record.", at.line, at.column);
             }
@@ -825,18 +866,6 @@ static Lvalue *selectors(Parser *p, Lvalue *base)
             value->type = type_canonical(field->type);
             value->field = field;
             value->depth = base->depth + 1;
-        } else {
-            if (base->type->kind != TYPE_KIND_ARRAY && base->type->kind != TYPE_KIND_STRING) {
-                fail_at(p, "E_TYPE", "Indexing requires an array or string.", at.line, at.column);
-            }
-            value->kind = base->type->kind == TYPE_KIND_STRING ? LV_CHARACTER : LV_INDEX;
-            value->type =
-                value->kind == LV_CHARACTER ? TYPE_CHARACTER : type_canonical(base->type->element);
-            value->index = expression(p);
-            require_type(p, value->index, TYPE_INTEGER, at);
-            expect(p, TK_RBRACKET, "Expected ']' after array index.");
-            value->depth =
-                1 + (base->depth > value->index->depth ? base->depth : value->index->depth);
         }
         if (value->depth >= 128) {
             fail_at(p, "E_LIMIT", "Combined expression/selector path is too deep.", at.line,
@@ -1814,16 +1843,30 @@ static ValueType declaration_type(Parser *p)
         next(p);
         expect(p, TK_LBRACKET, "Expected '[' after array.");
         Type *array = new_type(p, TYPE_KIND_ARRAY, at);
-        array->lower = array_bound(p);
-        expect(p, TK_RANGE, "Expected '..' between array bounds.");
-        array->upper = array_bound(p);
-        if (array->upper < array->lower) {
-            fail_at(p, "E_ARRAY_RANGE", "Array bounds are reversed.", at.line, at.column);
+        Type *dimension = array;
+        unsigned dimensions = 1;
+        for (;;) {
+            dimension->lower = array_bound(p);
+            expect(p, TK_RANGE, "Expected '..' between array bounds.");
+            dimension->upper = array_bound(p);
+            if (dimension->upper < dimension->lower) {
+                fail_at(p, "E_ARRAY_RANGE", "Array bounds are reversed.", at.line, at.column);
+            }
+            if (p->token.kind != TK_COMMA) {
+                break;
+            }
+            at = p->token;
+            next(p);
+            enter(p);
+            ++dimensions;
+            Type *inner = new_type(p, TYPE_KIND_ARRAY, at);
+            dimension->element = inner;
+            dimension = inner;
         }
         expect(p, TK_RBRACKET, "Expected ']' after array bounds.");
         expect(p, TK_OF, "Expected 'of' before array element type.");
-        array->element = declaration_type(p);
-        --p->depth;
+        dimension->element = declaration_type(p);
+        p->depth -= dimensions;
         return array;
     }
     if (p->token.kind == TK_INTEGER) {

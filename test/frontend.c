@@ -353,6 +353,16 @@ int main(void)
     assert(field->precision->integer == 2 && field->next->width->integer == 4);
     assert(field->next->precision == NULL);
     program_destroy(&program);
+    const char *matrix = "program p; var m:array[-1..1,2..4] of integer; begin m[0,3]:=1 end.";
+    assert(frontend_parse(&program, matrix, strlen(matrix), &diagnostic));
+    ValueType matrix_type = program.symbols[0].type;
+    assert(matrix_type->kind == TYPE_KIND_ARRAY && matrix_type->lower == -1);
+    assert(matrix_type->upper == 1 && matrix_type->element->kind == TYPE_KIND_ARRAY);
+    assert(matrix_type->element->lower == 2 && matrix_type->element->upper == 4);
+    Lvalue *cell = program.body->body->target;
+    assert(cell->kind == LV_INDEX && cell->type == TYPE_INTEGER && cell->index->integer == 3);
+    assert(cell->base->kind == LV_INDEX && cell->base->index->integer == 0);
+    program_destroy(&program);
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));
     assert(!frontend_parse(&program, invalid, strlen(invalid), &diagnostic));
