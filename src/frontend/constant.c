@@ -183,6 +183,13 @@ static int evaluate(Program *program, const Expr *e, ScalarValue *value, Diagnos
     if (e->right && !evaluate(program, e->right, &right, diagnostic, depth + 1)) {
         return 0;
     }
+    if (e->kind == EX_RANGE_CHECK) {
+        if (left.integer < e->constraint->lower || left.integer > e->constraint->upper) {
+            return failure(e, diagnostic, "E_RANGE", "Constant is outside its subrange.");
+        }
+        *value = left;
+        return 1;
+    }
     if (e->kind == EX_CHARACTER || e->kind == EX_ORDINAL) {
         if (e->kind == EX_CHARACTER && !character_valid(left.integer)) {
             return failure(e, diagnostic, "E_CHARACTER", "Invalid Unicode scalar value.");

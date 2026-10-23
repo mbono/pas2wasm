@@ -6,6 +6,8 @@
 
 - Decimal Unicode character literals such as `#13`, `#27`, and `#128512`, with
   compile-time scalar validation and existing character/string operations.
+- Integer and character subranges with checked storage, signatures, input, increment,
+  and integer loop bounds, including the unchanged tutorial `subrange` source.
 
 - Checked `inc(integer_storage)` with once-evaluated destinations, alias/control
   protection, and the unchanged tutorial multiplication-table example.

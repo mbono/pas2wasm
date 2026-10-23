@@ -179,6 +179,7 @@ The reference host maps generated numeric codes as follows:
 | 16 | `R_DISPOSE` | invalid release |
 | 17 | `R_LIFETIME` | live borrow |
 | 18 | `R_POINTER` | malformed internal pointer |
+| 19 | `R_RANGE` | value outside a declared subrange |
 
 Host input errors use `R_INPUT_EOF`, `R_INPUT_INVALID`, `R_INPUT_RANGE`, or
 `R_ENCODING`. Input/output budgets use `R_INPUT_LIMIT`/`R_OUTPUT_LIMIT`; the session
@@ -195,6 +196,12 @@ protection byte +9, reserved metadata +10..15), aligned to 8 bytes. Types carry 
 structure only. Compound layout uses a 16-byte root followed by aligned children; all
 counts, strides, and sums are bounded by 64 MiB. Invalid, recursive by-value, or
 oversized layouts fail compilation with `E_LAYOUT`.
+
+Integer and character subranges use the same 16-byte cells and base-scalar Wasm
+signatures. The frontend retains constraints on storage and inserts explicit checks
+for narrowing writes/calls/results; input and increment lowering also check before
+committing. Var bindings preserve exact declared range identity. No new import is
+needed; failure 19 reports the narrowing operation's location.
 
 Comma-separated array dimensions use these same nested objects and child headers;
 index-list syntax introduces no flattened matrix representation or new host imports.

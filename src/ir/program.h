@@ -34,6 +34,7 @@ typedef enum {
     TYPE_KIND_NIL,
     TYPE_KIND_PENDING,
     TYPE_KIND_ALIAS,
+    TYPE_KIND_SUBRANGE,
     TYPE_KIND_STRING,
     TYPE_KIND_ARRAY,
     TYPE_KIND_RECORD
@@ -93,6 +94,7 @@ typedef enum {
     EX_NIL,
     EX_REAL,
     EX_RANDOM,
+    EX_RANGE_CHECK,
     EX_TO_REAL,
     EX_TRUNCATE,
     EX_ROUND,
@@ -128,6 +130,7 @@ typedef enum {
 struct Expr {
     ExprKind kind;
     ValueType type;
+    ValueType constraint; /* EX_RANGE_CHECK retains its declared storage range. */
     unsigned line, column, depth;
     int32_t integer;
     uint64_t real_bits;
@@ -275,6 +278,8 @@ int text_compare(const char *a, size_t a_length, const char *b, size_t b_length)
 int character_valid(int32_t scalar);
 /* Resolve frontend binding aliases; NULL denotes a malformed alias chain. */
 ValueType type_canonical(ValueType type);
+/* Subrange values use their base scalar; storage retains the constrained descriptor. */
+ValueType type_value(ValueType type);
 /* Decode the first scalar of nonempty validated UTF-8; return its byte width. */
 size_t text_decode(const char *text, int32_t *scalar);
 /* Encode a valid scalar into at most four bytes; return its byte width. */

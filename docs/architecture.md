@@ -75,6 +75,12 @@ used by concatenation, reusing lexical comparison and its alias-safe snapshots.
 Decimal numeric character literals are validated as Unicode scalars by the lexer and
 become ordinary typed character constants; runtime layouts and imports remain shared.
 
+Subrange storage retains a nominal descriptor with base type and constant bounds.
+Expression types expose the base scalar, and explicit range-check nodes retain the
+destination constraint for narrowing. References compare declared lvalue types rather
+than expression types. Input/increment stores check after parsing/arithmetic and before
+committing, preserving scalar initialization and atomic failure behavior.
+
 ## Lvalues, frames, and value semantics
 
 Loads and writable storage paths are explicit typed IR nodes. The parser retains

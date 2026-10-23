@@ -210,6 +210,25 @@ static void narrow(Wasm *w, const Expr *e)
     op(w, 0xa7, "i32.wrap_i64");
 }
 
+/* Validate an ordinal stack value before any constrained destination is committed.
+ * Base-typed intermediate arithmetic remains independent of storage bounds. */
+static void check_range(Wasm *w, ValueType type, unsigned line, unsigned column)
+{
+    if (type->kind != TYPE_KIND_SUBRANGE) {
+        return;
+    }
+    indexed(w, 0x21, "local.set", w->left_local);
+    indexed(w, 0x20, "local.get", w->left_local);
+    constant(w, 0, type->lower);
+    op(w, 0x48, "i32.lt_s");
+    indexed(w, 0x20, "local.get", w->left_local);
+    constant(w, 0, type->upper);
+    op(w, 0x4a, "i32.gt_s");
+    op(w, 0x72, "i32.or");
+    check(w, 19, line, column);
+    indexed(w, 0x20, "local.get", w->left_local);
+}
+
 /* Emit a core Wasm memory access; both encodings share alignment/offset data. */
 void memory_op(Wasm *w, unsigned opcode, const char *text, unsigned align, unsigned offset)
 {
@@ -611,6 +630,11 @@ static void emit_expression(Wasm *w, const Expr *e)
         real_constant(w, e->real_bits);
         return;
     }
+    if (e->kind == EX_RANGE_CHECK) {
+        emit_expression(w, e->left);
+        check_range(w, e->constraint, e->line, e->column);
+        return;
+    }
     if (e->kind == EX_RANDOM) {
         emit_expression(w, e->left);
         constant(w, 0, e->line);
@@ -908,11 +932,12 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
 {
     size_t saved = w->next_local;
     size_t destination = temporary(w), root = temporary(w);
+    ValueType base_type = type_value(target->type);
     emit_path(w, target, root);
     indexed(w, 0x21, "local.set", destination);
     check_target(w, destination, target->type, target->line ? target->line : line,
                  target->column ? target->column : column);
-    if (target->type == TYPE_CHARACTER) {
+    if (base_type == TYPE_CHARACTER) {
         size_t value = temporary(w);
         if (source) {
             emit_expression(w, source);
@@ -921,6 +946,7 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
             constant(w, 0, line);
             constant(w, 0, column);
             indexed(w, 0x10, "call", 25);
+            check_range(w, target->type, line, column);
         }
         indexed(w, 0x21, "local.set", value);
         indexed(w, 0x20, "local.get", destination);
@@ -948,6 +974,7 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
             constant(w, 0, line);
             constant(w, 0, column);
             indexed(w, 0x10, "call", target->type == TYPE_REAL ? 24 : 23);
+            check_range(w, target->type, line, column);
         }
         if (aggregate(target->type)) {
             copy_value(w, destination, type_size(w, target->type));
@@ -969,7 +996,7 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
                       type == 0x7f ? 2 : 3, 0);
         }
     }
-    if (target->type != TYPE_CHARACTER) {
+    if (base_type != TYPE_CHARACTER) {
         indexed(w, 0x20, "local.get", destination);
         constant(w, 0, 1);
         memory_op(w, 0x3a, "i32.store8", 0, 8);
@@ -1005,6 +1032,7 @@ static void emit_increment(Wasm *w, const Stmt *s)
     indexed(w, 0x20, "local.get", w->left_local);
     constant(w, 0, 1);
     op(w, 0x6a, "i32.add");
+    check_range(w, s->target->type, s->line, s->column);
     memory_op(w, 0x36, "i32.store", 2, 0);
     indexed(w, 0x20, "local.get", root);
     constant(w, 0, 1);

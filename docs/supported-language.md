@@ -134,6 +134,24 @@ ordinary expression values.
 | Fixed array | Constant integer bounds and one element type. | `array[-2..2] of integer` |
 | Record | Named fields with declared types. | `record x, y: integer end` |
 | Typed pointer | Reference to a declared pointee type, or `nil`. | `^Node` |
+| Subrange | Integer or character values constrained by constant inclusive bounds. | `0..9`, `'a'..'z'`, `#65..#90` |
+
+### Subrange storage
+
+Named and inline subranges retain their declared identity, while expressions use their
+integer or character base type. Bounds are constant expressions of matching base types;
+quoted one-scalar constants count as character bounds. Reversed bounds use `E_RANGE`,
+incompatible endpoints use `E_TYPE`, and nonconstant endpoints are rejected. All signed
+32-bit integer endpoints and valid Unicode character endpoints are supported.
+
+Assignments, value arguments, function results/`exit`, input, and integer `inc` check
+the destination range before committing (`R_RANGE`). Arithmetic intermediates use the
+ordinary base type and can exceed the storage range until assigned. Integer subranges
+can control `for` loops; both bounds are checked against the declared range. Aliases
+share storage identity; separately declared ranges do not. `var` parameters require
+exact declared storage types, so passing a range to an unrestricted integer reference
+is rejected. Subranges work in arrays, record fields, heap values, captures, and routine
+signatures using existing initialization/lifetime rules.
 
 ### Operators and evaluation
 
@@ -770,12 +788,13 @@ parameters  = "(" [parameter_group {";" parameter_group}] ")" ;
 parameter_group = ["var"] declaration_group ;
 declaration_group = identifier {"," identifier} ":" type ;
 call        = identifier ["(" [expression {"," expression}] ")"] ;
-type        = "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier
+type        = "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier | subrange
             | "array" "[" dimension {"," dimension} "]" "of" type
             | "record" declaration_group {";" declaration_group} [";"] "end" ;
 lvalue      = identifier {selector} | call selector {selector} ;
 storage     = factor ; (* must resolve to writable storage *)
 dimension   = expression ".." expression ;
+subrange    = expression ".." expression ;
 selector    = "[" expression {"," expression} "]" | "." identifier | "^" ;
 compound    = "begin" statement {";" statement} "end" ;
 statement   = assignment | compound | conditional | loop | repeat_loop | for_loop

@@ -665,7 +665,7 @@ static Expr *expression_node(Parser *p, ExprKind kind, ValueType type, Token at,
 {
     Expr *e = allocate(p, sizeof(*e));
     e->kind = kind;
-    e->type = type_canonical(type);
+    e->type = type_value(type);
     e->line = at.line;
     e->column = at.column;
     e->left = left;
@@ -703,6 +703,12 @@ static ValueType string_type(Parser *p, size_t capacity, Token at);
 static Expr *coerce(Parser *p, Expr *value, ValueType expected, Token at)
 {
     expected = type_canonical(expected);
+    if (expected->kind == TYPE_KIND_SUBRANGE) {
+        value = coerce(p, value, type_value(expected), at);
+        Expr *checked = expression_node(p, EX_RANGE_CHECK, expected, at, value, NULL);
+        checked->constraint = expected;
+        return checked;
+    }
     if (expected->kind == TYPE_KIND_POINTER && value->type == TYPE_NIL) {
         return expression_node(p, EX_NIL, expected, at, NULL, NULL);
     }
@@ -1229,7 +1235,13 @@ static Expr *call_arguments(Parser *p, Routine *routine, Token at)
                 }
                 *tail = expression(p);
                 if (routine->parameter_modes[count]) {
-                    require_type(p, *tail, routine->parameter_types[count], at);
+                    Expr *actual = *tail;
+                    ValueType actual_type =
+                        actual->kind == EX_LOAD ? actual->lvalue->type : actual->type;
+                    if (type_canonical(actual_type) != routine->parameter_types[count]) {
+                        fail_at(p, "E_TYPE", "A var argument requires the declared storage type.",
+                                at.line, at.column);
+                    }
                 } else {
                     *tail = coerce(p, *tail, routine->parameter_types[count], at);
                 }
@@ -1480,7 +1492,7 @@ static Stmt *statement(Parser *p)
         if (s->symbol == SIZE_MAX) {
             fail_at(p, "E_UNKNOWN", "Variable is not declared.", control.line, control.column);
         }
-        if (p->program->symbols[s->symbol].type != TYPE_INTEGER) {
+        if (type_value(p->program->symbols[s->symbol].type) != TYPE_INTEGER) {
             fail_at(p, "E_TYPE", "For control variable must be integer.", control.line,
                     control.column);
         }
@@ -1489,6 +1501,7 @@ static Stmt *statement(Parser *p)
         expect(p, TK_ASSIGN, "Expected ':=' after for control variable.");
         s->expression = expression(p);
         require_type(p, s->expression, TYPE_INTEGER, t);
+        s->expression = coerce(p, s->expression, p->program->symbols[s->symbol].type, t);
         s->descending = p->token.kind == TK_DOWNTO;
         if (p->token.kind != TK_TO && p->token.kind != TK_DOWNTO) {
             fail(p, "E_SYNTAX", "Expected 'to' or 'downto' after initial bound.");
@@ -1496,6 +1509,7 @@ static Stmt *statement(Parser *p)
         next(p);
         s->limit = expression(p);
         require_type(p, s->limit, TYPE_INTEGER, t);
+        s->limit = coerce(p, s->limit, p->program->symbols[s->symbol].type, t);
         expect(p, TK_DO, "Expected 'do' after final bound.");
         ForControl active = {s->symbol, p->control};
         p->control = &active;
@@ -1614,7 +1628,7 @@ static Stmt *statement(Parser *p)
         expect(p, TK_LPAREN, "Expected '(' after inc.");
         s->target = storage_argument(p, t);
         s->symbol = s->target->symbol;
-        if (s->target->type != TYPE_INTEGER) {
+        if (type_value(s->target->type) != TYPE_INTEGER) {
             fail_at(p, "E_TYPE", "inc requires integer storage.", t.line, t.column);
         }
         expect(p, TK_RPAREN, "Expected ')' after inc destination.");
@@ -1646,7 +1660,7 @@ static Stmt *statement(Parser *p)
                 Token destination = p->token;
                 field->target = storage_argument(p, destination);
                 field->symbol = field->target->symbol;
-                ValueType type = field->target->type;
+                ValueType type = type_value(field->target->type);
                 if (type != TYPE_INTEGER && type != TYPE_REAL && type != TYPE_CHARACTER &&
                     type->kind != TYPE_KIND_STRING) {
                     fail_at(p, "E_TYPE",
@@ -1767,6 +1781,71 @@ static int32_t array_bound(Parser *p)
 /* Record parsing and element parsing share recursive type construction. */
 static ValueType declaration_type(Parser *p);
 
+/* Fold an ordinal endpoint without creating runtime storage. Quoted one-scalar
+ * constant expressions are character bounds, independent of literal byte length. */
+static int32_t subrange_endpoint(Parser *p, ValueType *base)
+{
+    Token at = p->token;
+    int previous = p->constant_expression;
+    p->constant_expression = 1;
+    Expr *expression_value = expression(p);
+    p->constant_expression = previous;
+    ScalarValue value;
+    if (!frontend_evaluate(p->program, expression_value, &value, p->diagnostic)) {
+        longjmp(p->failure, 1);
+    }
+    *base = expression_value->type;
+    if ((*base)->kind == TYPE_KIND_STRING && text_length(value.text, value.length) == 1) {
+        *base = TYPE_CHARACTER;
+        text_decode(value.text, &value.integer);
+    }
+    if (*base != TYPE_INTEGER && *base != TYPE_CHARACTER) {
+        fail_at(p, "E_TYPE", "Subrange bounds require integer or character constants.",
+                at.line, at.column);
+    }
+    return value.integer;
+}
+
+/* Select constant-led range syntax without changing errors for ordinary aliases. */
+static int starts_subrange(Parser *p)
+{
+    TokenKind kind = p->token.kind;
+    if (kind == TK_NAME) {
+        size_t symbol = find_symbol(p, p->token);
+        return symbol != SIZE_MAX && p->program->symbols[symbol].kind == SYMBOL_CONSTANT;
+    }
+    return kind == TK_NUMBER || kind == TK_REAL_NUMBER || kind == TK_STRING ||
+           kind == TK_CHARACTER_LITERAL || kind == TK_PLUS || kind == TK_MINUS ||
+           kind == TK_LPAREN || kind == TK_CHR || kind == TK_ORD ||
+           kind == TK_TRUE || kind == TK_FALSE;
+}
+
+/* Retain a distinct constrained storage type while expressions use its base type. */
+static ValueType subrange_type(Parser *p)
+{
+    Token at = p->token;
+    ValueType base, upper_base;
+    int32_t lower = subrange_endpoint(p, &base);
+    if (p->token.kind != TK_RANGE) {
+        fail_at(p, "E_TYPE", "Expected a type name or '..' after a subrange bound.",
+                at.line, at.column);
+    }
+    next(p);
+    Token upper_at = p->token;
+    int32_t upper = subrange_endpoint(p, &upper_base);
+    if (base != upper_base) {
+        fail_at(p, "E_TYPE", "Subrange endpoint types must match.", upper_at.line, upper_at.column);
+    }
+    if (lower > upper) {
+        fail_at(p, "E_RANGE", "Subrange bounds are reversed.", at.line, at.column);
+    }
+    Type *range = new_type(p, TYPE_KIND_SUBRANGE, at);
+    range->element = base;
+    range->lower = lower;
+    range->upper = upper;
+    return range;
+}
+
 /* Construct a record member namespace without exposing fields as scoped symbols. */
 static ValueType record_type(Parser *p)
 {
@@ -1822,6 +1901,9 @@ static ValueType record_type(Parser *p)
 static ValueType declaration_type(Parser *p)
 {
     ValueType type;
+    if (starts_subrange(p)) {
+        return subrange_type(p);
+    }
     if (p->token.kind == TK_CARET) {
         enter(p);
         Token at = p->token;

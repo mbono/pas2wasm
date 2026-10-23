@@ -25,6 +25,27 @@ async function execute(bytes, input = '', randomSeed) {
     catch (error) { return {output, code: error.code, line: error.line, column: error.column}; }
 }
 
+/* Observe the published first-global cell after failed narrowing: no payload or
+ * initialization flag may change before a checked assignment/input/increment commits. */
+async function verifySubrangeWrites(compile) {
+    for (const [source,input,expected] of [
+        ['program p; var value:1..3; begin value:=2; readln(value) end.','4\n',2],
+        ["program p; var value:'a'..'c'; begin value:='b'; readln(value) end.",'z\n',98],
+        ['program p; var value:1..3; begin value:=3; inc(value) end.','',3],
+        ['program p; var value:1..3; begin value:=2; value:=4 end.','',2]
+    ]) {
+        const result = compile(source);
+        assert(!result.diagnostic, JSON.stringify(result.diagnostic));
+        const host = createPas2WasmRuntime(input, () => {});
+        const {instance} = await WebAssembly.instantiate(result.binary, {pas2wasm_v1:host.imports});
+        host.attach(instance);
+        assert.throws(() => instance.exports.run(), error => error.code === 'R_RANGE');
+        const memory = new DataView(instance.exports.memory.buffer);
+        assert.equal(memory.getInt32(262144, true), expected, 'Failed narrowing changed its payload');
+        assert.equal(memory.getUint8(262152), 1, 'Failed narrowing changed initialization');
+    }
+}
+
 /* Run a development tool with bounded runtime and useful failure output. */
 function tool(command, args, options = {}) {
     const result = spawnSync(command, args, {encoding: 'utf8', timeout: 15000, ...options});
@@ -77,6 +98,7 @@ async function main() {
     verifyStringWrites();
     await require('./io.js')();
     const compile = await createCompiler(require('../build/pas2wasm.js'));
+    await verifySubrangeWrites(compile);
     const version = fs.readFileSync(path.join(__dirname, '../VERSION'), 'utf8').trim();
     assert.equal(compile.version, version, 'Wasm compiler embeds VERSION');
     assert.equal(tool(nativeExecutable, ['--version']).stdout, `Pas2Wasm ${version}\n`);

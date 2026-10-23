@@ -363,6 +363,16 @@ int main(void)
     assert(cell->kind == LV_INDEX && cell->type == TYPE_INTEGER && cell->index->integer == 3);
     assert(cell->base->kind == LV_INDEX && cell->base->index->integer == 0);
     program_destroy(&program);
+    const char *range_program = "program p; type Small=1..3; var value:Small; begin value:=2 end.";
+    assert(frontend_parse(&program, range_program, strlen(range_program), &diagnostic));
+    ValueType constrained_type = program.symbols[0].type;
+    assert(constrained_type->kind == TYPE_KIND_SUBRANGE && type_value(constrained_type) == TYPE_INTEGER);
+    assert(constrained_type->lower == 1 && constrained_type->upper == 3);
+    Expr *narrowed = program.body->body->expression;
+    assert(narrowed->kind == EX_RANGE_CHECK && narrowed->type == TYPE_INTEGER);
+    assert(narrowed->constraint == constrained_type && narrowed->left->integer == 2);
+    assert(program.body->body->target->type == constrained_type);
+    program_destroy(&program);
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));
     assert(!frontend_parse(&program, invalid, strlen(invalid), &diagnostic));

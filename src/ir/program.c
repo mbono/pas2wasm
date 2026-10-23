@@ -26,6 +26,12 @@ ValueType type_canonical(ValueType type)
     return NULL;
 }
 
+ValueType type_value(ValueType type)
+{
+    type = type_canonical(type);
+    return type && type->kind == TYPE_KIND_SUBRANGE ? type_canonical(type->element) : type;
+}
+
 void *program_allocate(Program *program, size_t size, Diagnostic *diagnostic)
 {
     const char *code = "E_LIMIT", *message = "Program is too complex.";
