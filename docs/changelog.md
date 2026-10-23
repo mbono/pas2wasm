@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.4.0] - 2026-10-23
 
 ### Added
 
@@ -27,6 +27,8 @@
 
 - `inc` is now reserved. Rename variables or routines previously named `inc`.
 - `random` and `randomize` are now reserved; rename existing declarations using them.
+
+## Unreleased
 
 ## [0.3.1] - 2026-10-23
 
