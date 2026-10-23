@@ -173,6 +173,7 @@ The following are deferred, without effort or delivery promises:
 | Sets, enumerations, subranges, `with`, broader Pascal dialects | Chosen syntax, type identity, operations, conversions, and compatibility scope. |
 | Native CPU/OS output | Instruction/object/executable formats, calling conventions, runtime services, and linking. Preserve the backend boundary without placeholder targets or a promised native ABI. |
 | Virtual files, broader I/O, WASI | Capabilities, host interfaces, portability, and offline behavior. |
+| Partial CRT compatibility | Start with a documented subset and directly emitted helpers; extract a separate module if it grows. Browser services retain host imports. See the [planned architecture](architecture.md#planned-crt-compatibility); resolve raw-key input, JSPI, cancellation, and offline behavior before implementation. |
 | Tooling and examples | Debug information, completion, shareable programs/tutorial links, localization, and a Pascal REPL. ANSI emulation/raw keypress input are separate from the current line console. |
 
 Self-hosting, an optimizing/SSA IR, garbage collection, external frontend packages, and

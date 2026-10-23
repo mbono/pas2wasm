@@ -227,6 +227,20 @@ preventing drift without adding a build-time code generator or runtime fetch.
 Third-party support notices accompany compiler assets; the standalone export contains
 only the program and repository-owned host code.
 
+## Planned CRT compatibility
+
+CRT support is planned as a built-in compatibility unit exposing a documented subset,
+initially `readkey`. The compiler will emit the required CRT helpers directly into each
+generated program, with matching optional WAT. A separate precompiled Wasm CRT library
+is not required initially. Browser services such as keyboard events still use narrow
+host-runtime imports; emitted Wasm helpers do not access the DOM directly.
+
+If CRT support grows, its helpers can be extracted into a separate module while
+preserving the Pascal-facing interface. Accepting `uses crt;` will expose only supported
+declarations, without implying full CRT compatibility; unavailable routines remain
+compile-time errors. This describes future implementation direction, not current
+language support.
+
 ## Platform references
 
 - [WebAssembly core specification](https://webassembly.github.io/spec/core/) and
