@@ -6,6 +6,8 @@
 
 - Checked `inc(integer_storage)` with once-evaluated destinations, alias/control
   protection, and the unchanged tutorial multiplication-table example.
+- Interleaved declaration sections and routines in global/local scopes, preserving
+  source-order visibility and counted-control effects for globals declared later.
 
 ### Compatibility changes
 

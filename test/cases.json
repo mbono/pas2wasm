@@ -1902,12 +1902,14 @@
     {
         "name": "alias_order",
         "source": "program demo; var n:integer; type T=integer; begin end.",
-        "error": "E_UNSUPPORTED"
+        "output": "",
+        "portable": true
     },
     {
         "name": "alias_type_before_const",
         "source": "program demo; type T=integer; const n=1; begin end.",
-        "error": "E_UNSUPPORTED"
+        "output": "",
+        "portable": true
     },
     {
         "name": "alias_reserved_type",
@@ -6023,5 +6025,73 @@
         "name": "increment_missing_parentheses",
         "source": "program p; begin inc end.",
         "error": "E_SYNTAX"
+    },
+    {
+        "name": "tutorial_parametri",
+        "source": "program parametri;\nprocedure foo(a,b: integer; var c: integer);\n{a e b sono parametri valore mentre c è variabile}\nbegin\n\ta := a * a;\t{modifica locale}\n\twriteln('local a = ', a);\n\tb := b * b;\t{modifica locale}\n\twriteln('local b = ', b);\n\tc := a + b;\t{modifica globale}\n\twriteln('local c = ', c);\nend;\nvar a, b, c: integer;\nbegin\n\ta := 10;\n\tb := 5;\n\tc := 0;\n\tfoo(a, b, c);\n\twriteln('global a = ', a);\n\twriteln('global b = ', b);\n\twriteln('global c = ', c);\n\t{\n\tdopo questa chiamata abbiamo:\n\tc = 125\n\ta = 10\n\tb = 5\n\ti valori di a e b sono invariati mentre quello di c è stato\n\tmodificato\n\t}\nend.\n",
+        "output": "local a = 100\nlocal b = 25\nlocal c = 125\nglobal a = 10\nglobal b = 5\nglobal c = 125\n",
+        "portable": true
+    },
+    {
+        "name": "tutorial_subroutine",
+        "source": "program subroutine_test;\n\nfunction somma(a, b: integer): integer;\nbegin\n\tsomma := a + b;\nend;\n\nprocedure stampa_somma(a, b: integer);\nbegin\n\twriteln(a, ' + ', b, ' = ', a + b);\nend;\n\nfunction sqr(a: integer): integer;\nbegin\n\tsqr := a * a;\nend;\n\nprocedure foo(a,b: integer; var c: integer);\n{a e b sono parametri valore mentre c è variabile}\nbegin\n\ta := a * a;\t{modifica locale}\n\tb := b * b;\t{modifica locale}\n\tc := a + b;\t{modifica globale}\nend;\n\nvar a, b, n: integer;\nbegin\n\twriteln('inserisci due numeri:');\n\treadln(a, b);\n\tn := somma(a, b);\n\twriteln(a, ' + ', b, ' = ', a + b);\n\twriteln(a, ' + ', b, ' = ', somma(a, b));\n\tstampa_somma(a, b);\n\tfoo(a, b, n);\n\twriteln(a, ' ', b,' ', n);\nend.\n",
+        "input": "2 3\n",
+        "output": "inserisci due numeri:\n2 + 3 = 5\n2 + 3 = 5\n2 + 3 = 5\n2 3 13\n",
+        "portable": true
+    },
+    {
+        "name": "declarations_nested_sections",
+        "source": "program p; procedure outer; var n:integer; procedure child; begin inc(n) end; const k=3; type Count=integer; var m:Count; begin n:=1; m:=k; child; writeln(n,m) end; var result:integer; begin result:=7; outer; writeln(result) end.",
+        "output": "23\n7\n",
+        "portable": true
+    },
+    {
+        "name": "declarations_forward_late_global",
+        "source": "program p; procedure step; forward; var n:integer; procedure step; begin inc(n) end; var m:integer; begin n:=4; m:=9; step; writeln(n,m) end.",
+        "output": "59\n",
+        "portable": true
+    },
+    {
+        "name": "declarations_duplicate_after_routine",
+        "source": "program p; procedure step; begin end; var step:integer; begin end.",
+        "error": "E_DUPLICATE"
+    },
+    {
+        "name": "declarations_later_name_invisible",
+        "source": "program p; procedure step; begin inc(n) end; var n:integer; begin end.",
+        "error": "E_UNKNOWN"
+    },
+    {
+        "name": "declarations_unresolved_forward",
+        "source": "program p; procedure step; forward; var n:integer; begin end.",
+        "error": "E_FORWARD"
+    },
+    {
+        "name": "declarations_pointer_section_boundary",
+        "source": "program p; type PCell=^Cell; var n:integer; type Cell=integer; begin end.",
+        "error": "E_TYPE_FORWARD"
+    },
+    {
+        "name": "declarations_repeated_sections",
+        "source": "program p; var n:integer; const k=2; type Count=integer; var m:Count; const q=k+3; begin n:=k; m:=q; writeln(n,m) end.",
+        "output": "25\n",
+        "portable": true
+    },
+    {
+        "name": "declarations_late_global_effect_bounds",
+        "source": "program p; var first:integer; procedure early; begin first:=1 end; var g0,g1,g2,g3,g4,g5,g6,g7,g8,g9,g10,g11,g12,g13,g14,g15,g16,g17,g18,g19,g20,g21,g22,g23,g24,g25,g26,g27,g28,g29,g30,g31,g32,g33,g34,g35,g36,g37,g38,g39,g40,g41,g42,g43,g44,g45,g46,g47,g48,g49,g50,g51,g52,g53,g54,g55,g56,g57,g58,g59,g60,g61,g62,g63,g64,g65,g66,g67,g68,g69:integer; procedure late; begin inc(g69) end; begin first:=0; g69:=4; early; late; writeln(first,g69) end.",
+        "output": "15\n",
+        "portable": true
+    },
+    {
+        "name": "declarations_late_global_control",
+        "source": "program p; var first:integer; procedure early; begin first:=1 end; var g0,g1,g2,g3,g4,g5,g6,g7,g8,g9,g10,g11,g12,g13,g14,g15,g16,g17,g18,g19,g20,g21,g22,g23,g24,g25,g26,g27,g28,g29,g30,g31,g32,g33,g34,g35,g36,g37,g38,g39,g40,g41,g42,g43,g44,g45,g46,g47,g48,g49,g50,g51,g52,g53,g54,g55,g56,g57,g58,g59,g60,g61,g62,g63,g64,g65,g66,g67,g68,g69:integer; procedure late; begin inc(g69) end; begin for g69:=1 to 2 do late end.",
+        "error": "E_FOR_CONTROL"
+    },
+    {
+        "name": "declarations_disjoint_global_effects",
+        "source": "program p; var first:integer; procedure early; begin first:=1 end; var g0,g1,g2,g3,g4,g5,g6,g7,g8,g9,g10,g11,g12,g13,g14,g15,g16,g17,g18,g19,g20,g21,g22,g23,g24,g25,g26,g27,g28,g29,g30,g31,g32,g33,g34,g35,g36,g37,g38,g39,g40,g41,g42,g43,g44,g45,g46,g47,g48,g49,g50,g51,g52,g53,g54,g55,g56,g57,g58,g59,g60,g61,g62,g63,g64,g65,g66,g67,g68,g69:integer; procedure late; begin inc(g69) end; begin g69:=4; for first:=1 to 2 do late; writeln(g69) end.",
+        "output": "6\n",
+        "portable": true
     }
 ]

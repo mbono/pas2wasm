@@ -30,8 +30,8 @@ void frontend_effects(Program *program)
     for (Routine *caller = program->routines; caller; caller = caller->next) {
         for (const Routine *callee = program->routines; callee; callee = callee->next) {
             if (reaches(caller, callee->index)) {
-                for (size_t slot = 0; slot < program->global_count; ++slot) {
-                    caller->writes[slot] |= callee->writes[slot];
+                for (size_t word = 0; word < P2W_WRITE_WORDS; ++word) {
+                    caller->writes[word] |= callee->writes[word];
                 }
             }
         }

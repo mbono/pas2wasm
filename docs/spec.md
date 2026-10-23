@@ -154,6 +154,7 @@ add unchanged source text only for examples resolved by the current increment.
 | Increment | Resolved contract and acceptance |
 | --- | --- |
 | Checked increment | Reserve `inc`; accept only `inc(storage)` for writable integer storage. Evaluate its path once, read its initialized value, and add one with existing overflow and counted-control checks. Preserve heap borrows and owning-result flags. Reject constants, other types, nonstorage expressions, and extra arguments. Cover aliases, captures, side-effecting indexes, uninitialized/overflow failures, and unchanged `tabellina.pas`. No new host imports or ABI. |
+| Flexible declarations | Permit repeated const/type/var/routine sections before the body in global and routine scopes. Bind declarations in source order; later names remain invisible to earlier routine bodies. Resolve pointer forwards within their own type section and routine forwards at scope end. Keep duplicate/shadowing/storage limits unchanged and bound global-write effects independently of declaration order. Accept unchanged `parametri.pas` and `subroutine.pas`, plus late globals, nested captures, forwards, and counted-control effects. No new host imports or ABI. |
 
 ## Future scope and design gates
 

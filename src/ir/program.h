@@ -11,6 +11,8 @@
 #define P2W_CASE_LABEL_LIMIT 1024
 #define P2W_ROUTINE_LIMIT 128
 #define P2W_CALL_WORDS (P2W_ROUTINE_LIMIT / 64)
+#define P2W_SYMBOL_LIMIT 4096
+#define P2W_WRITE_WORDS (P2W_SYMBOL_LIMIT / 64)
 #define P2W_STRING_LIMIT (1024u * 1024u)
 #define P2W_CONSTANT_TEXT_LIMIT (8u * 1024u * 1024u)
 
@@ -207,7 +209,8 @@ typedef struct {
 /* Lexically scoped routine with identity fixed at its first header. Signature types
  * are independent of body parameter names/storage. Parameters precede locals in
  * the flat symbol array once defined. calls is a frontend reachability bitset;
- * writes starts with direct global-slot effects, then includes reachable callees.
+ * writes is a bounded global-slot bitset, including globals declared later in scope;
+ * direct effects are extended with reachable callees after parsing.
  * Names, signature, body, and writes belong to the arena. */
 struct Routine {
     const char *name;
@@ -220,7 +223,7 @@ struct Routine {
     size_t result_symbol;
     unsigned line, column;
     uint64_t calls[P2W_CALL_WORDS];
-    unsigned char *writes;
+    uint64_t writes[P2W_WRITE_WORDS];
     Stmt *body;
     Routine *parent;             /* Lexical declaration scope; NULL denotes program scope. */
     Routine *children, *sibling; /* Scope lookup; next remains the stable flat order. */

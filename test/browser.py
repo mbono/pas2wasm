@@ -315,6 +315,8 @@ def verify_browser(kind, base_url, cases, directory):
                     for name, case_name in {
                         'identifiers':'identifier_underscore_declarations', 'streamio':'io_same_line',
                         'increment':'tutorial_tabellina',
+                        'declarationorder':'tutorial_parametri',
+                        'declarationcalls':'tutorial_subroutine',
                         'loops':'for_mixed_loops', 'routines':'procedure_recursion',
                         'functions':'function_factorial', 'exit':'exit_recursive_function',
                         'case':'case_exit_function', 'constants':'constant_scopes',

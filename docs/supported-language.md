@@ -37,10 +37,7 @@ Declaration sections are optional and appear before the main `begin ... end.`:
 
 ```text
 program name;
-[const declarations]
-[type declarations]
-[var declarations]
-[procedure and function declarations]
+[source-ordered const/type/var sections and routine declarations]
 begin
   statements
 end.
@@ -80,7 +77,7 @@ their own namespace.
 
 ### Constants
 
-Declare global or local constants before variables:
+Declare global or local constants before using them:
 
 ```pascal
 const
@@ -114,8 +111,9 @@ Aliases share their target's identity: `Count` and `integer` are compatible. The
 in variables, parameters, and function return types without conversions or extra runtime
 storage. Type names are not values.
 
-Declare sections in order `const`, `type`, `var`, then routines; each section is
-optional. Local aliases follow the routine header, before variables. Only earlier
+Const/type/var sections and routines may repeat and interleave before the block body.
+Declarations become visible in source order; earlier routine bodies cannot use later
+declarations. Local sections follow the routine header. Only earlier
 visible type names are allowed, except for the pointer targets described below.
 Duplicate names in one scope use `E_DUPLICATE`; locals may shadow globals. Unknown
 by-value, self, or forward type names use `E_UNKNOWN`; non-type aliases or type names
@@ -282,8 +280,8 @@ end;
 
 ### Calls and local scope
 
-Program-level procedures and functions follow global variable declarations and precede
-the main block. Value parameters support scalar, array, and record types; argument
+Program-level procedures, functions, and global sections precede the main block and may
+interleave. Value parameters support scalar, array, and record types; argument
 counts and types must match, allowing integer-to-real value widening. Arguments evaluate
 left-to-right. Zero-parameter declarations/calls may omit parentheses or use `()`.
 Parameter groups use semicolons; names within a group use commas. Arity errors use
@@ -360,7 +358,7 @@ intentionally differ from FPC, which rejects that syntax.
 
 ### Nested routines and captures
 
-Nested procedures/functions may follow local const/type/var sections. They see lexically
+Nested procedures/functions may interleave with local const/type/var sections. They see lexically
 enclosing declarations, earlier siblings, and same-scope forwards. Nearest declarations
 shadow ancestors, even between routine/value/type names; collisions in one scope are
 invalid. Inner names do not leak outside their parent.
@@ -719,14 +717,15 @@ requirements, type checks, and other constraints are defined in the sections abo
 rather than repeated as grammar rules.
 
 ```text
-program     = "program" identifier ";" [constants] [types] [variables] {routine} compound "." EOF ;
+program     = "program" identifier ";" declarations compound "." EOF ;
+declarations = {constants | types | variables | routine} ;
 constants   = "const" identifier "=" expression ";" {identifier "=" expression ";"} ;
 types       = "type" identifier "=" type ";" {identifier "=" type ";"} ;
 variables   = "var" declaration {declaration} ;
 declaration = identifier {"," identifier} ":" type ";" ;
 routine     = ("procedure" identifier [parameters]
               | "function" identifier [parameters] ":" type)
-              ";" ("forward" ";" | [constants] [types] [variables] {routine} compound ";") ;
+              ";" ("forward" ";" | declarations compound ";") ;
 parameters  = "(" [parameter_group {";" parameter_group}] ")" ;
 parameter_group = ["var"] declaration_group ;
 declaration_group = identifier {"," identifier} ":" type ;

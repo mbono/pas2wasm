@@ -618,7 +618,8 @@ static const char *normalized_name(Parser *p, Token name)
 static void record_write(Parser *p, size_t symbol)
 {
     if (symbol != SIZE_MAX && p->routine && p->program->symbols[symbol].owner == SIZE_MAX) {
-        p->routine->writes[p->program->symbols[symbol].slot] = 1;
+        size_t slot = p->program->symbols[symbol].slot;
+        p->routine->writes[slot / 64] |= UINT64_C(1) << (slot % 64);
     }
 }
 
@@ -1598,7 +1599,7 @@ static void declare(Parser *p, Token name, int result, SymbolKind kind)
         (p->routine && !result && same_name(name.text, name.length, p->routine->name))) {
         fail_at(p, "E_DUPLICATE", "Duplicate declaration in this scope.", name.line, name.column);
     }
-    if (program->symbol_count == 4096 ||
+    if (program->symbol_count == P2W_SYMBOL_LIMIT ||
         (kind == SYMBOL_VARIABLE && p->routine && p->routine->symbol_count == 256)) {
         fail(p, "E_LIMIT", "Too many declarations in the program or variables in the routine.");
     }
@@ -1932,8 +1933,9 @@ static void validate_call(Parser *p, const Routine *routine, unsigned line, unsi
                           const ForControl *control)
 {
     for (const ForControl *c = control; c; c = c->outer) {
+        size_t slot = p->program->symbols[c->symbol].slot;
         if (p->program->symbols[c->symbol].owner == SIZE_MAX &&
-            routine->writes[p->program->symbols[c->symbol].slot]) {
+            (routine->writes[slot / 64] & (UINT64_C(1) << (slot % 64)))) {
             fail_at(p, "E_FOR_CONTROL", "Routine may modify an active for control variable.", line,
                     column);
         }
@@ -2017,7 +2019,6 @@ static Routine *routine_header(Parser *p, Token header, Token name, Routine *pre
         Routine **children = p->routine ? &p->routine->children : &p->program->root_routines;
         routine->sibling = *children;
         *children = routine;
-        routine->writes = allocate(p, p->program->global_count + 1);
         Routine **tail = &p->program->routines;
         while (*tail) {
             tail = &(*tail)->next;
@@ -2087,6 +2088,9 @@ static Routine *match_forward(Parser *p, Routine *forward, Routine *body, Token 
     return forward;
 }
 
+/* Parse source-ordered sections and routines in the current lexical scope. */
+static void declarations(Parser *p);
+
 /* Parse a forward/definition in its lexical scope, restoring parser boundaries. */
 static void parse_routine(Parser *p)
 {
@@ -2123,12 +2127,7 @@ static void parse_routine(Parser *p)
         routine = match_forward(p, previous, routine, name);
     }
     p->routine = routine;
-    constants(p);
-    types(p);
-    variables(p);
-    while (p->token.kind == TK_PROCEDURE || p->token.kind == TK_FUNCTION) {
-        parse_routine(p);
-    }
+    declarations(p);
     for (const Routine *child = p->program->routines; child; child = child->next) {
         if (child->parent == routine && !child->defined) {
             fail_at(p, "E_FORWARD", "Nested forward has no definition in this scope.", child->line,
@@ -2147,6 +2146,31 @@ static void parse_routine(Parser *p)
     --p->depth;
 }
 
+/* Each section installs names immediately; later sections cannot retroactively
+ * affect already parsed bodies. Forward declarations retain their existing gates. */
+static void declarations(Parser *p)
+{
+    for (;;) {
+        switch (p->token.kind) {
+        case TK_CONST:
+            constants(p);
+            break;
+        case TK_TYPE:
+            types(p);
+            break;
+        case TK_VAR:
+            variables(p);
+            break;
+        case TK_PROCEDURE:
+        case TK_FUNCTION:
+            parse_routine(p);
+            break;
+        default:
+            return;
+        }
+    }
+}
+
 /* Parse globals, program-level routines, and the main compound body. */
 static void parse_program(Parser *p)
 {
@@ -2154,12 +2178,7 @@ static void parse_program(Parser *p)
     expect(p, TK_PROGRAM, "Expected 'program'.");
     expect(p, TK_NAME, "Expected a program name.");
     expect(p, TK_SEMICOLON, "Expected ';' after program name.");
-    constants(p);
-    types(p);
-    variables(p);
-    while (p->token.kind == TK_PROCEDURE || p->token.kind == TK_FUNCTION) {
-        parse_routine(p);
-    }
+    declarations(p);
     if (p->token.kind != TK_BEGIN) {
         fail(p, "E_UNSUPPORTED", "Expected the main 'begin' block; this construct is unsupported.");
     }

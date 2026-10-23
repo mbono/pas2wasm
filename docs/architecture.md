@@ -43,6 +43,11 @@ backend indices. Unified lookup selects the nearest declaration across
 value/type/routine kinds; implicit function results keep their associated callable
 identity. Record members have separate namespaces.
 
+Declaration sections and routine bodies are parsed in source order in every scope;
+later declarations do not change bindings already resolved in earlier bodies. Global
+write summaries use fixed bounded bitsets covering all possible global slots, so adding
+globals after a routine never invalidates its effect storage or closure computation.
+
 A forward registers a stable signature rather than permanent parameter bindings.
 Temporary header bindings are rolled back; the definition installs its own names and
 location. Explicit value/reference modes and canonical types are compared. A separate
