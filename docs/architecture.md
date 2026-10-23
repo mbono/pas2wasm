@@ -70,6 +70,8 @@ typed nodes. Character folding uses owned bounded UTF-8 helpers.
 
 Boolean comparisons retain Boolean operand types and use ordinal `false < true`
 ordering in both constant evaluation and lowering; they introduce no numeric coercion.
+Mixed character/string relations insert the same explicit one-scalar string widening
+used by concatenation, reusing lexical comparison and its alias-safe snapshots.
 
 ## Lvalues, frames, and value semantics
 

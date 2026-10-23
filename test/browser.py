@@ -318,6 +318,7 @@ def verify_browser(kind, base_url, cases, directory):
                         'declarationorder':'tutorial_parametri',
                         'declarationcalls':'tutorial_subroutine',
                         'booleanorder':'boolean_order_runtime',
+                        'mixedtext':'tutorial_if_else',
                         'loops':'for_mixed_loops', 'routines':'procedure_recursion',
                         'functions':'function_factorial', 'exit':'exit_recursive_function',
                         'case':'case_exit_function', 'constants':'constant_scopes',

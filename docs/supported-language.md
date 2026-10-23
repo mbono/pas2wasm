@@ -467,8 +467,10 @@ frames or expressions can fail with `R_MEMORY`.
 `char` is one Unicode scalar (U+0000 through U+10FFFF, excluding surrogates).
 `c:=chr(128512); writeln(c,ord(c));` prints `😀128512`. Quoted one-scalar literals and
 named constants convert to char where a char value is required. Other string expressions
-need indexing. Chars widen to strings for value assignment and `+`; integers/Booleans
-remain distinct. Char comparisons are ordinal, with all six relations; char is not a
+need indexing. Chars widen to strings for value assignment, `+`, and comparisons with
+strings in either operand order, including empty strings. Mixed comparisons use the
+same Unicode lexical order as string/string comparisons; integers/Booleans remain
+distinct. Char/char comparisons are ordinal, with all six relations; char is not a
 numeric arithmetic type, index, counted control, or case selector. Invalid chr values
 fail with `R_CHARACTER` (or `E_CHARACTER` in constants).
 

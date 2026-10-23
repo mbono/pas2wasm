@@ -1118,11 +1118,18 @@ static Expr *expression(Parser *p)
             } else {
                 right = coerce(p, right, left->type, op);
             }
-        } else if (left->type == TYPE_CHARACTER || right->type == TYPE_CHARACTER) {
-            left = coerce(p, left, TYPE_CHARACTER, op);
-            right = coerce(p, right, TYPE_CHARACTER, op);
-        } else if (left->type->kind == TYPE_KIND_STRING && right->type->kind == TYPE_KIND_STRING) {
-            /* Capacity does not affect lexicographic value comparison. */
+        } else if ((left->type == TYPE_CHARACTER || left->type->kind == TYPE_KIND_STRING) &&
+                   (right->type == TYPE_CHARACTER || right->type->kind == TYPE_KIND_STRING)) {
+            /* Two characters remain ordinal; mixed text uses one-scalar widening.
+             * Declared capacities never restrict lexical value comparisons. */
+            if (left->type->kind == TYPE_KIND_STRING || right->type->kind == TYPE_KIND_STRING) {
+                if (left->type == TYPE_CHARACTER) {
+                    left = coerce(p, left, string_type(p, 4, op), op);
+                }
+                if (right->type == TYPE_CHARACTER) {
+                    right = coerce(p, right, string_type(p, 4, op), op);
+                }
+            }
         } else if (left->type != TYPE_BOOLEAN || right->type != TYPE_BOOLEAN) {
             fail_at(p, "E_TYPE", "Invalid comparison operand types.", op.line, op.column);
         }

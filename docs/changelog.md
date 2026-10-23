@@ -9,6 +9,8 @@
 - Interleaved declaration sections and routines in global/local scopes, preserving
   source-order visibility and counted-control effects for globals declared later.
 - All six Boolean comparisons in runtime and constant expressions, with `false < true`.
+- Character/string comparisons in either order using Unicode lexical ordering and
+  existing operand snapshots, including the unchanged tutorial `if_else` source.
 
 ### Compatibility changes
 

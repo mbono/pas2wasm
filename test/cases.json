@@ -6137,5 +6137,55 @@
         "name": "boolean_order_chain_rejected",
         "source": "program p; begin writeln(false<true<true) end.",
         "error": "E_SYNTAX"
+    },
+    {
+        "name": "tutorial_if_else",
+        "source": "program if_else;\nvar a,b: integer;\nc: char;\nbegin\n\twriteln('inserisci due numeri: ');\n\treadln(a, b);\n\tif (a < b) then\n\t\twriteln(a, ' < ', b)\n\telse if (a = b) then\n\t\twriteln(a, ' = ', b)\n\telse\n\t\twriteln(a, ' > ', b);\n\n\tif ('c' < 'd') then\n\t\twriteln('ok');\n\tc := 'c';\n\tif (false < true) then\n\t\twriteln('false < true');\n\n\tif (c < 'd') then\n\t\twriteln('c < d');\n\tif (c < 'prova') then\n\t\twriteln('c < prova');\n\n\ta := 10;\n\tif (a < 29.2) then\n\t\twriteln('10 < 29.2');\n\n\tif (ord('c') < 10) then\n\t\twriteln('boh');\nend.\n",
+        "input": "2 3\n",
+        "output": "inserisci due numeri: \n2 < 3\nok\nfalse < true\nc < d\nc < prova\n10 < 29.2\n",
+        "portable": true
+    },
+    {
+        "name": "character_string_relations",
+        "source": "program p; var c:char; s:string; begin c:='b'; s:='bc'; writeln(c=s,c<>s,c<s,c<=s,c>s,c>=s); writeln(s=c,s<>c,s<c,s<=c,s>c,s>=c) end.",
+        "output": "FALSETRUETRUETRUEFALSEFALSE\nFALSETRUEFALSEFALSETRUETRUE\n",
+        "portable": true
+    },
+    {
+        "name": "character_string_empty_and_equal",
+        "source": "program p; var c:char; begin c:='a'; writeln(c='',c>'',''<c,c='a','a'=c) end.",
+        "output": "FALSETRUETRUETRUETRUE\n",
+        "portable": true
+    },
+    {
+        "name": "character_string_unicode",
+        "source": "program p; var c:char; s:string; begin c:='😀'; s:='😀x'; writeln(c<s,s>c,c='😀',chr(233)<'😀') end.",
+        "output": "TRUETRUETRUETRUE\n"
+    },
+    {
+        "name": "character_string_constants",
+        "source": "program p; const c=chr(99); a=c<'prova'; b='c'=c; d=''<c; begin writeln(a,b,d) end.",
+        "output": "TRUETRUETRUE\n",
+        "portable": true
+    },
+    {
+        "name": "character_string_left_snapshot",
+        "source": "program p; var s:string[2]; function change:char; begin s:='z'; change:='b' end; begin s:='a'; writeln(s<change,s) end.",
+        "output": "TRUEz\n"
+    },
+    {
+        "name": "character_string_right_snapshot",
+        "source": "program p; var c:char; function change:string; begin c:='z'; change:='b' end; begin c:='a'; writeln(c<change,c) end.",
+        "output": "TRUEz\n"
+    },
+    {
+        "name": "character_string_uninitialized_char",
+        "source": "program p; var c:char; begin writeln(c<'word') end.",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "character_string_uninitialized_string",
+        "source": "program p; var s:string; begin writeln(s<chr(99)) end.",
+        "runtime": "R_UNINITIALIZED"
     }
 ]
