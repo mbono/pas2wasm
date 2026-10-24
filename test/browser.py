@@ -328,6 +328,7 @@ def verify_browser(kind, base_url, cases, directory):
                         'enumerations':'tutorial_enum_demo', 'enumvalues':'enum_ordinals_and_names',
                         'enumarrays':'ordinal_mixed_matrix',
                         'sets':'tutorial_set_demo', 'ordinalsets':'set_unicode_domain',
+                        'withrecords':'with_record_values', 'withheap':'with_heap_alias',
                         'loops':'for_mixed_loops', 'routines':'procedure_recursion',
                         'functions':'function_factorial', 'exit':'exit_recursive_function',
                         'case':'case_exit_function', 'constants':'constant_scopes',
@@ -413,6 +414,7 @@ def verify_browser(kind, base_url, cases, directory):
             'subrange_error':next(t['source'] for t in cases if t['name']=='subrange_assignment_range'),
             'enum_error':next(t['source'] for t in cases if t['name']=='enum_inc_range'),
             'set_error':next(t['source'] for t in cases if t['name']=='set_constructor_range_location'),
+            'with_error':next(t['source'] for t in cases if t['name']=='with_heap_lifetime'),
             'string_error':next(t['source'] for t in cases if t['name']=='string_capacity_location'),
             'string_memory':next(t['source'] for t in cases if t['name']=='string_frame_budget'),
             'character_error':next(t['source'] for t in cases if t['name']=='character_chr_location'),
@@ -483,11 +485,11 @@ def verify_browser(kind, base_url, cases, directory):
                     browser.wait("document.getElementById('status').textContent==='Completed'")
                     assert browser.js("return document.getElementById('output').textContent;")==examples[name]['output']
                     assert browser.js("return document.querySelectorAll('img').length;")==0
-            elif name in ('frame_error','bounds_error','control_error','real_error','subrange_error','enum_error','set_error','string_error','string_memory','character_error','character_bounds','character_memory','pointer_nil','pointer_dangling','pointer_release','pointer_lifetime','pointer_memory','pointer_borrow_memory'):
+            elif name in ('frame_error','bounds_error','control_error','real_error','subrange_error','enum_error','set_error','with_error','string_error','string_memory','character_error','character_bounds','character_memory','pointer_nil','pointer_dangling','pointer_release','pointer_lifetime','pointer_memory','pointer_borrow_memory'):
                 for _ in range(2):
                     browser.js("document.getElementById('run').click();")
                     browser.wait("document.getElementById('status').textContent==='Failed'")
-                    assert ({'frame_error':'R_MEMORY','bounds_error':'R_BOUNDS','control_error':'R_FOR_CONTROL','real_error':'R_REAL_RANGE','subrange_error':'R_RANGE','enum_error':'R_RANGE','set_error':'R_SET_RANGE','string_error':'R_STRING_CAPACITY','string_memory':'R_MEMORY','character_error':'R_CHARACTER','character_bounds':'R_BOUNDS','character_memory':'R_MEMORY','pointer_nil':'R_NIL','pointer_dangling':'R_DANGLING','pointer_release':'R_DISPOSE','pointer_lifetime':'R_LIFETIME','pointer_memory':'R_MEMORY','pointer_borrow_memory':'R_MEMORY'}[name]) in browser.js("return document.getElementById('diagnostics').textContent;")
+                    assert ({'frame_error':'R_MEMORY','bounds_error':'R_BOUNDS','control_error':'R_FOR_CONTROL','real_error':'R_REAL_RANGE','subrange_error':'R_RANGE','enum_error':'R_RANGE','set_error':'R_SET_RANGE','with_error':'R_LIFETIME','string_error':'R_STRING_CAPACITY','string_memory':'R_MEMORY','character_error':'R_CHARACTER','character_bounds':'R_BOUNDS','character_memory':'R_MEMORY','pointer_nil':'R_NIL','pointer_dangling':'R_DANGLING','pointer_release':'R_DISPOSE','pointer_lifetime':'R_LIFETIME','pointer_memory':'R_MEMORY','pointer_borrow_memory':'R_MEMORY'}[name]) in browser.js("return document.getElementById('diagnostics').textContent;")
             elif name=='result_error':
                 browser.js("document.getElementById('run').click();")
                 browser.wait("document.getElementById('status').textContent==='Failed'")

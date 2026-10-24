@@ -9,12 +9,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Saved record aliases retain addresses, roots, and expression-arena/borrow floors.
+ * Entries live on the lowering stack; local indexes name runtime saved values. */
+typedef struct WithContext {
+    size_t binding, address, root;
+    size_t top, pins, entry_top, entry_pins;
+    const struct WithContext *outer;
+} WithContext;
+
 /* Absolute Wasm label depths for the nearest Pascal loop. Entries borrow their
  * parent and live on the recursive lowering stack. */
 typedef struct Loop {
     unsigned stop, resume;
     size_t control; /* Counted control to invalidate on routine exit; SIZE_MAX otherwise. */
     const struct Loop *outer;
+    const WithContext *with_scope; /* Bindings retained by break/continue to this loop. */
 } Loop;
 
 /* Backend cache owns only target offsets. Logical names/types remain borrowed
@@ -395,6 +404,23 @@ static void emit_lvalue(Wasm *w, const Lvalue *value)
 /* Resolve a path while retaining the correct owning written root across selectors. */
 static void emit_path(Wasm *w, const Lvalue *value, size_t root)
 {
+    if (value->kind == LV_WITH) {
+        const WithContext *scope = w->with_scope;
+        while (scope && scope->binding != value->binding) {
+            scope = scope->outer;
+        }
+        if (!scope) {
+            w->code.failed = 1;
+            constant(w, 0, 0);
+            return;
+        }
+        indexed(w, 0x20, "local.get", scope->address);
+        if (root != SIZE_MAX) {
+            indexed(w, 0x20, "local.get", scope->root);
+            indexed(w, 0x21, "local.set", root);
+        }
+        return;
+    }
     if (value->kind == LV_SYMBOL) {
         symbol_address(w, value->symbol);
         if (root != SIZE_MAX) {
@@ -1092,15 +1118,26 @@ static void release_frame_borrows(Wasm *w)
     }
 }
 
-/* Discard expression results after their scalar/copy consumer has finished.
- * Resetting on every loop test prevents transient results accumulating per iteration. */
-static void discard_temporaries(Wasm *w)
+/* Restore an explicit lexical floor, retaining only its captured alias leases. */
+static void discard_scope_temporaries(Wasm *w, const WithContext *scope)
 {
+    if (scope) {
+        release_borrows(w, scope->pins);
+        indexed(w, 0x20, "local.get", scope->top);
+        indexed(w, 0x24, "global.set", 1);
+        return;
+    }
     release_frame_borrows(w);
     indexed(w, 0x20, "local.get", w->frame_local);
     constant(w, 0, w->routine ? (int64_t)w->layout.frames[w->routine->index] : WASM_FRAME_HEADER);
     op(w, 0x6a, "i32.add");
     indexed(w, 0x24, "global.set", 1);
+}
+
+/* Discard consumed expression storage after statements and loop tests. */
+static void discard_temporaries(Wasm *w)
+{
+    discard_scope_temporaries(w, w->with_scope);
 }
 
 /* Reserve private snapshot/result storage; callers manage its bounded lifetime. */
@@ -1120,6 +1157,19 @@ static void restore_top(Wasm *w, size_t base, size_t size)
         op(w, 0x6a, "i32.add");
     }
     indexed(w, 0x24, "global.set", 1);
+}
+
+/* Transfers unwind only aliases whose scopes they leave. In-scope loops retain
+ * their owners, while outward branches release leases before reusing their arena. */
+static void unwind_with(Wasm *w, const WithContext *retained)
+{
+    for (const WithContext *scope = w->with_scope; scope != retained; scope = scope->outer) {
+        release_borrows(w, scope->entry_pins);
+        restore_top(w, scope->entry_top, 0);
+    }
+    /* A transfer can skip the enclosing case/statement's ordinary cleanup even
+     * when it exits no with binding. Keep its target floor, not those temporaries. */
+    discard_scope_temporaries(w, retained);
 }
 
 /* Snapshot each aggregate before later arguments run. Callee frames own separate
@@ -1469,6 +1519,31 @@ static void set_expression(Wasm *w, const Expr *e)
 /* Forward declaration permits counted-loop bodies to contain any statement. */
 static void emit_statement(Wasm *w, const Stmt *s);
 
+/* Capture one record address/root once and keep its private leases below all
+ * body temporaries. Normal and nonlocal completion share the same cleanup contract. */
+static void emit_with(Wasm *w, const Stmt *s)
+{
+    size_t saved = w->next_local;
+    WithContext scope = {.binding = s->symbol, .outer = w->with_scope};
+    scope.entry_top = temporary(w);
+    indexed(w, 0x23, "global.get", 1);
+    indexed(w, 0x21, "local.set", scope.entry_top);
+    scope.entry_pins = borrow_checkpoint(w);
+    scope.address = temporary(w);
+    scope.root = temporary(w);
+    emit_path(w, s->target, scope.root);
+    indexed(w, 0x21, "local.set", scope.address);
+    scope.top = temporary(w);
+    indexed(w, 0x23, "global.get", 1);
+    indexed(w, 0x21, "local.set", scope.top);
+    scope.pins = borrow_checkpoint(w);
+    w->with_scope = &scope;
+    emit_statement(w, s->body);
+    unwind_with(w, scope.outer);
+    w->with_scope = scope.outer;
+    w->next_local = saved;
+}
+
 /* Capture bounds once, protect endpoint stepping, and invalidate the control
  * variable afterward. Nested loops borrow distinct locals; siblings reuse them. */
 static void emit_for(Wasm *w, const Stmt *s)
@@ -1499,7 +1574,7 @@ static void emit_for(Wasm *w, const Stmt *s)
     indexed(w, 0x24, "global.set", 2);
     open_control(w, 0x02, "block");
     open_control(w, 0x03, "loop");
-    Loop loop = {w->depth - 2, w->depth, s->symbol, w->loop};
+    Loop loop = {w->depth - 2, w->depth, s->symbol, w->loop, w->with_scope};
     variable(w, s->symbol, 0, 0);
     indexed(w, 0x20, "local.get", limit);
     op(w, s->descending ? 0x48 : 0x4a, s->descending ? "i32.lt_s" : "i32.gt_s");
@@ -1611,6 +1686,9 @@ static void emit_statement(Wasm *w, const Stmt *s)
         case ST_BLOCK:
             emit_statement(w, s->body);
             break;
+        case ST_WITH:
+            emit_with(w, s);
+            break;
         case ST_ASSIGN:
             emit_assignment(w, s->target, s->expression, s->line, s->column, 0);
             break;
@@ -1636,7 +1714,7 @@ static void emit_statement(Wasm *w, const Stmt *s)
         case ST_WHILE: {
             open_control(w, 0x02, "block");
             open_control(w, 0x03, "loop");
-            Loop loop = {w->depth - 2, w->depth - 1, SIZE_MAX, w->loop};
+            Loop loop = {w->depth - 2, w->depth - 1, SIZE_MAX, w->loop, w->with_scope};
             emit_expression(w, s->expression);
             discard_temporaries(w);
             op(w, 0x45, "i32.eqz");
@@ -1652,7 +1730,7 @@ static void emit_statement(Wasm *w, const Stmt *s)
         case ST_REPEAT: {
             open_control(w, 0x02, "block");
             open_control(w, 0x03, "loop");
-            Loop loop = {w->depth - 2, w->depth, SIZE_MAX, w->loop};
+            Loop loop = {w->depth - 2, w->depth, SIZE_MAX, w->loop, w->with_scope};
             open_control(w, 0x02, "block");
             w->loop = &loop;
             emit_statement(w, s->body);
@@ -1674,6 +1752,7 @@ static void emit_statement(Wasm *w, const Stmt *s)
             break;
         case ST_BREAK:
         case ST_CONTINUE:
+            unwind_with(w, w->loop->with_scope);
             indexed(w, 0x0c, "br",
                     w->depth - (s->kind == ST_BREAK ? w->loop->stop : w->loop->resume) - 1);
             break;
@@ -1684,6 +1763,7 @@ static void emit_statement(Wasm *w, const Stmt *s)
                                  .symbol = w->routine->result_symbol};
                 emit_assignment(w, &result, s->expression, s->line, s->column, 0);
             }
+            unwind_with(w, NULL);
             for (const Loop *loop = w->loop; loop; loop = loop->outer) {
                 if (loop->control != SIZE_MAX) {
                     constant(w, 0, 0);

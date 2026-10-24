@@ -402,6 +402,16 @@ int main(void)
     assert(converted->left->kind == EX_SET_CONSTANT);
     assert(program.body->body->next->expression->kind == EX_MEMBER);
     program_destroy(&program);
+    const char *with_source = "program p; type R=record x:integer end; var r1:R; "
+                              "begin with r1 do x:=3 end.";
+    assert(frontend_parse(&program, with_source, strlen(with_source), &diagnostic));
+    Stmt *with = program.body->body;
+    assert(with->kind == ST_WITH && with->target->kind == LV_SYMBOL);
+    assert(with->body->target->kind == LV_FIELD);
+    assert(with->body->target->base->kind == LV_WITH);
+    assert(with->body->target->base->binding == with->symbol);
+    assert(with->body->target->symbol == with->target->symbol);
+    program_destroy(&program);
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));
     assert(!frontend_parse(&program, invalid, strlen(invalid), &diagnostic));

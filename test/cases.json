@@ -7544,5 +7544,259 @@
         "name": "set_enum_domain_overflow",
         "source": "program p; type E=(M0,M1,M2,M3,M4,M5,M6,M7,M8,M9,M10,M11,M12,M13,M14,M15,M16,M17,M18,M19,M20,M21,M22,M23,M24,M25,M26,M27,M28,M29,M30,M31,M32,M33,M34,M35,M36,M37,M38,M39,M40,M41,M42,M43,M44,M45,M46,M47,M48,M49,M50,M51,M52,M53,M54,M55,M56,M57,M58,M59,M60,M61,M62,M63,M64,M65,M66,M67,M68,M69,M70,M71,M72,M73,M74,M75,M76,M77,M78,M79,M80,M81,M82,M83,M84,M85,M86,M87,M88,M89,M90,M91,M92,M93,M94,M95,M96,M97,M98,M99,M100,M101,M102,M103,M104,M105,M106,M107,M108,M109,M110,M111,M112,M113,M114,M115,M116,M117,M118,M119,M120,M121,M122,M123,M124,M125,M126,M127,M128,M129,M130,M131,M132,M133,M134,M135,M136,M137,M138,M139,M140,M141,M142,M143,M144,M145,M146,M147,M148,M149,M150,M151,M152,M153,M154,M155,M156,M157,M158,M159,M160,M161,M162,M163,M164,M165,M166,M167,M168,M169,M170,M171,M172,M173,M174,M175,M176,M177,M178,M179,M180,M181,M182,M183,M184,M185,M186,M187,M188,M189,M190,M191,M192,M193,M194,M195,M196,M197,M198,M199,M200,M201,M202,M203,M204,M205,M206,M207,M208,M209,M210,M211,M212,M213,M214,M215,M216,M217,M218,M219,M220,M221,M222,M223,M224,M225,M226,M227,M228,M229,M230,M231,M232,M233,M234,M235,M236,M237,M238,M239,M240,M241,M242,M243,M244,M245,M246,M247,M248,M249,M250,M251,M252,M253,M254,M255,M256); S=set of E; begin end.",
         "error": "E_SET_RANGE"
+    },
+    {
+        "name": "with_record_values",
+        "source": "program p; type R=record x,y:integer end; var r1:R; begin with r1 do begin x:=2; y:=3; writeln(x+y) end; writeln(r1.x,r1.y) end.",
+        "output": "5\n23\n",
+        "portable": true
+    },
+    {
+        "name": "with_name_shadowing",
+        "source": "program p; type R=record x,y:integer end; var r1:R; x:integer; procedure show; begin writeln(x) end; begin x:=9; r1.x:=2; with r1 do begin writeln(x); inc(x); show end; writeln(x,r1.x) end.",
+        "output": "2\n9\n93\n",
+        "portable": true
+    },
+    {
+        "name": "with_constant_shadow",
+        "source": "program p; const x=9; type R=record x,y:integer end; var r1:R; begin with r1 do begin x:=2; writeln(x) end; writeln(x) end.",
+        "output": "2\n9\n",
+        "portable": true
+    },
+    {
+        "name": "with_multiple_bindings",
+        "source": "program p; type A=record x,y:integer end; B=record x,z:integer end; var a1:A; b1:B; begin with a1,b1 do begin x:=2; y:=3; z:=4 end; writeln(b1.x,a1.y,b1.z) end.",
+        "output": "234\n",
+        "portable": true
+    },
+    {
+        "name": "with_nested_binding_source",
+        "source": "program p; type Inner=record x:integer end; Outer=record nested:Inner end; var r1:Outer; begin with r1,nested do x:=7; writeln(r1.nested.x) end.",
+        "output": "7\n",
+        "portable": true
+    },
+    {
+        "name": "with_nested_scope_restore",
+        "source": "program p; type R=record x,y:integer end; var a,b:R; begin a.x:=1; b.x:=2; with a do begin with b do inc(x); writeln(x) end; writeln(b.x) end.",
+        "output": "1\n3\n",
+        "portable": true
+    },
+    {
+        "name": "with_single_evaluation",
+        "source": "program p; type R=record x,y:integer end; var a:array[1..2] of R; calls:integer; function idx:integer; begin calls:=calls+1; idx:=calls end; begin calls:=0; with a[idx] do begin x:=1; y:=2; writeln(x+y) end; writeln(calls) end.",
+        "output": "3\n1\n",
+        "portable": true
+    },
+    {
+        "name": "with_index_mutation",
+        "source": "program p; type R=record x,y:integer end; var a:array[1..2] of R; i:integer; begin i:=1; with a[i] do begin i:=2; x:=7 end; writeln(a[1].x) end.",
+        "output": "7\n",
+        "portable": true
+    },
+    {
+        "name": "with_partial_initialization",
+        "source": "program p; type R=record x,y:integer end; var r1:R; begin with r1 do begin x:=1; writeln(y) end end.",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "with_input_and_references",
+        "source": "program p; type R=record x,y:integer end; var r1:R; procedure change(var n:integer); begin inc(n) end; begin with r1 do begin readln(x,y); change(x); writeln(x+y) end end.",
+        "output": "6\n",
+        "portable": true,
+        "input": "2 3\n"
+    },
+    {
+        "name": "with_aggregate_fields",
+        "source": "program p; type Box=record names:array[1..2] of string[8]; chosen:set of 1..2 end; var b:Box; begin with b do begin names[1]:='one'; chosen:=[1]; writeln(names[1],1 in chosen) end end.",
+        "output": "oneTRUE\n",
+        "portable": true
+    },
+    {
+        "name": "with_subrange_field",
+        "source": "program p; type Box=record n:1..3 end; var b:Box; begin with b do begin n:=3; inc(n) end end.",
+        "runtime": "R_RANGE"
+    },
+    {
+        "name": "with_enum_field",
+        "source": "program p; type Day=(Mon,Tue); Box=record d:Day end; var b:Box; begin with b do begin d:=Mon; inc(d); writeln(d) end end.",
+        "output": "Tue\n",
+        "portable": true
+    },
+    {
+        "name": "with_value_parameter_copy",
+        "source": "program p; type R=record x,y:integer end; var r1:R; procedure change(b:R); begin with b do x:=3 end; begin r1.x:=1; change(r1); writeln(r1.x) end.",
+        "output": "1\n",
+        "portable": true
+    },
+    {
+        "name": "with_reference_parameter",
+        "source": "program p; type R=record x,y:integer end; var r1:R; procedure change(var b:R); begin with b do x:=3 end; begin change(r1); writeln(r1.x) end.",
+        "output": "3\n",
+        "portable": true
+    },
+    {
+        "name": "with_function_result",
+        "source": "program p; type R=record x,y:integer end; function make:R; begin with make do begin x:=4; y:=5 end end; begin writeln(make.x+make.y) end.",
+        "output": "9\n",
+        "portable": true
+    },
+    {
+        "name": "with_function_exit_result",
+        "source": "program p; type R=record x,y:integer end; function make:R; var r1:R; begin with r1 do begin x:=4; y:=5; exit(r1) end end; begin writeln(make.x+make.y) end.",
+        "output": "9\n"
+    },
+    {
+        "name": "with_capture",
+        "source": "program p; type R=record x,y:integer end; procedure outer; var r1:R; procedure inner; begin with r1 do x:=8 end; begin inner; writeln(r1.x) end; begin outer end.",
+        "output": "8\n",
+        "portable": true
+    },
+    {
+        "name": "with_heap_alias",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; begin new(owner); alias:=owner; with owner^ do begin n:=7; owner:=nil; text:='value'; writeln(n,text) end; writeln(alias^.n); dispose(alias) end.",
+        "output": "7value\n7\n",
+        "portable": true
+    },
+    {
+        "name": "with_heap_lifetime",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; begin new(owner); with owner^ do begin n:=7; writeln(n); dispose(owner) end end.",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "with_heap_call_lifetime",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; procedure release; begin dispose(owner) end; begin new(owner); with owner^ do begin n:=7; release end end.",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "with_returned_pointer",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; calls:integer; function get:PRef; begin calls:=calls+1; get:=owner end; begin calls:=0; new(owner); with get()^ do begin n:=7; text:='x'; writeln(n,text) end; writeln(calls); dispose(owner) end.",
+        "output": "7x\n1\n",
+        "portable": true
+    },
+    {
+        "name": "with_pointer_nil",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; begin owner:=nil; with owner^ do n:=1 end.",
+        "runtime": "R_NIL"
+    },
+    {
+        "name": "with_pointer_uninitialized",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; begin with owner^ do n:=1 end.",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "with_break_cleanup",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; begin new(owner); while true do with owner^ do begin n:=7; break end; writeln(owner^.n); dispose(owner) end.",
+        "output": "7\n",
+        "portable": true
+    },
+    {
+        "name": "with_continue_cleanup",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; i:integer; begin new(owner); for i:=1 to 20000 do with owner^ do begin n:=i; text:='ok'; continue end; writeln(owner^.n); dispose(owner) end.",
+        "output": "20000\n",
+        "portable": true
+    },
+    {
+        "name": "with_inner_loop_keeps_pin",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; i:integer; begin new(owner); with owner^ do begin n:=1; for i:=1 to 3 do break; dispose(owner) end end.",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "with_inner_continue_keeps_pin",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; i:integer; begin new(owner); with owner^ do begin n:=1; for i:=1 to 3 do continue; dispose(owner) end end.",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "with_exit_cleanup",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; function run:integer; begin with owner^ do begin n:=8; exit(n) end end; begin new(owner); writeln(run); dispose(owner) end.",
+        "output": "8\n"
+    },
+    {
+        "name": "with_nested_exit_cleanup",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; function run:integer; begin with owner^ do with alias^ do begin n:=8; exit(n) end end; begin new(owner); new(alias); writeln(run); dispose(owner); dispose(alias) end.",
+        "output": "8\n"
+    },
+    {
+        "name": "with_nested_transfer_cleanup",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; i:integer; begin new(owner); new(alias); for i:=1 to 20000 do with owner^ do with alias^ do begin n:=i; if i mod 2=0 then continue else if i=19999 then break end; writeln(alias^.n); dispose(owner); dispose(alias) end.",
+        "output": "19999\n"
+    },
+    {
+        "name": "with_repeated_heap_temporary",
+        "source": "program demo; type R=record n:integer; text:string[32] end; PRef=^R; var owner,alias:PRef; i:integer; begin new(owner); for i:=1 to 20000 do with owner^ do begin text:='a'+'b'; n:=length(text); end; writeln(owner^.n); dispose(owner) end.",
+        "output": "2\n",
+        "portable": true
+    },
+    {
+        "name": "with_hidden_control_alias",
+        "source": "program p; type R=record x,y:integer end; var r1:R; procedure loop(var i:integer); begin for i:=1 to 3 do with r1 do inc(x) end; begin loop(r1.x) end.",
+        "runtime": "R_FOR_CONTROL"
+    },
+    {
+        "name": "with_readonly_effects",
+        "source": "program p; type R=record x,y:integer end; var r1:R; procedure show; begin with r1 do writeln(x) end; procedure loop(var i:integer); begin for i:=1 to 2 do show end; begin loop(r1.x) end.",
+        "output": "1\n2\n"
+    },
+    {
+        "name": "with_captured_bounds_check",
+        "source": "program p; type R=record x,y:integer end; var a:array[1..2] of R; begin with a[3] do x:=1 end.",
+        "runtime": "R_BOUNDS"
+    },
+    {
+        "name": "with_does_not_escape",
+        "source": "program p; type R=record x,y:integer end; var r1:R; begin with r1 do x:=1; writeln(x) end.",
+        "error": "E_UNKNOWN"
+    },
+    {
+        "name": "with_scalar_rejection",
+        "source": "program p; var n:integer; begin with n do n:=1 end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "with_temporary_record_rejection",
+        "source": "program p; type R=record x,y:integer end; function make:R; begin make.x:=1 end; begin with make() do x:=2 end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "with_field_for_control_rejection",
+        "source": "program p; type R=record x,y:integer end; var r1:R; x:integer; begin with r1 do for x:=1 to 2 do writeln(x) end.",
+        "error": "E_FOR_CONTROL"
+    },
+    {
+        "name": "with_field_case_label_rejection",
+        "source": "program p; const x=1; type R=record x,y:integer end; var r1:R; begin with r1 do case 1 of x: end end.",
+        "error": "E_CONST"
+    },
+    {
+        "name": "with_runtime_location",
+        "source": "program p;\ntype R=record x:integer end;\nvar r1:R;\nbegin\n with r1 do writeln(x)\nend.",
+        "runtime": "R_UNINITIALIZED",
+        "runtimeLine": 5,
+        "runtimeColumn": 21
+    },
+    {
+        "name": "with_case_continue_temporaries",
+        "source": "program demo; type R=record n:integer end; Ptr=^R; var owner:Ptr; i:integer; begin new(owner); with owner^ do begin n:=7; for i:=1 to 20000 do case length('a'+'b') of 2: continue end; writeln(n) end; dispose(owner) end.",
+        "output": "7\n"
+    },
+    {
+        "name": "transfer_case_continue_temporaries",
+        "source": "program p; var i:integer; begin for i:=1 to 20000 do case length('a'+'b') of 2: continue end; writeln(7) end.",
+        "output": "7\n"
+    },
+    {
+        "name": "with_nested_break_keeps_outer_pin",
+        "source": "program demo; type R=record n:integer end; Ptr=^R; var owner,alias:Ptr; i:integer; begin new(owner); new(alias); with owner^ do begin n:=7; for i:=1 to 2 do with alias^ do break; dispose(owner) end end.",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "with_nested_break_releases_inner_pin",
+        "source": "program demo; type R=record n:integer end; Ptr=^R; var owner,alias:Ptr; i:integer; begin new(owner); new(alias); with owner^ do begin n:=7; for i:=1 to 2 do with alias^ do break; dispose(alias); writeln(n) end; dispose(owner) end.",
+        "output": "7\n"
+    },
+    {
+        "name": "with_source_order_comma",
+        "source": "program p; type R=record n:integer end; var a:array[1..2] of R; calls:integer; function idx:integer; begin calls:=calls+1; write(calls); idx:=calls end; begin calls:=0; with a[idx],a[idx] do n:=8; writeln(a[2].n,calls) end.",
+        "output": "1282\n",
+        "portable": true
     }
 ]

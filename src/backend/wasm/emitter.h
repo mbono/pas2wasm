@@ -17,6 +17,7 @@ typedef struct {
     unsigned indent;
     unsigned depth;
     const struct Loop *loop;
+    const struct WithContext *with_scope;
     const Program *program;
     const Routine *routine;
     WasmLayout layout;

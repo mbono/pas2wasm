@@ -81,6 +81,7 @@ struct Field {
  * symbol retains the originating declaration and type/location describe this path. */
 typedef enum {
     LV_SYMBOL,
+    LV_WITH,
     LV_INDEX,
     LV_FIELD,
     LV_DEREFERENCE,
@@ -91,6 +92,7 @@ struct Lvalue {
     LvalueKind kind;
     ValueType type;
     size_t symbol;
+    size_t binding; /* LV_WITH refers to a lexically enclosing ST_WITH identity. */
     unsigned line, column, depth;
     Lvalue *base;
     Expr *index;
@@ -179,6 +181,7 @@ struct SetItem {
 typedef enum {
     ST_EMPTY,
     ST_BLOCK,
+    ST_WITH, /* target is captured once; symbol is its lexical binding identity. */
     ST_ASSIGN,
     ST_INCREMENT,
     ST_RANDOMIZE,
@@ -286,7 +289,7 @@ typedef struct {
     Type *pointer_types, *types;
     Symbol *symbols;
     size_t symbol_count, symbol_capacity;
-    size_t global_count, routine_count;
+    size_t global_count, routine_count, with_count;
     Routine *routines, *root_routines;
     size_t symbol_head; /* Global declaration chain; SIZE_MAX ends every chain. */
     Stmt *body;

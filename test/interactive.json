@@ -174,5 +174,15 @@
     ],
     "output": "Member: FALSE\nNext: TRUETRUE\n",
     "transcript": "Member: 2\nFALSE\nNext: 2\nTRUETRUE\n"
+  },
+  {
+    "name": "with_heap_storage",
+    "source": "program demo; type R=record n:integer; text:string[16] end; Ptr=^R; var owner,alias:Ptr; begin new(owner); alias:=owner; with owner^ do begin owner:=nil; write('N: '); readln(n); write('Text: '); readln(text); inc(n); writeln(n,text) end; dispose(alias) end.",
+    "lines": [
+      "7",
+      "ok"
+    ],
+    "output": "N: Text: 8ok\n",
+    "transcript": "N: 7\nText: ok\n8ok\n"
   }
 ]

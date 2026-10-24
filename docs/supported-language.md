@@ -488,6 +488,28 @@ indexes evaluate left-to-right. `readln(a[i])` accepts integer elements. Arrays 
 be printed or compared as a whole. Array parameters and function results use value
 copies, as do records.
 
+### Record `with` scopes
+
+`with customer do begin name:='Luca'; uid:=2 end` lets a statement use record fields
+without repeating the path. The source must be writable record storage; indexed/nested
+records, references, and dereferenced returned pointers are accepted. A record value
+returned by a function is a temporary and is rejected with `E_LVALUE`; nonrecords use
+`E_TYPE`. Capturing a record does not read its root or initialize its fields.
+
+Capture paths once, left-to-right. `with a, b do statement` behaves as nested scopes:
+later bindings can refer to earlier fields, and the rightmost/innermost matching field
+wins. Fields shadow ordinary variables, constants, and routines. Unmatched names keep
+their normal lexical meaning; bindings end after the body and do not enter called
+routines. `for` controls must remain ordinary declared variables, and implicit fields
+cannot be constant `case` labels.
+
+Fields retain ordinary assignment, input, increment, selector, value/reference,
+initialization, and control-alias checks. Changing an index or source pointer inside
+the body does not change the captured record. Heap owners stay borrowed for the entire
+scope (`R_LIFETIME` if disposed), including calls and interactive input waits. Normal
+completion and outward `break`, `continue`, and `exit` release only the scopes they
+leave; loops inside a `with` retain its owner. Existing nesting and storage limits apply.
+
 ### Records and aggregate routine values
 
 Fields can contain supported types, including arrays or records; select with `p.x` or
@@ -827,7 +849,7 @@ resolution also have bounded complexity. Exceeding a compiler work budget uses
 | Terminal protocols | ANSI terminal commands and raw keypress input |
 
 Reserved built-ins include `trunc`, `round`, `length`, `char`, `chr`, `ord`, `copy`,
-`nil`, `new`, `dispose`, `inc`, `random`, and `randomize`; `record`, `set`, and `in`
+`nil`, `new`, `dispose`, `inc`, `random`, and `randomize`; `record`, `with`, `set`, and `in`
 are also reserved.
 Rename earlier identifiers that use these names.
 
@@ -866,8 +888,9 @@ subrange    = expression ".." expression ;
 set_constructor = "[" [set_item {"," set_item}] "]" ;
 set_item    = expression [".." expression] ;
 selector    = "[" expression {"," expression} "]" | "." identifier | "^" ;
+with_statement = "with" storage {"," storage} "do" statement ;
 compound    = "begin" statement {";" statement} "end" ;
-statement   = assignment | compound | conditional | loop | repeat_loop | for_loop
+statement   = with_statement | assignment | compound | conditional | loop | repeat_loop | for_loop
             | selection | "break" | "continue" | "exit" ["(" expression ")"]
             | call | output | input | allocation | increment | "randomize" ["(" ")"] | empty ;
 assignment  = lvalue ":=" expression ;

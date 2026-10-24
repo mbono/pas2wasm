@@ -12,8 +12,12 @@
   membership, subset/equality tests, checked domain conversion, and independent values.
   Includes the unchanged tutorial `set_demo` source.
 
+- Record `with` scopes with once-captured paths, lexical field lookup, stable aliases,
+  and heap lifetime/transfer cleanup across calls and interactive waits.
+
 ### Compatibility changes
 
+- `with` is now reserved. Rename declarations previously using that name.
 - `set` and `in` are now reserved. Rename declarations previously using those names.
 
 ## [0.4.0] - 2026-10-23

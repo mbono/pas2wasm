@@ -221,6 +221,12 @@ operations are emitted directly into Wasm/WAT without additional host imports; f
 20 identifies invalid constructor endpoints or narrowing. Logical constant membership
 bits do not contain target addresses or layout metadata.
 
+Record `with` aliases retain an address and owning initialization root in private
+locals. Scope floors preserve captured heap borrow records and temporary addresses
+across statement cleanup and input suspension. Outward transfers restore exited
+scope floors; loops within a binding retain its leases. There is no new storage object,
+public export, or host import; ordinary lifetime/control/initialization guards apply.
+
 Comma-separated array dimensions use these same nested objects and child headers;
 index-list syntax introduces no flattened matrix representation or new host imports.
 

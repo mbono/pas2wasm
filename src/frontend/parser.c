@@ -47,6 +47,7 @@ typedef enum {
     TK_ARRAY,
     TK_SET,
     TK_RECORD,
+    TK_WITH,
     TK_TRUE,
     TK_FALSE,
     TK_IF,
@@ -118,6 +119,14 @@ typedef struct PendingType {
     struct PendingType *next;
 } PendingType;
 
+/* Parser-only record namespaces borrow arena-owned source paths. Each identity
+ * becomes one ST_WITH binding; nested scopes prefer the nearest matching field. */
+typedef struct WithScope {
+    size_t binding;
+    Lvalue *source;
+    const struct WithScope *outer;
+} WithScope;
+
 /* Parser state borrows source and result objects. The failure jump unwinds only
  * parsing; all allocated nodes remain owned by Program for reliable cleanup. */
 typedef struct {
@@ -131,6 +140,7 @@ typedef struct {
     PendingType *pending_types;
     Token token;
     const ForControl *control;
+    const WithScope *with_scope;
     Routine *routine;
     jmp_buf failure;
 } Parser;
@@ -179,6 +189,7 @@ static const Keyword keywords[] = {{"program", TK_PROGRAM},
                                    {"set", TK_SET},
                                    {"in", TK_IN},
                                    {"record", TK_RECORD},
+                                   {"with", TK_WITH},
                                    {"real", TK_REAL},
                                    {"trunc", TK_TRUNCATE},
                                    {"round", TK_ROUND},
@@ -1014,6 +1025,43 @@ static Lvalue *selectors(Parser *p, Lvalue *base)
 /* Writable actual arguments share the same direct counted-control checks. */
 static void require_writable(Parser *p, size_t symbol, Token at);
 
+/* Find an implicit field without allocating a path during name classification. */
+static const WithScope *find_with_field(Parser *p, Token name, const Field **result)
+{
+    for (const WithScope *scope = p->with_scope; scope; scope = scope->outer) {
+        for (const Field *field = scope->source->type->fields; field; field = field->next) {
+            if (same_name(name.text, name.length, field->name)) {
+                *result = field;
+                return scope;
+            }
+        }
+    }
+    return NULL;
+}
+
+/* Resolve an implicit member through a saved logical record binding, retaining
+ * the originating declaration for effects and its actual root for backend writes. */
+static Lvalue *with_lvalue(Parser *p, const WithScope *scope, const Field *field, Token at)
+{
+    Lvalue *base = allocate(p, sizeof(*base));
+    base->kind = LV_WITH;
+    base->binding = scope->binding;
+    base->symbol = scope->source->symbol;
+    base->type = scope->source->type;
+    base->indirect = scope->source->indirect;
+    base->line = at.line;
+    base->column = at.column;
+    base->depth = 1;
+    Lvalue *value = allocate(p, sizeof(*value));
+    *value = *base;
+    value->kind = LV_FIELD;
+    value->type = type_canonical(field->type);
+    value->field = field;
+    value->base = base;
+    value->depth = 2;
+    return value;
+}
+
 /* Calls appear in factors as well as statements. */
 static Expr *call_arguments(Parser *p, Routine *routine, Token at);
 
@@ -1162,9 +1210,18 @@ static Expr *factor(Parser *p)
         e->integer = t.kind == TK_TRUE;
         next(p);
     } else if (t.kind == TK_NAME) {
+        const Field *field = NULL;
+        const WithScope *scope = find_with_field(p, t, &field);
         size_t symbol = find_symbol(p, t);
         Routine *routine = find_routine(p, t);
-        if (symbol != SIZE_MAX && p->program->symbols[symbol].kind == SYMBOL_CONSTANT) {
+        if (scope) {
+            Lvalue *value = with_lvalue(p, scope, field, t);
+            e = expression_node(p, EX_LOAD, value->type, t, NULL, NULL);
+            e->lvalue = value;
+            e->writable = 1;
+            e->depth = value->depth + 1;
+            next(p);
+        } else if (symbol != SIZE_MAX && p->program->symbols[symbol].kind == SYMBOL_CONSTANT) {
             const Symbol *constant = &p->program->symbols[symbol];
             e = expression_node(p,
                                 constant->type->kind == TYPE_KIND_SET_LITERAL ? EX_SET_LITERAL
@@ -1517,6 +1574,10 @@ static int32_t case_endpoint(Parser *p, ValueType selector)
         type = TYPE_BOOLEAN;
         value = p->token.kind == TK_TRUE;
     } else if (p->token.kind == TK_NAME) {
+        const Field *field = NULL;
+        if (find_with_field(p, p->token, &field)) {
+            fail(p, "E_CONST", "A record field is not a constant case label.");
+        }
         size_t symbol = find_symbol(p, p->token);
         if (symbol == SIZE_MAX) {
             fail(p, find_routine(p, p->token) ? "E_CONST" : "E_UNKNOWN",
@@ -1626,7 +1687,9 @@ static void case_statement(Parser *p, Stmt *s)
 static Lvalue *storage_argument(Parser *p, Token at)
 {
     if (p->token.kind == TK_NAME) {
-        size_t symbol = find_symbol(p, p->token);
+        const Field *field = NULL;
+        const WithScope *scope = find_with_field(p, p->token, &field);
+        size_t symbol = scope ? scope->source->symbol : find_symbol(p, p->token);
         if (symbol != SIZE_MAX) {
             require_writable(p, symbol, p->token);
         }
@@ -1640,6 +1703,39 @@ static Lvalue *storage_argument(Parser *p, Token at)
     return value->lvalue;
 }
 
+/* A comma list is nested with scopes. The stack namespace exists only while
+ * parsing its body; generated references keep identities rather than parser pointers. */
+static void with_statement(Parser *p, Stmt *s)
+{
+    enter(p);
+    Expr *source = factor(p);
+    if (source->type->kind != TYPE_KIND_RECORD) {
+        fail_at(p, "E_TYPE", "With requires record storage.", source->line, source->column);
+    }
+    if (source->kind != EX_LOAD || !source->writable) {
+        fail_at(p, "E_LVALUE", "With requires writable record storage.", source->line,
+                source->column);
+    }
+    s->kind = ST_WITH;
+    s->target = source->lvalue;
+    s->symbol = p->program->with_count++;
+    WithScope scope = {s->symbol, s->target, p->with_scope};
+    p->with_scope = &scope;
+    if (p->token.kind == TK_COMMA) {
+        Token at = p->token;
+        next(p);
+        s->body = allocate(p, sizeof(*s->body));
+        s->body->line = at.line;
+        s->body->column = at.column;
+        with_statement(p, s->body);
+    } else {
+        expect(p, TK_DO, "Expected 'do' after with record storage.");
+        s->body = statement(p);
+    }
+    p->with_scope = scope.outer;
+    --p->depth;
+}
+
 /* Parse a complete statement, leaving its separator for the enclosing block. */
 static Stmt *statement(Parser *p)
 {
@@ -1648,7 +1744,10 @@ static Stmt *statement(Parser *p)
     Stmt *s = allocate(p, sizeof(*s));
     s->line = t.line;
     s->column = t.column;
-    if (t.kind == TK_BEGIN) {
+    if (t.kind == TK_WITH) {
+        next(p);
+        with_statement(p, s);
+    } else if (t.kind == TK_BEGIN) {
         s->kind = ST_BLOCK;
         next(p);
         s->body = statement_list(p, TK_END);
@@ -1670,6 +1769,11 @@ static Stmt *statement(Parser *p)
         next(p);
         Token control = p->token;
         expect(p, TK_NAME, "Expected a control variable after 'for'.");
+        const Field *field = NULL;
+        if (find_with_field(p, control, &field)) {
+            fail_at(p, "E_FOR_CONTROL", "A for control must be an ordinary declared variable.",
+                    control.line, control.column);
+        }
         s->symbol = find_symbol(p, control);
         if (s->symbol == SIZE_MAX) {
             fail_at(p, "E_UNKNOWN", "Variable is not declared.", control.line, control.column);
@@ -1723,9 +1827,11 @@ static Stmt *statement(Parser *p)
         s->kind = t.kind == TK_BREAK ? ST_BREAK : ST_CONTINUE;
         next(p);
     } else if (t.kind == TK_NAME) {
-        s->symbol = find_symbol(p, t);
-        Routine *routine = find_routine(p, t);
-        if (s->symbol != SIZE_MAX || (routine && routine->is_function)) {
+        const Field *field = NULL;
+        const WithScope *scope = find_with_field(p, t, &field);
+        s->symbol = scope ? scope->source->symbol : find_symbol(p, t);
+        Routine *routine = scope ? NULL : find_routine(p, t);
+        if (scope || s->symbol != SIZE_MAX || (routine && routine->is_function)) {
             s->kind = ST_ASSIGN;
             require_writable(p, s->symbol, t);
             Expr *storage = factor(p);

@@ -91,6 +91,13 @@ before later calls, releasing their heap borrows once the copy is complete. Cons
 conversion, and algebra build private bounded results, preserving atomic destination
 writes without new host services.
 
+A `with` binding is a logical record alias, resolved through an explicit IR identity
+rather than substituted source text. The parser's temporary field namespace prefers
+the nearest binding. Lowering captures address and owning root once, saving arena and
+borrow floors for the body's statements. Nested scopes retain their owners during
+calls/input waits; loop contexts identify which bindings survive a transfer. Outward
+branches unwind only exited scopes before their temporary storage can be reused.
+
 Subrange storage retains a nominal descriptor with base type and constant bounds.
 Expression types expose the base scalar, and explicit range-check nodes retain the
 destination constraint for narrowing. References compare declared lvalue types rather
