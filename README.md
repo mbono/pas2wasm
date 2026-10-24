@@ -14,6 +14,8 @@ browser**, without a compiler server. Source and input stay in the browser.
 
 The repository includes a playground demonstrating how to integrate the compiler,
 run generated programs, and provide console input/output and downloads.
+Try the [online playground on GitHub Pages](https://mbono.github.io/pas2wasm/)
+without installing any tools.
 
 ## Build the compiler
 
@@ -85,7 +87,11 @@ optional WAT, and standalone HTML export.
 
 ### Try the example playground
 
-With Python 3 installed, run:
+Open the [hosted playground](https://mbono.github.io/pas2wasm/) in Chromium or
+Firefox to compile and run Pascal directly in your browser. It demonstrates the
+compiler's browser integration, including console I/O and downloadable programs.
+
+To run the playground locally, with Python 3 installed, run:
 
 ```sh
 make serve
