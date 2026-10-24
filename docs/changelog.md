@@ -15,6 +15,10 @@
 - Record `with` scopes with once-captured paths, lexical field lookup, stable aliases,
   and heap lifetime/transfer cleanup across calls and interactive waits.
 
+- Checked overlapping variant records with independent tags, compatible view aliases,
+  nested arms, atomic activation/input, and pinned reference lifetimes. Includes the
+  unchanged tutorial `rec` and `record_demo` sources.
+
 ### Compatibility changes
 
 - `with` is now reserved. Rename declarations previously using that name.

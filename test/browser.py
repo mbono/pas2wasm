@@ -209,11 +209,13 @@ def verify_heap_boundaries(browser, cases, directory):
     artifact = native_result(source, directory, 'private-heap')
     exports = '\n'.join(f'(export "{name}" (func $p2w_{name}))'
                         for name in ['allocate','validate','borrow','release','unpin'])
+    exports += '\n(export "frameTop" (global 1))\n(export "pinHead" (global 5))'
     wat = re.sub(r'\)\s*$', exports+'\n)', artifact['wat'])
     input_path, output_path = directory/'private-heap.wat', directory/'private-heap.wasm'
     input_path.write_text(wat)
     subprocess.run(['wasm-as',str(input_path),'-o',str(output_path)],check=True,capture_output=True)
-    result = browser.page_async('''const binary=Uint8Array.from(arguments[0]),done=arguments[arguments.length-1];
+    boundaries = Path('test/variant-runtime.js').read_text(encoding='utf-8')
+    result = browser.page_async(boundaries + '''const binary=Uint8Array.from(arguments[0]),done=arguments[arguments.length-1];
         (async()=>{
             const host=createPas2WasmRuntime('',()=>{});
             const {instance}=await WebAssembly.instantiate(binary,{pas2wasm_v1:host.imports});
@@ -230,6 +232,7 @@ def verify_heap_boundaries(browser, cases, directory):
             try {h.release(last,16,7,2);} catch(e){lifetime=e.code;}
             h.unpin(0);h.release(last,16,8,2);
             try {h.allocate(16,9,2);} catch(e){wrap=e.code;}
+            verifyVariantUnpin(h);
             done({stale,lifetime,wrap});
         })().catch(e=>done({error:String(e)}));''', list(output_path.read_bytes()))
     assert result == {'stale':'R_DANGLING','lifetime':'R_LIFETIME','wrap':'R_MEMORY'},result
@@ -254,6 +257,12 @@ def verify_browser(kind, base_url, cases, directory):
         version = Path('VERSION').read_text(encoding='utf-8').strip()
         assert browser.js("return document.querySelector('h1').textContent;") == f'Pas2Wasm (v{version})'
         verify_heap_boundaries(browser,cases,directory)
+        boundary_source = Path('test/variant-runtime.js').read_text(encoding='utf-8')
+        boundary_result = browser.page_async(boundary_source + '''
+            const done=arguments[arguments.length-1];
+            try {verifyVariantRuntime(createPas2WasmRuntime);done({ok:true});}
+            catch(error){done({error:String(error)});}''')
+        assert boundary_result == {'ok':True}, boundary_result
         legacy = directory/'legacy-io.wasm'
         subprocess.run(['wasm-as','test/fixtures/legacy-io.wat','-o',str(legacy)],check=True,capture_output=True)
         live_examples = interactive.verify_workers(browser, lambda source,name: native_result(source,directory,name),
@@ -329,6 +338,8 @@ def verify_browser(kind, base_url, cases, directory):
                         'enumarrays':'ordinal_mixed_matrix',
                         'sets':'tutorial_set_demo', 'ordinalsets':'set_unicode_domain',
                         'withrecords':'with_record_values', 'withheap':'with_heap_alias',
+                        'variants':'tutorial_rec', 'variantrecords':'tutorial_record_demo',
+                        'nestedvariants':'variant_nested_parts',
                         'loops':'for_mixed_loops', 'routines':'procedure_recursion',
                         'functions':'function_factorial', 'exit':'exit_recursive_function',
                         'case':'case_exit_function', 'constants':'constant_scopes',
@@ -415,6 +426,7 @@ def verify_browser(kind, base_url, cases, directory):
             'enum_error':next(t['source'] for t in cases if t['name']=='enum_inc_range'),
             'set_error':next(t['source'] for t in cases if t['name']=='set_constructor_range_location'),
             'with_error':next(t['source'] for t in cases if t['name']=='with_heap_lifetime'),
+            'variant_error':next(t['source'] for t in cases if t['name']=='variant_incompatible_read'),
             'string_error':next(t['source'] for t in cases if t['name']=='string_capacity_location'),
             'string_memory':next(t['source'] for t in cases if t['name']=='string_frame_budget'),
             'character_error':next(t['source'] for t in cases if t['name']=='character_chr_location'),
@@ -485,11 +497,11 @@ def verify_browser(kind, base_url, cases, directory):
                     browser.wait("document.getElementById('status').textContent==='Completed'")
                     assert browser.js("return document.getElementById('output').textContent;")==examples[name]['output']
                     assert browser.js("return document.querySelectorAll('img').length;")==0
-            elif name in ('frame_error','bounds_error','control_error','real_error','subrange_error','enum_error','set_error','with_error','string_error','string_memory','character_error','character_bounds','character_memory','pointer_nil','pointer_dangling','pointer_release','pointer_lifetime','pointer_memory','pointer_borrow_memory'):
+            elif name in ('frame_error','bounds_error','control_error','real_error','subrange_error','enum_error','set_error','with_error','variant_error','string_error','string_memory','character_error','character_bounds','character_memory','pointer_nil','pointer_dangling','pointer_release','pointer_lifetime','pointer_memory','pointer_borrow_memory'):
                 for _ in range(2):
                     browser.js("document.getElementById('run').click();")
                     browser.wait("document.getElementById('status').textContent==='Failed'")
-                    assert ({'frame_error':'R_MEMORY','bounds_error':'R_BOUNDS','control_error':'R_FOR_CONTROL','real_error':'R_REAL_RANGE','subrange_error':'R_RANGE','enum_error':'R_RANGE','set_error':'R_SET_RANGE','with_error':'R_LIFETIME','string_error':'R_STRING_CAPACITY','string_memory':'R_MEMORY','character_error':'R_CHARACTER','character_bounds':'R_BOUNDS','character_memory':'R_MEMORY','pointer_nil':'R_NIL','pointer_dangling':'R_DANGLING','pointer_release':'R_DISPOSE','pointer_lifetime':'R_LIFETIME','pointer_memory':'R_MEMORY','pointer_borrow_memory':'R_MEMORY'}[name]) in browser.js("return document.getElementById('diagnostics').textContent;")
+                    assert ({'frame_error':'R_MEMORY','bounds_error':'R_BOUNDS','control_error':'R_FOR_CONTROL','real_error':'R_REAL_RANGE','subrange_error':'R_RANGE','enum_error':'R_RANGE','set_error':'R_SET_RANGE','with_error':'R_LIFETIME','variant_error':'R_VARIANT','string_error':'R_STRING_CAPACITY','string_memory':'R_MEMORY','character_error':'R_CHARACTER','character_bounds':'R_BOUNDS','character_memory':'R_MEMORY','pointer_nil':'R_NIL','pointer_dangling':'R_DANGLING','pointer_release':'R_DISPOSE','pointer_lifetime':'R_LIFETIME','pointer_memory':'R_MEMORY','pointer_borrow_memory':'R_MEMORY'}[name]) in browser.js("return document.getElementById('diagnostics').textContent;")
             elif name=='result_error':
                 browser.js("document.getElementById('run').click();")
                 browser.wait("document.getElementById('status').textContent==='Failed'")

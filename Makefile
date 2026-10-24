@@ -16,8 +16,10 @@ EXPORTS = '["_malloc","_free","_p2w_version","_p2w_compile","_p2w_free_result","
 FRONTEND = src/ir/program.c src/ir/number.c src/frontend/parser.c \
            src/frontend/constant.c src/frontend/real.c src/frontend/effects.c
 CORE = src/buffer.c src/compiler.c $(FRONTEND) \
-       src/backend/backend.c src/backend/wasm/layout.c src/backend/wasm/emitter.c src/backend/wasm/heap.c
-HEADERS = src/pas2wasm.h src/ir/program.h src/ir/number.h src/backend/backend.h src/backend/wasm/layout.h src/backend/wasm/emitter.h
+       src/backend/backend.c src/backend/wasm/layout.c src/backend/wasm/emitter.c \
+       src/backend/wasm/heap.c src/backend/wasm/variant.c
+HEADERS = src/pas2wasm.h src/ir/program.h src/ir/number.h src/backend/backend.h \
+          src/backend/wasm/layout.h src/backend/wasm/emitter.h src/backend/wasm/variant.h
 WEB = index.html style.css app.js compiler.js compiler-worker.js export.js runtime/host.js runtime/terminal.js runtime/session.js
 WEB_OUTPUTS = $(addprefix build/,$(WEB)) build/supported-language.md build/THIRD_PARTY_NOTICES.txt build/LICENSE
 

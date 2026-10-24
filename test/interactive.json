@@ -184,5 +184,33 @@
     ],
     "output": "N: Text: 8ok\n",
     "transcript": "N: 7\nText: ok\n8ok\n"
+  },
+  {
+    "name": "variant_string_activation",
+    "source": "program p; type R=record case boolean of true:(n:integer); false:(text:string[16]) end; var r1:R; begin r1.n:=7; write('Text: '); readln(r1.text); writeln(r1.text) end.",
+    "lines": [
+      "hello"
+    ],
+    "output": "Text: hello\n",
+    "transcript": "Text: hello\nhello\n"
+  },
+  {
+    "name": "variant_with_pin",
+    "source": "program p; type Box=record n:integer; text:string[16] end; R=record case boolean of true:(item:Box); false:(other:real) end; var r1:R; begin with r1.item do begin write('N: '); readln(n); write('Text: '); readln(text); writeln(n,text) end; r1.other:=1.5; writeln(r1.other:0:1) end.",
+    "lines": [
+      "7",
+      "ok"
+    ],
+    "output": "N: Text: 7ok\n1.5\n",
+    "transcript": "N: 7\nText: ok\n7ok\n1.5\n"
+  },
+  {
+    "name": "variant_character_pin",
+    "source": "program p; type R=record case boolean of true:(text:string[16]); false:(n:integer) end; var r1:R; procedure take(var c:char); begin readln(c) end; begin r1.text:='ab'; write('Char: '); take(r1.text[1]); writeln(r1.text); r1.n:=7; writeln(r1.n) end.",
+    "lines": [
+      "H"
+    ],
+    "output": "Char: Hb\n7\n",
+    "transcript": "Char: H\nHb\n7\n"
   }
 ]

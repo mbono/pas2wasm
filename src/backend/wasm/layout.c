@@ -84,6 +84,9 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
         uint64_t count = (uint64_t)((int64_t)type->upper - type->lower) + 1;
         total += count * element;
     } else if (type->kind == TYPE_KIND_RECORD) {
+        if (type->arm && (!type->arm->part || type->arm->body != type)) {
+            return invalid(type, diagnostic);
+        }
         size_t fields = 0;
         for (const Field *field = type->fields; field; field = field->next) {
             size_t child;
@@ -98,7 +101,29 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
                 return invalid(type, diagnostic);
             }
         }
-        if (!fields) {
+        if (type->variant) {
+            if (type->variant->owner != type || !type_ordinal(type->variant->discriminator)) {
+                return invalid(type, diagnostic);
+            }
+            uint64_t largest = 0;
+            size_t arms = 0;
+            for (const VariantArm *arm = type->variant->arms; arm; arm = arm->next) {
+                size_t child;
+                if (++arms > P2W_CASE_LABEL_LIMIT || arm->part != type->variant || !arm->body ||
+                    arm->body->arm != arm || arm->index != arms - 1 ||
+                    !object_size(arm->body, &child, diagnostic, depth + 1)) {
+                    return invalid(type, diagnostic);
+                }
+                if (child > largest) {
+                    largest = child;
+                }
+            }
+            if (!arms || arms != type->variant->arm_count) {
+                return invalid(type, diagnostic);
+            }
+            total += largest;
+        }
+        if (!fields && !type->variant && !type->arm) {
             return invalid(type, diagnostic);
         }
     } else {
@@ -114,6 +139,61 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
 int wasm_type_size(ValueType type, size_t *size, Diagnostic *diagnostic)
 {
     return object_size(type, size, diagnostic, 0);
+}
+
+/* Fixed fields precede any variant region, for ordinary and anonymous arm bodies. */
+static int record_prefix(ValueType record, size_t *size, Diagnostic *diagnostic)
+{
+    size_t total = WASM_CELL_SIZE;
+    for (const Field *field = record->fields; field; field = field->next) {
+        size_t child;
+        if (!wasm_type_size(field->type, &child, diagnostic) || total > WASM_MEMORY_LIMIT - child) {
+            return invalid(record, diagnostic);
+        }
+        total += child;
+    }
+    *size = total;
+    return 1;
+}
+
+int wasm_variant_offset(const VariantPart *part, size_t *offset, Diagnostic *diagnostic)
+{
+    size_t total = 0;
+    unsigned depth = 0;
+    while (part) {
+        size_t prefix;
+        if (++depth >= 128 || !record_prefix(part->owner, &prefix, diagnostic) ||
+            total > WASM_MEMORY_LIMIT - prefix) {
+            return invalid(part->owner, diagnostic);
+        }
+        total += prefix;
+        part = part->owner->arm ? part->owner->arm->part : NULL;
+    }
+    *offset = total;
+    return 1;
+}
+
+int wasm_field_offset(const Field *field, size_t *offset, Diagnostic *diagnostic)
+{
+    size_t total = WASM_CELL_SIZE;
+    if (field->owner->arm) {
+        size_t parent;
+        if (!wasm_variant_offset(field->owner->arm->part, &parent, diagnostic)) {
+            return 0;
+        }
+        total += parent;
+    }
+    for (const Field *previous = field->owner->fields; previous && previous != field;
+         previous = previous->next) {
+        size_t child;
+        if (!wasm_type_size(previous->type, &child, diagnostic) ||
+            total > WASM_MEMORY_LIMIT - child) {
+            return invalid(field->owner, diagnostic);
+        }
+        total += child;
+    }
+    *offset = total;
+    return 1;
 }
 
 int wasm_layout_build(const Program *program, WasmLayout *layout, Diagnostic *diagnostic)

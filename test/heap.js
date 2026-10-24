@@ -73,6 +73,7 @@ module.exports = async function verifyHeap(compile, tool, directory) {
     h.unpin(0); h.frameTop.value = frameBase;
     assert.throws(() => h.unpin(16), hasCode('R_POINTER'));
     h.release(second, 16, 19, 2);
+    require('./variant-runtime.js').verifyUnpin(h);
     /* Force memory.grow failure below 64 MiB without changing shipped module limits. */
     const limited = wat.replace(/(\(memory \(export "memory"\) )(\d+) 1024\)/,
         (_, prefix, pages) => `${prefix}${pages} ${pages})`);

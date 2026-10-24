@@ -132,7 +132,7 @@ ordinary expression values.
 | `char` | One Unicode scalar, excluding surrogate values. | `chr(128512)` |
 | `string[N]` | At most N UTF-8 bytes; bare `string` means 255 bytes. | `string[20]` |
 | Fixed array | Constant ordinal bounds or an ordinal type domain, and one element type. | `array[-2..2] of integer` |
-| Record | Named fields with declared types. | `record x, y: integer end` |
+| Record | Named fields and optional checked overlapping variants. | `record x, y: integer end` |
 | Typed pointer | Reference to a declared pointee type, or `nil`. | `^Node` |
 | Enumeration | Distinct ordered member values, numbered from zero. | `(Mon, Tue, Wed)` |
 | Set | At most 256 consecutive ordinals from one base type. | `set of 0..255`, `set of Day` |
@@ -356,7 +356,7 @@ end;
 ### Calls and local scope
 
 Program-level procedures, functions, and global sections precede the main block and may
-interleave. Value parameters support scalar, array, and record types; argument
+interleave. Value parameters support all documented value types; argument
 counts and types must match, allowing integer-to-real value widening. Arguments evaluate
 left-to-right. Zero-parameter declarations/calls may omit parentheses or use `()`.
 Parameter groups use semicolons; names within a group use commas. Arity errors use
@@ -375,7 +375,7 @@ routine, and 64 simultaneous calls. Excessive call depth fails with located
 
 ### Function results
 
-Functions return scalar, array, or record values. Assign the function's name to set its
+Functions return supported value types, including arrays, records, and sets. Assign the function's name to set its
 private result. Reading that name inside the function reads the result; use `name()` for
 a zero-argument recursive call. Outside the function, a bare zero-argument name calls
 it. Function calls must be used as expressions, and result/argument types must match,
@@ -528,6 +528,53 @@ allowed; reading an unwritten leaf still fails. A result with no write fails wit
 Temporary buffers share the 128 KiB activation budget and are released after
 calls/consumption; memory exhaustion is located `R_MEMORY`. Whole aggregate
 comparison/output remain unsupported.
+
+### Variant records
+
+A final `case` part declares overlapping arms. Its discriminator must be an ordinal
+type; an optional named tag becomes an ordinary fixed field. Tags do not select an arm
+or initialize its fields. The storage view follows field writes independently of the
+tag, so this prints `40.00`:
+
+```pascal
+type Point = record
+  case is3D: boolean of
+    true: (z: real);
+    false: (w: real)
+end;
+var p: Point;
+begin
+  p.is3D := false;
+  p.z := 30;
+  p.w := 40;
+  writeln(p.z:0:2)
+end.
+```
+
+| Rule | Behavior |
+| --- | --- |
+| Labels | Constant ordinal expressions, comma lists, or inclusive ranges matching the discriminator; 1,024 labels/ranges per part. |
+| Fields | All arms share one field namespace; duplicate names, including tags, are rejected. The whole record retains the 4,096-field limit. |
+| Nesting | Arm parentheses may contain fixed fields and a final nested `case`; empty arms and trailing semicolons are accepted. |
+| Compatible views | Fields at the same offset with the identical declared type share values and initialization, including aliases and compound types. |
+| Arm changes | Preserve compatible fixed fields, clear incompatible incoming fields/nested parts, and leave unrelated fixed prefixes untouched. |
+| Reads | Initial fields use `R_UNINITIALIZED`; reading an incompatible active view uses `R_VARIANT`, preventing raw type reinterpretation. |
+| Copies | Preserve active storage views and partial initialization; value arguments/results remain independent. Leases are never copied. |
+
+All supported field types are allowed. Direct assignment/input validates its complete
+value and activation plan before changing storage. A failed range/capacity/encoding,
+control, or lifetime check leaves the prior arm unchanged. Paths and indexes evaluate
+once; reads recheck their view after index/call effects.
+
+Writable `var`, `with`, and character-view bindings activate their selected view and
+pin it and its ancestors for the binding's lifetime, without initializing the selected
+leaf. An incompatible arm change uses `R_LIFETIME`; a counted control in the activation
+region uses `R_FOR_CONTROL` first. Whole-value copies through live pins must retain the
+same arm or an identical fixed layout; nested anonymous parts keep their own identity.
+A whole-record binding does not select its inner arms until fields are bound/accessed.
+Calls, interactive waits, normal completion, and outward transfers preserve/release
+leases using the same rules as other checked storage. Existing memory/nesting limits
+include overlap headers, schemas, and temporary leases.
 
 ## Strings and characters
 
@@ -821,6 +868,7 @@ retain their scope semantics.
 | `R_RESULT` | Complete a function without setting its result. |
 | `R_BOUNDS` | Invalid array index, string position, or slice bounds. |
 | `R_MEMORY` | Exhaust available storage or a memory sub-budget. |
+| `R_VARIANT` | Read a variant field through an incompatible active view. |
 | `E_SET_RANGE`, `R_SET_RANGE` | Set domain, constructor member, or narrowing exceeds the permitted domain. |
 | `R_INPUT_INVALID`, `R_INPUT_RANGE`, `R_INPUT_EOF` | Malformed, out-of-range, or exhausted input. |
 | `R_STRING_CAPACITY`, `R_ENCODING` | Exceed UTF-8 string capacity or supply invalid Unicode. |
@@ -844,7 +892,7 @@ resolution also have bounded complexity. Exceeding a compiler work budget uses
 | Routine values | Escaping closures or first-class routine values |
 | Function syntax | `Result` alias and `return` keyword |
 | Pointer operations | Address-of, pointer arithmetic/casts, ordering, and text I/O |
-| Whole aggregates | Comparison and text output |
+| Whole arrays/records | Comparison and text output |
 | Numeric/string conversion | Implicit or built-in numeric-to-string/string-to-numeric conversion |
 | Terminal protocols | ANSI terminal commands and raw keypress input |
 
@@ -878,7 +926,11 @@ declaration_group = identifier {"," identifier} ":" type ;
 call        = identifier ["(" [expression {"," expression}] ")"] ;
 type        = "set" "of" type | "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier | subrange | enumeration
             | "array" "[" dimension {"," dimension} "]" "of" type
-            | "record" declaration_group {";" declaration_group} [";"] "end" ;
+            | "record" record_fields "end" ;
+record_fields = empty | variant_part | declaration_group [";" record_fields] ;
+variant_part = "case" [identifier ":"] type "of" variant_arm {";" variant_arm} [";"] ;
+variant_arm = variant_labels ":" "(" record_fields ")" ;
+variant_labels = expression [".." expression] {"," expression [".." expression]} ;
 lvalue      = identifier {selector} | call selector {selector} ;
 storage     = factor ; (* must resolve to writable storage *)
 dimension   = expression ".." expression | ordinal_type ;

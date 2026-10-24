@@ -23,6 +23,9 @@ typedef struct {
 
 /* Compute an aligned object size with bounded, checked compound traversal. */
 int wasm_type_size(ValueType type, size_t *size, Diagnostic *diagnostic);
+/* Locate a logical variant header/field relative to its outer record value. */
+int wasm_variant_offset(const VariantPart *part, size_t *offset, Diagnostic *diagnostic);
+int wasm_field_offset(const Field *field, size_t *offset, Diagnostic *diagnostic);
 /* Lay out globals and per-routine frames inside the bounded program memory. */
 int wasm_layout_build(const Program *program, WasmLayout *layout, Diagnostic *diagnostic);
 /* Release all backend-owned mapping arrays and reset the layout. */

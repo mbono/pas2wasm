@@ -13,7 +13,7 @@
  * next_local/local_count track active bound locals and their allocation high-water mark. */
 typedef struct {
     Buffer code, data, text;
-    int emit_wat, heap, enum_data_overflow;
+    int emit_wat, heap, data_overflow;
     unsigned indent;
     unsigned depth;
     const struct Loop *loop;
@@ -22,6 +22,10 @@ typedef struct {
     const Routine *routine;
     WasmLayout layout;
     struct EnumTable *enum_tables; /* Backend-owned member-name tables, one per enum type. */
+    struct VariantSchema *variant_schemas;
+    struct VariantIdentity *variant_types;
+    size_t variant_type_count;
+    struct VariantPath *variant_path; /* Current capture; nested expressions save/restore it. */
     size_t frame_local, left_local, right_local, wide_local, real_local;
     size_t next_local, local_count;
 } Wasm;
@@ -43,6 +47,9 @@ void constant(Wasm *w, int wide, int64_t value);
 void open_control(Wasm *w, unsigned opcode, const char *text);
 void close_control(Wasm *w);
 void memory_op(Wasm *w, unsigned opcode, const char *text, unsigned align, unsigned offset);
+/* Allocate a private i32 local and bounded zeroed frame storage for memory helpers. */
+size_t temporary(Wasm *w);
+void allocate_storage(Wasm *w, size_t size, size_t destination, unsigned line, unsigned column);
 /* Append repository-owned allocation/lifetime helpers, using only program memory. */
 void heap_emit(Wasm *w, Buffer *bodies, Buffer *functions);
 #endif

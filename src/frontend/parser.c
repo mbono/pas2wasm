@@ -955,6 +955,16 @@ static Lvalue *index_selector(Parser *p, Lvalue *base, Token at)
     return value;
 }
 
+/* Hidden variant ancestors count toward the same combined selector-depth budget. */
+static unsigned field_depth(const Field *field)
+{
+    unsigned depth = 1;
+    for (const Type *owner = field->owner; owner && owner->arm; owner = owner->arm->part->owner) {
+        ++depth;
+    }
+    return depth;
+}
+
 /* Parse a typed selector chain after its base name has already been consumed. */
 static Lvalue *selectors(Parser *p, Lvalue *base)
 {
@@ -1001,9 +1011,9 @@ static Lvalue *selectors(Parser *p, Lvalue *base)
             }
             Token name = p->token;
             expect(p, TK_NAME, "Expected a field name after '.'.");
-            const Field *field = base->type->fields;
+            const Field *field = base->type->member_fields;
             while (field && !same_name(name.text, name.length, field->name)) {
-                field = field->next;
+                field = field->lookup_next;
             }
             if (!field) {
                 fail_at(p, "E_FIELD", "Record has no such field.", name.line, name.column);
@@ -1011,7 +1021,7 @@ static Lvalue *selectors(Parser *p, Lvalue *base)
             value->kind = LV_FIELD;
             value->type = type_canonical(field->type);
             value->field = field;
-            value->depth = base->depth + 1;
+            value->depth = base->depth + field_depth(field);
         }
         if (value->depth >= 128) {
             fail_at(p, "E_LIMIT", "Combined expression/selector path is too deep.", at.line,
@@ -1029,7 +1039,8 @@ static void require_writable(Parser *p, size_t symbol, Token at);
 static const WithScope *find_with_field(Parser *p, Token name, const Field **result)
 {
     for (const WithScope *scope = p->with_scope; scope; scope = scope->outer) {
-        for (const Field *field = scope->source->type->fields; field; field = field->next) {
+        for (const Field *field = scope->source->type->member_fields; field;
+             field = field->lookup_next) {
             if (same_name(name.text, name.length, field->name)) {
                 *result = field;
                 return scope;
@@ -1058,7 +1069,10 @@ static Lvalue *with_lvalue(Parser *p, const WithScope *scope, const Field *field
     value->type = type_canonical(field->type);
     value->field = field;
     value->base = base;
-    value->depth = 2;
+    value->depth = 1 + field_depth(field);
+    if (value->depth >= 128) {
+        fail_at(p, "E_LIMIT", "Combined expression/selector path is too deep.", at.line, at.column);
+    }
     return value;
 }
 
@@ -2259,37 +2273,168 @@ static void array_domain(Parser *p, Type *array, Token at)
     }
 }
 
-/* Construct a record member namespace without exposing fields as scoped symbols. */
-static ValueType record_type(Parser *p)
+/* One record namespace spans fixed fields and every nested arm. Physical field
+ * lists stay on their declaring logical bodies; names are linked independently. */
+typedef struct {
+    Type *record;
+    Field **tail;
+    size_t count;
+} RecordScope;
+
+/* Declare one ordinary/tag field, rejecting duplicate names across all arms. */
+static Field *record_field(Parser *p, RecordScope *scope, Type *owner, Token name)
 {
-    Token at = p->token;
-    enter(p);
-    next(p);
-    Type *record = new_type(p, TYPE_KIND_RECORD, at);
-    Field **tail = &record->fields;
-    if (p->token.kind == TK_END) {
-        fail(p, "E_SYNTAX", "A record requires at least one field.");
+    if (++scope->count > 4096) {
+        fail_at(p, "E_LIMIT", "Too many record fields.", name.line, name.column);
     }
-    size_t count = 0;
-    while (p->token.kind != TK_END) {
-        Field **first = tail;
-        do {
-            if (++count > 4096) {
-                fail(p, "E_LIMIT", "Too many record fields.");
+    for (const Field *field = scope->record->member_fields; field; field = field->lookup_next) {
+        if (same_name(name.text, name.length, field->name)) {
+            fail_at(p, "E_DUPLICATE", "Duplicate record field.", name.line, name.column);
+        }
+    }
+    Field *field = allocate(p, sizeof(*field));
+    field->name = normalized_name(p, name);
+    field->line = name.line;
+    field->column = name.column;
+    field->owner = owner;
+    *scope->tail = field;
+    scope->tail = &field->lookup_next;
+    Field **tail = &owner->fields;
+    while (*tail) {
+        tail = &(*tail)->next;
+    }
+    *tail = field;
+    return field;
+}
+
+/* Arm bodies and top-level records share field syntax and one namespace. */
+static void record_members(Parser *p, Type *owner, RecordScope *scope, TokenKind terminator);
+
+/* Parse a final ordinal variant part; its tag is deliberately independent of
+ * storage arm selection. Labels describe declarations, not runtime dispatch. */
+static void variant_part(Parser *p, Type *owner, RecordScope *scope, TokenKind terminator)
+{
+    enter(p);
+    Token at = p->token;
+    next(p);
+    Field *tag = NULL;
+    if (p->token.kind == TK_NAME) {
+        Token saved = p->token;
+        size_t offset = p->offset;
+        unsigned line = p->line, column = p->column;
+        next(p);
+        int named = p->token.kind == TK_COLON;
+        p->token = saved;
+        p->offset = offset;
+        p->line = line;
+        p->column = column;
+        if (named) {
+            tag = record_field(p, scope, owner, p->token);
+            next(p);
+            expect(p, TK_COLON, "Expected ':' after variant tag name.");
+        }
+    }
+    ValueType discriminator = declaration_type(p);
+    if (!type_ordinal(discriminator)) {
+        fail_at(p, "E_TYPE", "Variant discriminator must be ordinal.", at.line, at.column);
+    }
+    if (tag) {
+        tag->type = discriminator;
+    }
+    expect(p, TK_OF, "Expected 'of' after variant discriminator.");
+    VariantPart *part = allocate(p, sizeof(*part));
+    owner->variant = part;
+    part->owner = owner;
+    part->discriminator = discriminator;
+    part->line = at.line;
+    part->column = at.column;
+    p->program->has_variants = 1;
+    VariantArm **tail = &part->arms;
+    size_t labels = 0;
+    do {
+        VariantArm *arm = allocate(p, sizeof(*arm));
+        arm->part = part;
+        arm->index = part->arm_count++;
+        *tail = arm;
+        tail = &arm->next;
+        CaseLabel **label_tail = &arm->labels;
+        for (;;) {
+            Token label_at = p->token;
+            if (++labels > P2W_CASE_LABEL_LIMIT) {
+                fail(p, "E_LIMIT", "Too many labels in a variant part.");
             }
-            Token name = p->token;
-            expect(p, TK_NAME, "Expected a record field name.");
-            for (const Field *field = record->fields; field; field = field->next) {
-                if (same_name(name.text, name.length, field->name)) {
-                    fail_at(p, "E_DUPLICATE", "Duplicate record field.", name.line, name.column);
+            CaseLabel *label = allocate(p, sizeof(*label));
+            label->line = label_at.line;
+            label->column = label_at.column;
+            ValueType base, high_base;
+            label->value = label->high = subrange_endpoint(p, &base);
+            if (p->token.kind == TK_RANGE) {
+                next(p);
+                label->high = subrange_endpoint(p, &high_base);
+                if (base != high_base) {
+                    fail_at(p, "E_TYPE", "Variant label endpoint types must match.", label_at.line,
+                            label_at.column);
                 }
             }
-            Field *field = allocate(p, sizeof(*field));
-            field->name = normalized_name(p, name);
-            field->line = name.line;
-            field->column = name.column;
-            *tail = field;
-            tail = &field->next;
+            if (base != type_value(discriminator)) {
+                fail_at(p, "E_TYPE", "Variant labels must match the discriminator.", label_at.line,
+                        label_at.column);
+            }
+            if (label->value > label->high) {
+                fail_at(p, "E_CASE_RANGE", "Variant label bounds are reversed.", label_at.line,
+                        label_at.column);
+            }
+            if ((discriminator->kind == TYPE_KIND_SUBRANGE ||
+                 discriminator->kind == TYPE_KIND_ENUM) &&
+                (label->value < discriminator->lower || label->high > discriminator->upper)) {
+                fail_at(p, "E_RANGE", "Variant label is outside its discriminator domain.",
+                        label_at.line, label_at.column);
+            }
+            for (const VariantArm *previous = part->arms; previous; previous = previous->next) {
+                for (const CaseLabel *seen = previous->labels; seen; seen = seen->next) {
+                    if (seen->value <= label->high && label->value <= seen->high) {
+                        fail_at(p, "E_DUPLICATE", "Duplicate or overlapping variant labels.",
+                                label_at.line, label_at.column);
+                    }
+                }
+            }
+            *label_tail = label;
+            label_tail = &label->next;
+            if (p->token.kind != TK_COMMA) {
+                break;
+            }
+            next(p);
+        }
+        expect(p, TK_COLON, "Expected ':' after variant labels.");
+        expect(p, TK_LPAREN, "Expected '(' before variant arm fields.");
+        arm->body = new_type(p, TYPE_KIND_RECORD, at);
+        arm->body->arm = arm;
+        record_members(p, arm->body, scope, TK_RPAREN);
+        expect(p, TK_RPAREN, "Expected ')' after variant arm fields.");
+        if (p->token.kind != TK_SEMICOLON) {
+            break;
+        }
+        next(p);
+    } while (p->token.kind != terminator);
+    --p->depth;
+}
+
+/* Parse fixed fields followed by at most one final variant part. */
+static void record_members(Parser *p, Type *owner, RecordScope *scope, TokenKind terminator)
+{
+    while (p->token.kind != terminator) {
+        if (p->token.kind == TK_CASE) {
+            variant_part(p, owner, scope, terminator);
+            return;
+        }
+        Field *first = NULL;
+        do {
+            Token name = p->token;
+            expect(p, TK_NAME, "Expected a record field name.");
+            Field *field = record_field(p, scope, owner, name);
+            if (!first) {
+                first = field;
+            }
             if (p->token.kind != TK_COMMA) {
                 break;
             }
@@ -2297,7 +2442,7 @@ static ValueType record_type(Parser *p)
         } while (1);
         expect(p, TK_COLON, "Expected ':' before record field type.");
         ValueType type = declaration_type(p);
-        for (Field *field = *first; field; field = field->next) {
+        for (Field *field = first; field; field = field->next) {
             field->type = type;
         }
         if (p->token.kind != TK_SEMICOLON) {
@@ -2305,6 +2450,20 @@ static ValueType record_type(Parser *p)
         }
         next(p);
     }
+}
+
+/* Construct a record and the shared namespace for all of its variant fields. */
+static ValueType record_type(Parser *p)
+{
+    Token at = p->token;
+    enter(p);
+    next(p);
+    Type *record = new_type(p, TYPE_KIND_RECORD, at);
+    RecordScope scope = {record, &record->member_fields, 0};
+    if (p->token.kind == TK_END) {
+        fail(p, "E_SYNTAX", "A record requires at least one field.");
+    }
+    record_members(p, record, &scope, TK_END);
     expect(p, TK_END, "Expected ';' or 'end' after record field.");
     --p->depth;
     return record;

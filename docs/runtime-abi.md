@@ -155,6 +155,21 @@ unsigned 32-bit integers, with zero normalized to 1. Without it, the initial see
 and randomize uses Math.random. The algorithm/ranges are in the language reference.
 Legacy modules remain compatible with the updated host.
 
+### Variant access (indices 30–32)
+
+All parameters are i32. These memory-only services consume backend-owned immutable
+schemas and frame-owned requests; they expose no filesystem or other host capability.
+
+| Import | Signature | Behavior |
+| --- | --- | --- |
+| `variant_access` | `(request,writable,line,column) -> ()` | Check selected views; writable mode atomically activates them. Emitted code then links binding leases when required. |
+| `variant_copy` | `(destination,source,size,capacity,request,line,column) -> ()` | Snapshot and validate the source, activation plan, controls, and live views before commit. Positive size is a whole fixed-size value; zero is a string with the given destination capacity. |
+| `variant_read_string` | `(destination,capacity,mode,request,line,column) -> ()` | Validate line-remainder input before activating/storing its destination; stream cursor and mode rules remain unchanged. |
+
+Only `variant_read_string` may suspend under JSPI. Synchronous batch hosts need no JSPI.
+Requests and schemas use the private layouts below; legacy import signatures remain
+unchanged, and older modules continue to work with the updated runtime.
+
 ## Runtime diagnostics
 
 Locations use 1-based UTF-8 byte columns. The `fail` import must throw and never return.
@@ -182,6 +197,7 @@ The reference host maps generated numeric codes as follows:
 | 18 | `R_POINTER` | malformed internal pointer |
 | 19 | `R_RANGE` | value outside a declared subrange or enum domain |
 | 20 | `R_SET_RANGE` | set constructor member or narrowing outside its domain |
+| 21 | `R_VARIANT` | read through an incompatible active variant view |
 
 Host input errors use `R_INPUT_EOF`, `R_INPUT_INVALID`, `R_INPUT_RANGE`, or
 `R_ENCODING`. Input/output budgets use `R_INPUT_LIMIT`/`R_OUTPUT_LIMIT`; the session
@@ -259,8 +275,8 @@ calls/input, preserving single evaluation.
 
 ### Records and aggregate calls
 
-Records use the same root header plus declaration-order child objects; offsets come only
-from checked backend sizes, independently of native C struct layout. Fields retain
+Fixed record fields use the same root header plus declaration-order child objects.
+Offsets come only from checked backend sizes, independently of native C struct layout. Fields retain
 per-leaf initialized bytes; whole/descendant
 writes mark the result's root written, without initializing other leaves. Completion
 with no result write still uses failure 6/`R_RESULT`.
@@ -277,12 +293,43 @@ leases are released on return; result leases survive until consumed. Statement/l
 cleanup prevents accumulation. These private copy addresses do not become Pascal
 pointers; pointers use separate typed heap handles.
 
+### Variant layouts, requests, and leases
+
+A variant region follows its owner's fixed prefix. Its size is the largest arm body;
+each body has a 16-byte header plus fixed fields and any nested region. Arms overlap at
+the same address. Header +0 holds the one-based active storage arm (zero means none);
+remaining header bytes are reserved. Tags are ordinary fixed fields and do not control
+this header. Identical canonical field types at the same arm-relative offset share
+storage; incompatible reads are rejected before interpreting payload or leaf flags.
+
+The backend emits immutable little-endian schemas in the existing literal region.
+A schema starts with arm count; each arm then has four u32 words: fixed-field count,
+nested-region offset, nested-region size, and total body size. Each fixed field adds
+three words: offset, size, and canonical type identity. IDs and offsets belong only to
+the backend. Runtime caches are private to the attached instance and schemas must stay
+immutable. Schema bytes count toward the 256 KiB literal region (`E_LAYOUT` on excess).
+
+A frame request has four u32 header words: claim count (at most 128), current lease
+head, control-table address, and active-control count. Each 16-byte claim has part
+address, schema address, one-based selected arm, and fixed-field index; `0xffffffff`
+requires the exact ancestor arm. Validation plans account for earlier ancestor clears
+before reading nested headers. No plan mutates memory until all checks succeed.
+
+Variant leases use the shared 16-byte frame chain: part address +0, previous lease +4,
+schema address +8, kind 1 at +12. Heap leases retain kind 0. Leases are outside copied
+values; whole-value replacement validates pinned headers/layouts before copying. Active
+arm selection through a writable binding can clear incompatible views but does not set
+leaf initialization. Module-private unpin handles both kinds, restoring only the
+current expression/call/scope's leases. Programs with variants emit the ownership
+helpers/globals even when they contain no Pascal pointer declarations.
+
 ### Reference bindings and counter guards
 
 Each logical reference parameter consumes two private i32 arguments: actual object
 address and owning root-written address. Its frame binding occupies 16 bytes, regardless
 of pointee size; loads/selectors resolve through that binding. Binding never
-reads/initializes the actual; writes update actual leaf state and the owning result
+reads/initializes the actual value; variant bindings first activate/pin their views
+without marking leaves initialized. Writes update actual leaf state and the owning result
 root. Forwarding passes the same pair. Value modes retain independent copies.
 
 The backend reserves 8,192 control addresses (32 KiB) between globals and frames. Each
@@ -402,7 +449,7 @@ and clears that pointer to nil; other aliases remain stale. No recursive free or
 occurs. Equality compares tokens without dereferencing stale aliases.
 
 Each dereference links a checked 16-byte borrow lease (allocation header +0, previous
-lease +4) in the shared frame arena and increments its block's borrow count. The frame
+lease +4, kind 0 at +12) in the shared frame arena and increments its block's borrow count. The frame
 header saves entry borrow head at +8; module-private globals 3/4/5 track heap top, free
 head, and borrow head. Ref bindings/character views retain caller borrows; value
 arguments release their borrows after snapshot and before later arguments. Paths track

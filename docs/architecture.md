@@ -98,6 +98,21 @@ borrow floors for the body's statements. Nested scopes retain their owners durin
 calls/input waits; loop contexts identify which bindings survive a transfer. Outward
 branches unwind only exited scopes before their temporary storage can be reused.
 
+Variant declarations retain logical owners, ordered arms/labels and one field namespace;
+anonymous arm bodies have independent physical field lists. Layout overlaps those bodies,
+with a separate storage-arm header from the ordinary Pascal tag. Backend schemas assign
+canonical field identities without emitting compiler pointers or placing offsets in IR.
+
+Captured paths retain ancestor view claims until read/commit. The memory-only runtime
+checks immutable schemas, builds an activation plan against virtual ancestor clears,
+and snapshots copy sources before touching storage. Compatible fields survive arm
+changes; incompatible incoming fields and nested parts are cleared. This preserves real
+union aliasing while preventing stale string headers/pointer bits from acquiring a new
+type. Direct writes stay atomic. Writable bindings activate/pin views; their external
+lease chain protects references, character views and with scopes without changing the
+existing two-word reference calling convention. Private copies carry view/initialization
+state but no leases. Scope/transfer cleanup shares the existing frame ownership path.
+
 Subrange storage retains a nominal descriptor with base type and constant bounds.
 Expression types expose the base scalar, and explicit range-check nodes retain the
 destination constraint for narrowing. References compare declared lvalue types rather

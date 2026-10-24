@@ -4,6 +4,7 @@
  */
 
 #include "emitter.h"
+#include "variant.h"
 #include "ir/number.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,7 +64,10 @@ static const Import imports[] = {{"write_utf8", "ii", 0},
                                  {"stream_string", "iiiii", 0},
                                  {"write_formatted", "idiiii", 0},
                                  {"randomize", "", 0},
-                                 {"random_i32", "iii", 0x7f}};
+                                 {"random_i32", "iii", 0x7f},
+                                 {"variant_access", "iiii", 0},
+                                 {"variant_copy", "iiiiiii", 0},
+                                 {"variant_read_string", "iiiiii", 0}};
 enum {
     IMPORT_COUNT = sizeof(imports) / sizeof(*imports),
     RUN_TYPE = IMPORT_COUNT,
@@ -357,7 +361,7 @@ static void variable(Wasm *w, size_t symbol, int flag, int store)
 
 /* Borrow a scratch local until the caller restores next_local. Recursive lowering
  * cannot overwrite a live destination/address because it allocates above this. */
-static size_t temporary(Wasm *w)
+size_t temporary(Wasm *w)
 {
     size_t local = w->next_local++;
     if (w->next_local > w->local_count) {
@@ -394,11 +398,23 @@ static void character_view(Wasm *w, const Lvalue *value, size_t root);
 /* Optional root local follows the last dereference, not the originating pointer cell. */
 static void emit_path(Wasm *w, const Lvalue *value, size_t root);
 
+/* A nested selector expression gets its own capture. Claims live only until the
+ * current load, commit or writable binding has validated the once-evaluated path. */
+static void capture_path(Wasm *w, const Lvalue *value, size_t root, VariantPath *path)
+{
+    VariantPath *previous = w->variant_path;
+    w->variant_path = path;
+    emit_path(w, value, root);
+    w->variant_path = previous;
+}
+
 /* Evaluate a storage path once, checking each index before offset arithmetic.
  * Validated object sizes guarantee in-range products/sums fit program memory. */
 static void emit_lvalue(Wasm *w, const Lvalue *value)
 {
-    emit_path(w, value, SIZE_MAX);
+    VariantPath path = {0};
+    capture_path(w, value, SIZE_MAX, &path);
+    variant_access(w, &path, 0, value->line, value->column);
 }
 
 /* Resolve a path while retaining the correct owning written root across selectors. */
@@ -443,8 +459,10 @@ static void emit_path(Wasm *w, const Lvalue *value, size_t root)
             emit_expression(w, value->base->value);
         } else {
             size_t address = temporary(w);
-            emit_path(w, value->base, root);
+            VariantPath path = {0};
+            capture_path(w, value->base, root, &path);
             indexed(w, 0x22, "local.tee", address);
+            variant_access(w, &path, 0, value->line, value->column);
             memory_op(w, 0x2d, "i32.load8_u", 0, 8);
             op(w, 0x45, "i32.eqz");
             check(w, 1, value->line, value->column);
@@ -463,10 +481,22 @@ static void emit_path(Wasm *w, const Lvalue *value, size_t root)
     }
     emit_path(w, value->base, root);
     if (value->kind == LV_FIELD) {
+        if (w->variant_path && value->field->owner && value->field->owner->arm) {
+            size_t base = temporary(w);
+            indexed(w, 0x22, "local.tee", base);
+            variant_capture(w, w->variant_path, value->field, base);
+        }
         size_t offset = WASM_CELL_SIZE;
-        for (const Field *field = value->base->type->fields; field != value->field;
-             field = field->next) {
-            offset += type_size(w, field->type);
+        if (value->field->owner) {
+            Diagnostic diagnostic = {0};
+            if (!wasm_field_offset(value->field, &offset, &diagnostic)) {
+                w->code.failed = 1;
+            }
+        } else {
+            for (const Field *field = value->base->type->fields; field != value->field;
+                 field = field->next) {
+                offset += type_size(w, field->type);
+            }
         }
         constant(w, 0, (int64_t)offset);
         op(w, 0x6a, "i32.add");
@@ -543,8 +573,7 @@ static void call_routine(Wasm *w, const Routine *routine, unsigned line, unsigne
 static void emit_call(Wasm *w, const Routine *routine, const Expr *arguments, unsigned line,
                       unsigned column);
 /* Allocate cleared transient/frame storage without changing the current frame base. */
-static void allocate_storage(Wasm *w, size_t size, size_t destination, unsigned line,
-                             unsigned column);
+void allocate_storage(Wasm *w, size_t size, size_t destination, unsigned line, unsigned column);
 
 /* Allocate a runtime byte count already on the stack, preserving caller locals. */
 static void allocate_dynamic(Wasm *w, size_t destination, unsigned line, unsigned column);
@@ -979,8 +1008,9 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
 {
     size_t saved = w->next_local;
     size_t destination = temporary(w), root = temporary(w);
+    VariantPath path = {0};
     ValueType base_type = type_value(target->type);
-    emit_path(w, target, root);
+    capture_path(w, target, root, &path);
     indexed(w, 0x21, "local.set", destination);
     check_target(w, destination, target->type, target->line ? target->line : line,
                  target->column ? target->column : column);
@@ -996,6 +1026,7 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
             check_range(w, target->type, line, column);
         }
         indexed(w, 0x21, "local.set", value);
+        variant_access(w, &path, -1, line, column);
         indexed(w, 0x20, "local.get", destination);
         indexed(w, 0x20, "local.get", value);
         constant(w, 0, line);
@@ -1004,7 +1035,16 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
     } else if (target->type->kind == TYPE_KIND_STRING) {
         if (source) {
             emit_expression(w, source);
-            copy_typed(w, destination, target->type, line, column);
+            if (path.count) {
+                size_t value = temporary(w);
+                indexed(w, 0x21, "local.set", value);
+                variant_copy(w, &path, destination, value, 0, target->type->capacity, line, column);
+            } else {
+                copy_typed(w, destination, target->type, line, column);
+            }
+        } else if (path.count) {
+            variant_read_string(w, &path, destination, target->type->capacity, input_line, line,
+                                column);
         } else {
             indexed(w, 0x20, "local.get", destination);
             constant(w, 0, (int64_t)target->type->capacity);
@@ -1024,13 +1064,22 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
             check_range(w, target->type, line, column);
         }
         if (aggregate(target->type)) {
-            copy_value(w, destination, type_size(w, target->type));
+            if (path.count || variant_value(target->type)) {
+                size_t value = temporary(w);
+                indexed(w, 0x21, "local.set", value);
+                variant_copy(w, &path, destination, value, type_size(w, target->type), 0, line,
+                             column);
+            } else {
+                copy_value(w, destination, type_size(w, target->type));
+            }
         } else {
             unsigned type = scalar_type(target->type);
             size_t local = type == 0x7c   ? w->real_local
                            : type == 0x7e ? w->wide_local
+                           : path.count   ? temporary(w)
                                           : w->left_local;
             indexed(w, 0x21, "local.set", local);
+            variant_access(w, &path, -1, line, column);
             indexed(w, 0x20, "local.get", destination);
             indexed(w, 0x20, "local.get", local);
             memory_op(w,
@@ -1062,9 +1111,11 @@ static void emit_increment(Wasm *w, const Stmt *s)
 {
     size_t saved = w->next_local;
     size_t destination = temporary(w), root = temporary(w);
-    emit_path(w, s->target, root);
+    VariantPath path = {0};
+    capture_path(w, s->target, root, &path);
     indexed(w, 0x21, "local.set", destination);
     check_target(w, destination, TYPE_INTEGER, s->line, s->column);
+    variant_access(w, &path, 0, s->line, s->column);
     indexed(w, 0x20, "local.get", destination);
     memory_op(w, 0x2d, "i32.load8_u", 0, 8);
     op(w, 0x45, "i32.eqz");
@@ -1198,9 +1249,11 @@ static void emit_call(Wasm *w, const Routine *routine, const Expr *arguments, un
             routine->parameter_modes[argument_index] ? SIZE_MAX : borrow_checkpoint(w);
         if (routine->parameter_modes[argument_index]) {
             size_t target = temporary(w), root = temporary(w);
-            emit_path(w, argument->lvalue, root);
+            VariantPath path = {0};
+            capture_path(w, argument->lvalue, root, &path);
             indexed(w, 0x21, "local.set", target);
             check_target(w, target, argument->type, argument->line, argument->column);
+            variant_access(w, &path, 1, argument->line, argument->column);
             indexed(w, 0x20, "local.get", target);
             indexed(w, 0x20, "local.get", root);
         } else if (argument->type->kind == TYPE_KIND_STRING) {
@@ -1241,10 +1294,12 @@ static void pointer_statement(Wasm *w, const Stmt *s)
 {
     size_t saved = w->next_local;
     size_t destination = temporary(w), root = temporary(w);
-    emit_path(w, s->target, root);
+    VariantPath path = {0};
+    capture_path(w, s->target, root, &path);
     indexed(w, 0x21, "local.set", destination);
     check_target(w, destination, s->target->type, s->line, s->column);
     if (s->kind == ST_DISPOSE) {
+        variant_access(w, &path, 0, s->line, s->column);
         indexed(w, 0x20, "local.get", destination);
         memory_op(w, 0x2d, "i32.load8_u", 0, 8);
         op(w, 0x45, "i32.eqz");
@@ -1260,6 +1315,9 @@ static void pointer_statement(Wasm *w, const Stmt *s)
         constant(w, 1, 0);
     }
     indexed(w, 0x21, "local.set", w->wide_local);
+    if (s->kind == ST_NEW) {
+        variant_access(w, &path, -1, s->line, s->column);
+    }
     indexed(w, 0x20, "local.get", destination);
     indexed(w, 0x20, "local.get", w->wide_local);
     memory_op(w, 0x37, "i64.store", 3, 0);
@@ -1531,8 +1589,10 @@ static void emit_with(Wasm *w, const Stmt *s)
     scope.entry_pins = borrow_checkpoint(w);
     scope.address = temporary(w);
     scope.root = temporary(w);
-    emit_path(w, s->target, scope.root);
+    VariantPath path = {0};
+    capture_path(w, s->target, scope.root, &path);
     indexed(w, 0x21, "local.set", scope.address);
+    variant_access(w, &path, 1, s->line, s->column);
     scope.top = temporary(w);
     indexed(w, 0x23, "global.get", 1);
     indexed(w, 0x21, "local.set", scope.top);
@@ -1886,8 +1946,7 @@ static void module_header(Buffer *binary, const Program *program, int heap)
 
 /* Allocate and clear an activation before touching any of its storage. The
  * checked frame end is below 64 MiB, so no intermediate address can wrap i32. */
-static void allocate_storage(Wasm *w, size_t size, size_t destination, unsigned line,
-                             unsigned column)
+void allocate_storage(Wasm *w, size_t size, size_t destination, unsigned line, unsigned column)
 {
     constant(w, 0, (int64_t)size);
     allocate_dynamic(w, destination, line, column);
@@ -1961,8 +2020,10 @@ static void character_view(Wasm *w, const Lvalue *value, size_t root)
 {
     size_t saved = w->next_local;
     size_t source = temporary(w), index = temporary(w), view = temporary(w);
-    emit_path(w, value->base, root);
+    VariantPath path = {0};
+    capture_path(w, value->base, root, &path);
     indexed(w, 0x21, "local.set", source);
+    variant_access(w, &path, 1, value->line, value->column);
     emit_expression(w, value->index);
     indexed(w, 0x21, "local.set", index);
     indexed(w, 0x20, "local.get", source);
@@ -2016,7 +2077,7 @@ static size_t enum_table(Wasm *w, ValueType type)
         size += 16 + ((member->length + 15) & ~(size_t)15);
     }
     if (w->data.length > P2W_SOURCE_LIMIT || size + 15 > P2W_SOURCE_LIMIT - w->data.length) {
-        w->enum_data_overflow = 1;
+        w->data_overflow = 1;
         return 0;
     }
     EnumTable *table = calloc(1, sizeof(*table));
@@ -2315,7 +2376,7 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
     Wasm w = {0};
     w.emit_wat = emit_wat;
     w.program = program;
-    w.heap = program->pointer_types != NULL;
+    w.heap = program->pointer_types != NULL || program->has_variants;
     if (!wasm_layout_build(program, &w.layout, &result->diagnostic)) {
         wasm_layout_destroy(&w.layout);
         return 0;
@@ -2404,12 +2465,13 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
     }
     int success =
         !w.data.failed && !functions.failed && !result->binary.failed && !result->wat.failed;
-    int literals_fit = !w.enum_data_overflow && w.data.length <= P2W_SOURCE_LIMIT;
+    int literals_fit = !w.data_overflow && w.data.length <= P2W_SOURCE_LIMIT;
     while (w.enum_tables) {
         EnumTable *next = w.enum_tables->next;
         free(w.enum_tables);
         w.enum_tables = next;
     }
+    variant_destroy(&w);
     buffer_free(&w.data);
     buffer_free(&functions);
     wasm_layout_destroy(&w.layout);

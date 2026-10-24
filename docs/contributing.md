@@ -43,7 +43,8 @@ Add descriptively named positive/negative and boundary records to `test/cases.js
 Preserve existing input strings, expected program output, and located diagnostics rather
 than rewriting batch cases into live scripts. Live scripts belong in
 `test/interactive.json`; `test/interactive.py` covers workers, waits, EOF/limits,
-controls, and exports. `test/terminal.py` covers native editing, caret geometry,
+controls, and exports. `test/variant-runtime.js` shares forged-schema/lease and atomic boundary checks between
+Node and actual browsers. `test/terminal.py` covers native editing, caret geometry,
 selection, draft/focus state, and offline presentation. Private heap boundary checks use
 test-only WAT exports; production exports stay unchanged. Profiles are temporary and
 retain default browser security; screenshots and verification evidence stay under

@@ -412,6 +412,22 @@ int main(void)
     assert(with->body->target->base->binding == with->symbol);
     assert(with->body->target->symbol == with->target->symbol);
     program_destroy(&program);
+    const char *variant_source = "program p; type R=record fixed:integer; case tag:boolean of "
+                                 "true:(x:integer; case boolean of true:(deep:char); false:()); "
+                                 "false:(y:real) end; var r1:R; begin r1.deep:=#65 end.";
+    assert(frontend_parse(&program, variant_source, strlen(variant_source), &diagnostic));
+    ValueType variant_record = program.symbols[0].type;
+    assert(program.has_variants && variant_record->variant->arm_count == 2);
+    assert(variant_record->variant->discriminator == TYPE_BOOLEAN);
+    assert(strcmp(variant_record->fields->next->name, "tag") == 0);
+    const Field *deep = variant_record->member_fields;
+    while (strcmp(deep->name, "deep") != 0) {
+        deep = deep->lookup_next;
+    }
+    assert(deep->owner->arm->part->owner->arm->part == variant_record->variant);
+    assert(program.body->body->target->field == deep);
+    assert(program.body->body->target->depth == 4);
+    program_destroy(&program);
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));
     assert(!frontend_parse(&program, invalid, strlen(invalid), &diagnostic));

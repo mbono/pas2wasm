@@ -66,6 +66,34 @@ async function verifySetWrites(compile) {
     }
 }
 
+/* Atomic variant writes preserve the entire old arm, including metadata and flags,
+ * when narrowing, input validation, or an incompatible borrowed copy fails. */
+async function verifyVariantWrites(compile) {
+    for (const [declarations, initial, failing, input, code, size] of [
+        ['type R=record case boolean of true:(x:integer); false:(n:1..3) end; var value:R;',
+            'value.x:=7', 'value.n:=4', '', 'R_RANGE', 48],
+        ['type R=record case boolean of true:(x:integer); false:(n:1..3) end; var value:R;',
+            'value.x:=7', 'readln(value.n)', '4\n', 'R_RANGE', 48],
+        ['type R=record case boolean of true:(x:integer); false:(text:string[2]) end; var value:R;',
+            'value.x:=7', 'readln(value.text)', 'abc\n', 'R_STRING_CAPACITY', 64],
+        ['type R=record case boolean of true:(x:integer); false:(text:string[2]) end; var value:R;',
+            'value.x:=7', "value.text:='abc'", '', 'R_STRING_CAPACITY', 64]
+    ]) {
+        const snapshots = [];
+        for (const tail of ['', '; '+failing]) {
+            const result = compile('program p; '+declarations+' begin '+initial+tail+' end.');
+            assert(!result.diagnostic, JSON.stringify(result.diagnostic));
+            const host = createPas2WasmRuntime(input, () => {});
+            const {instance} = await WebAssembly.instantiate(result.binary, {pas2wasm_v1:host.imports});
+            host.attach(instance);
+            if (tail) assert.throws(() => instance.exports.run(), error => error.code === code);
+            else instance.exports.run();
+            snapshots.push(new Uint8Array(instance.exports.memory.buffer,262144,size).slice());
+        }
+        assert.deepEqual(snapshots[1],snapshots[0], 'Failed variant write changed the old arm');
+    }
+}
+
 /* Run a development tool with bounded runtime and useful failure output. */
 function tool(command, args, options = {}) {
     const result = spawnSync(command, args, {encoding: 'utf8', timeout: 15000, ...options});
@@ -117,9 +145,11 @@ function verifyStringWrites() {
 async function main() {
     verifyStringWrites();
     await require('./io.js')();
+    require('./variant-runtime.js')(createPas2WasmRuntime);
     const compile = await createCompiler(require('../build/pas2wasm.js'));
     await verifySubrangeWrites(compile);
     await verifySetWrites(compile);
+    await verifyVariantWrites(compile);
     const version = fs.readFileSync(path.join(__dirname, '../VERSION'), 'utf8').trim();
     assert.equal(compile.version, version, 'Wasm compiler embeds VERSION');
     assert.equal(tool(nativeExecutable, ['--version']).stdout, `Pas2Wasm ${version}\n`);

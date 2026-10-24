@@ -11,6 +11,8 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     const outputLimit = limits.output ?? 1048576;
     const encoder = new TextEncoder();
     const decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
+    const variantSchemas = new Map(); // Immutable literal schemas, private to this attached instance.
+    let variantSchemaBytes = 0;
     let memory = null, position = 0, offset = 0, outputBytes = 0;
     let closed = !requestLine, inputBytes = encoder.encode(input).length;
     const lines = input === '' ? [] : input.split(/\r?\n/);
@@ -207,13 +209,17 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         });
     }
     /* Validate input before encoding so lone surrogates are never replaced. */
-    function inputString(text, destination, capacity, line, column) {
+    function inputValue(text, line, column) {
         for (const scalar of text) {
             const value = scalar.codePointAt(0);
             if (value >= 0xd800 && value <= 0xdfff)
                 fail('R_ENCODING', 'Input contains an invalid Unicode surrogate.', line, column);
         }
-        storeString(destination, capacity, encoder.encode(text), line, column);
+        return encoder.encode(text);
+    }
+    /* Ordinary and variant input share validation; destinations commit afterward. */
+    function inputString(text, destination, capacity, line, column) {
+        storeString(destination, capacity, inputValue(text, line, column), line, column);
     }
     /* Borrow only a checked range in this program's own bounded linear memory. */
     function bytes(pointer, length, line, column) {
@@ -279,6 +285,162 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             count > characters.length - start + 1)
             fail('R_BOUNDS', 'String slice is outside its bounds.', line, column);
         return encoder.encode(characters.slice(start - 1, start - 1 + count).join(''));
+    }
+    /* Read u32 metadata through the same checked program-memory boundary as values. */
+    function word(pointer, line, column) {
+        bytes(pointer, 4, line, column);
+        return new DataView(memory.buffer).getUint32(pointer, true);
+    }
+    /* Requests borrow a bounded claim array and the current frame lease/control lists.
+     * Variant leases have kind 1 at +12; heap leases retain kind 0 and their old layout. */
+    function variantRequest(pointer, line, column) {
+        bytes(pointer, 16, line, column);
+        const count = word(pointer, line, column), leases = [], controls = [];
+        if (count > 128) fail('R_MEMORY', 'Variant claim limit exceeded.', line, column);
+        bytes(pointer + 16, count * 16, line, column);
+        const controlBase = word(pointer + 8, line, column);
+        const controlCount = word(pointer + 12, line, column);
+        if (controlCount > 8192) fail('R_MEMORY', 'Invalid counted-control list.', line, column);
+        bytes(controlBase, controlCount * 4, line, column);
+        for (let i = 0; i < controlCount; i++) controls.push(word(controlBase + i * 4, line, column));
+        const stackBase = controlBase + 32768, stackEnd = stackBase + 131072;
+        let head = word(pointer + 4, line, column), steps = 0;
+        while (head) {
+            if (++steps > 8192 || head < stackBase || head > stackEnd - 16 || head % 16)
+                fail('R_MEMORY', 'Invalid variant lease chain.', line, column);
+            const kind = word(head + 12, line, column);
+            if (kind > 1) fail('R_MEMORY', 'Invalid lease kind.', line, column);
+            if (kind) leases.push({pointer:word(head, line, column), schema:word(head + 8, line, column)});
+            head = word(head + 4, line, column);
+        }
+        return {pointer, count, leases, controls};
+    }
+    /* Decode immutable backend schemas. Each arm has fixed typed fields followed
+     * by an optional nested variant region; schemas reside in the literal region. */
+    function variantSchema(pointer, line, column) {
+        if (variantSchemas.has(pointer)) return variantSchemas.get(pointer);
+        const start = pointer, arms = [];
+        const count = word(pointer, line, column);
+        if (pointer >= 262144 || !count || count > 1024)
+            fail('R_MEMORY', 'Invalid variant schema.', line, column);
+        pointer += 4;
+        let fields = 0;
+        for (let i = 0; i < count; i++) {
+            const n = word(pointer, line, column);
+            const nested = word(pointer + 4, line, column), nestedSize = word(pointer + 8, line, column);
+            const size = word(pointer + 12, line, column), members = [];
+            if ((fields += n) > 4096 || size < 16 || size > 67108864 || size % 16 ||
+                nested < 16 || nested > size || nestedSize !== size - nested)
+                fail('R_MEMORY', 'Invalid variant arm layout.', line, column);
+            pointer += 16;
+            let expected = 16;
+            for (let j = 0; j < n; j++) {
+                const offset = word(pointer, line, column), length = word(pointer + 4, line, column);
+                const type = word(pointer + 8, line, column);
+                if (offset !== expected || !length || length % 16 || length > size - offset || !type)
+                    fail('R_MEMORY', 'Invalid variant field layout.', line, column);
+                members.push({offset, length, type});
+                expected += length; pointer += 12;
+            }
+            if (expected !== nested) fail('R_MEMORY', 'Invalid variant prefix.', line, column);
+            arms.push({members, byOffset:new Map(members.map(field => [field.offset, field])), nested, nestedSize, size});
+        }
+        if (pointer > 262144 || pointer < start || variantSchemaBytes + pointer - start > 262144)
+            fail('R_MEMORY', 'Variant schema exceeds literal memory.', line, column);
+        variantSchemaBytes += pointer - start;
+        variantSchemas.set(start, arms);
+        return arms;
+    }
+    /* Variant activation can clear an entire arm region, so its controls are checked
+     * independently of the selected destination's ordinary leaf/aggregate guard. */
+    function variantControls(request, pointer, length, line, column) {
+        if (request.controls.some(control => control >= pointer && control < pointer + length))
+            fail('R_FOR_CONTROL', 'An alias would modify an active counted control.', line, column);
+    }
+    /* Build a bounded mutation plan without touching memory. Virtual reads account
+     * for earlier ancestor clears, preventing stale nested bytes from becoming tags. */
+    function variantPlan(request, writable, line, column) {
+        const operations = [];
+        function activeAt(pointer) {
+            for (let i = operations.length - 1; i >= 0; i--) {
+                const operation = operations[i];
+                if (operation.tag && operation.pointer === pointer) return operation.tag;
+                if (!operation.tag && pointer >= operation.pointer && pointer + 4 <= operation.pointer + operation.length)
+                    return 0;
+            }
+            return word(pointer, line, column);
+        }
+        for (let i = 0; i < request.count; i++) {
+            const claim = request.pointer + 16 + i * 16;
+            const pointer = word(claim, line, column);
+            const arms = variantSchema(word(claim + 4, line, column), line, column);
+            const selected = word(claim + 8, line, column), field = word(claim + 12, line, column);
+            if (!selected || selected > arms.length || (field !== 0xffffffff && field >= arms[selected - 1].members.length))
+                fail('R_MEMORY', 'Invalid variant view.', line, column);
+            const size = Math.max(...arms.map(arm => arm.size));
+            bytes(pointer, size, line, column);
+            const active = activeAt(pointer);
+            if (active > arms.length) fail('R_MEMORY', 'Invalid variant storage state.', line, column);
+            const incoming = arms[selected - 1], old = arms[active - 1];
+            const member = incoming.members[field];
+            const previous = old && member && old.byOffset.get(member.offset);
+            const compatible = active === selected || (previous &&
+                previous.length === member.length && previous.type === member.type);
+            if (compatible) continue;
+            if (!writable) fail(active ? 'R_VARIANT' : 'R_UNINITIALIZED',
+                active ? 'Variant field has an incompatible active storage view.' : 'Variant field was read before initialization.', line, column);
+            variantControls(request, pointer, size, line, column);
+            if (request.leases.some(lease => lease.pointer === pointer))
+                fail('R_LIFETIME', 'Cannot change a variant arm while it is borrowed.', line, column);
+            for (const next of incoming.members) {
+                const previous = old && old.byOffset.get(next.offset);
+                if (!previous || previous.length !== next.length || previous.type !== next.type)
+                    operations.push({pointer:pointer + next.offset, length:next.length});
+            }
+            if (incoming.nestedSize) operations.push({pointer:pointer + incoming.nested, length:incoming.nestedSize});
+            operations.push({pointer, tag:selected});
+            if (operations.length > 65536) fail('R_MEMORY', 'Variant activation exceeds its work budget.', line, column);
+        }
+        return operations;
+    }
+    /* All validation, source snapshots and lease checks precede this infallible commit. */
+    function applyVariantPlan(operations) {
+        const view = new DataView(memory.buffer);
+        for (const operation of operations) {
+            if (operation.tag) view.setUint32(operation.pointer, operation.tag, true);
+            else new Uint8Array(memory.buffer, operation.pointer, operation.length).fill(0);
+        }
+    }
+    /* A whole value may contain nested variant headers. Leases stay outside copied
+     * values; only a change to a live header is forbidden, not compatible field writes. */
+    function variantCopy(destination, source, size, capacity, pointer, line, column) {
+        const request = variantRequest(pointer, line, column);
+        const value = size ? bytes(source, size, line, column).slice() : stringBytes(source, line, column).slice();
+        const length = size || 16 + capacity;
+        bytes(destination, length, line, column);
+        if (!size && (capacity < 0 || capacity > 1048576 || value.length > capacity))
+            fail(value.length > capacity ? 'R_STRING_CAPACITY' : 'R_MEMORY', 'Invalid variant string capacity.', line, column);
+        variantControls(request, destination, length, line, column);
+        const operations = variantPlan(request, true, line, column);
+        if (size) {
+            const incoming = new DataView(value.buffer, value.byteOffset, value.byteLength);
+            for (const lease of request.leases) {
+                if (lease.pointer < destination || lease.pointer > destination + size - 4) continue;
+                const old = word(lease.pointer, line, column);
+                const next = incoming.getUint32(lease.pointer - destination, true);
+                if (old === next) continue;
+                const arms = variantSchema(lease.schema, line, column), a = arms[old - 1], b = arms[next - 1];
+                // Identical fixed layouts preserve every borrowed view despite the new arm ID.
+                const compatible = a && b && !a.nestedSize && !b.nestedSize && a.size === b.size &&
+                    a.members.length === b.members.length && a.members.every((field, i) =>
+                        field.offset === b.members[i].offset && field.length === b.members[i].length &&
+                        field.type === b.members[i].type);
+                if (!compatible) fail('R_LIFETIME', 'Cannot replace a borrowed variant arm.', line, column);
+            }
+        }
+        applyVariantPlan(operations);
+        if (size) bytes(destination, size, line, column).set(value);
+        else storeString(destination, capacity, value, line, column);
     }
     /* ABI record: name/signature pairs are documented in docs/runtime-abi.md. */
     const imports = {
@@ -421,6 +583,32 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         string_slice(destination, capacity, source, start, count, line, column) {
             storeString(destination, capacity, stringSlice(source, start, count, line, column), line, column);
         },
+        /* Memory-only variant services consume backend schemas and frame-owned requests. */
+        variant_access(pointer, writable, line, column) {
+            const request = variantRequest(pointer, line, column);
+            const operations = variantPlan(request, writable !== 0, line, column);
+            if (writable) applyVariantPlan(operations);
+        },
+        variant_copy(destination, source, size, capacity, pointer, line, column) {
+            variantCopy(destination, source, size, capacity, pointer, line, column);
+        },
+        /* Validate supplied text before any arm activation, retaining the same JSPI cursor. */
+        variant_read_string(destination, capacity, mode, pointer, line, column) {
+            return mapped(ensureLine(line, column), () => {
+                if (offset > 0 && offset === lines[position].length && !terminated[position])
+                    fail('R_INPUT_EOF', 'Program input is exhausted.', line, column);
+                const value = inputValue(lines[position].slice(offset), line, column);
+                bytes(destination, 16 + capacity, line, column);
+                if (capacity < 0 || capacity > 1048576 || value.length > capacity)
+                    fail(value.length > capacity ? 'R_STRING_CAPACITY' : 'R_MEMORY', 'Invalid variant string capacity.', line, column);
+                const request = variantRequest(pointer, line, column);
+                variantControls(request, destination, 16 + capacity, line, column);
+                const operations = variantPlan(request, true, line, column);
+                applyVariantPlan(operations);
+                storeString(destination, capacity, value, line, column);
+                offset = lines[position].length;
+            });
+        },
         /* Map generated numeric failure codes to stable user-facing diagnostics. */
         fail(code, line, column) {
             const errors = {
@@ -443,7 +631,8 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
                 17: ['R_LIFETIME', 'Cannot dispose an allocation while it is borrowed.'],
                 18: ['R_POINTER', 'Invalid internal pointer or allocation bounds.'],
                 19: ['R_RANGE', 'Value is outside its declared subrange.'],
-                20: ['R_SET_RANGE', 'Set member is outside its declared domain.']
+                20: ['R_SET_RANGE', 'Set member is outside its declared domain.'],
+                21: ['R_VARIANT', 'Variant field has an incompatible active storage view.']
             };
             const entry = errors[code] || ['R_FAILURE', 'Unknown program runtime failure.'];
             fail(entry[0], entry[1], line, column);
@@ -453,6 +642,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         /* Bind only the freshly instantiated generated program's bounded memory. */
         attach(instance) {
             memory = instance.exports.memory;
+            variantSchemas.clear(); variantSchemaBytes = 0;
             if (!(memory instanceof WebAssembly.Memory) || memory.buffer.byteLength > 67108864)
                 fail('R_MEMORY', 'Program memory exceeds 64 MiB or is missing.');
         }
@@ -510,7 +700,7 @@ function pas2WasmProgramWorker() {
             const imports = {...runtime.imports};
             if (data.interactive) {
                 for (const name of ['read_i32','read_f64','read_char','string_read','discard_line',
-                    'stream_i32','stream_f64','stream_char','stream_string'])
+                    'stream_i32','stream_f64','stream_char','stream_string','variant_read_string'])
                     imports[name] = new WebAssembly.Suspending(imports[name]);
             }
             const {instance} = await WebAssembly.instantiate(data.binary, {pas2wasm_v1:imports});

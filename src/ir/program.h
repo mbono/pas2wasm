@@ -25,6 +25,8 @@ typedef struct Type Type;
 typedef struct Field Field;
 typedef struct EnumMember EnumMember;
 typedef struct SetItem SetItem;
+typedef struct VariantPart VariantPart;
+typedef struct VariantArm VariantArm;
 /* Logical membership bits, relative to a set's lower ordinal; unused bits are zero. */
 typedef struct {
     unsigned char bits[P2W_SET_CAPACITY / 8];
@@ -57,6 +59,10 @@ struct Type {
     ValueType index_type; /* Array ordinal domain, independent of its element type. */
     int32_t lower, upper;
     Field *fields;
+    Field *member_fields; /* Record namespace includes every arm; fields retains fixed storage
+                             order. */
+    VariantPart *variant;
+    VariantArm *arm; /* Non-NULL only for a variant arm's anonymous logical record body. */
     EnumMember *members;
     size_t capacity; /* String byte capacity, independent of target representation. */
     Type *next;      /* Canonical string/pointer interning chains. */
@@ -76,6 +82,26 @@ struct Field {
     ValueType type;
     unsigned line, column;
     Field *next;
+    Field *lookup_next;
+    Type *owner; /* Logical record body declaring this field; no target offsets. */
+};
+/* One ordinal-discriminated overlapping part. Its tag, when present, is an ordinary
+ * fixed field of owner. Parts/arms/labels belong to Program, including anonymous bodies. */
+struct VariantPart {
+    Type *owner;
+    ValueType discriminator;
+    VariantArm *arms;
+    size_t arm_count;
+    unsigned line, column;
+};
+/* Each arm is a logical record prefix and optional nested part. Labels select its
+ * declaration only; runtime storage activation is independent of the Pascal tag. */
+struct VariantArm {
+    VariantPart *part;
+    Type *body;
+    struct CaseLabel *labels;
+    size_t index;
+    VariantArm *next;
 };
 /* Addressable path, distinct from loading its value. Selector chains retain their depth;
  * symbol retains the originating declaration and type/location describe this path. */
@@ -290,6 +316,7 @@ typedef struct {
     Symbol *symbols;
     size_t symbol_count, symbol_capacity;
     size_t global_count, routine_count, with_count;
+    int has_variants;
     Routine *routines, *root_routines;
     size_t symbol_head; /* Global declaration chain; SIZE_MAX ends every chain. */
     Stmt *body;
