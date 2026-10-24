@@ -25,6 +25,14 @@ typedef enum {
     TK_COPY,
     TK_CARET,
     TK_ADDRESS,
+    TK_FILE,
+    TK_FILE_ASSIGN,
+    TK_REWRITE,
+    TK_RESET,
+    TK_CLOSE,
+    TK_FILESIZE,
+    TK_FILE_EOF,
+    TK_EOLN,
     TK_NIL,
     TK_NEW,
     TK_DISPOSE,
@@ -207,7 +215,15 @@ static const Keyword keywords[] = {{"program", TK_PROGRAM},
                                    {"random", TK_RANDOM},
                                    {"randomize", TK_RANDOMIZE},
                                    {"write", TK_WRITE},
-                                   {"read", TK_READ}};
+                                   {"read", TK_READ},
+                                   {"file", TK_FILE},
+                                   {"assign", TK_FILE_ASSIGN},
+                                   {"rewrite", TK_REWRITE},
+                                   {"reset", TK_RESET},
+                                   {"close", TK_CLOSE},
+                                   {"filesize", TK_FILESIZE},
+                                   {"eof", TK_FILE_EOF},
+                                   {"eoln", TK_EOLN}};
 
 /* Set the first diagnostic and abandon this parse without losing arena ownership. */
 static _Noreturn void fail_at(Parser *p, const char *code, const char *message, unsigned line,
@@ -720,10 +736,21 @@ static ValueType string_type(Parser *p, size_t capacity, Token at);
 /* Bind constructors or convert compatible set domains without changing var identity. */
 static Expr *set_coerce(Parser *p, Expr *value, ValueType expected, Token at);
 
+/* Descriptors are writable resources, not copyable Pascal values. Pointer edges
+ * remain ordinary values and therefore do not constitute descriptor containment. */
+static int file_type(ValueType type)
+{
+    type = type_canonical(type);
+    return type && (type->kind == TYPE_KIND_FILE || type->kind == TYPE_KIND_TEXT);
+}
+
 /* Apply specified numeric/string widening and one-scalar constant char contexts. */
 static Expr *coerce(Parser *p, Expr *value, ValueType expected, Token at)
 {
     expected = type_canonical(expected);
+    if (file_type(expected) || file_type(value->type)) {
+        fail_at(p, "E_TYPE", "File descriptors cannot be copied as values.", at.line, at.column);
+    }
     if (expected->kind == TYPE_KIND_SET) {
         return set_coerce(p, value, expected, at);
     }
@@ -1083,6 +1110,9 @@ static Lvalue *with_lvalue(Parser *p, const WithScope *scope, const Field *field
 /* Calls appear in factors as well as statements. */
 static Expr *call_arguments(Parser *p, Routine *routine, Token at);
 
+/* Builtin file queries share the same once-evaluated writable receiver as statements. */
+static Lvalue *file_storage(Parser *p, Token at);
+
 /* Parse literals, resolved variable references, parentheses, and factor-level not. */
 static Expr *factor(Parser *p)
 {
@@ -1111,6 +1141,29 @@ static Expr *factor(Parser *p)
             fail_at(p, "E_LIMIT", "Address path is too deep.", t.line, t.column);
         }
         p->program->has_addresses = 1;
+    } else if (t.kind == TK_FILESIZE || t.kind == TK_FILE_EOF || t.kind == TK_EOLN) {
+        if (p->constant_expression) {
+            fail(p, "E_CONST", "File queries are not constant expressions.");
+        }
+        next(p);
+        expect(p, TK_LPAREN, "File queries require one descriptor.");
+        Lvalue *file = file_storage(p, t);
+        if ((t.kind == TK_FILESIZE && file->type->kind != TYPE_KIND_FILE) ||
+            (t.kind == TK_EOLN && file->type != TYPE_TEXT)) {
+            fail_at(p, "E_TYPE", "filesize requires a typed file; eoln requires text.", t.line,
+                    t.column);
+        }
+        expect(p, TK_RPAREN, "File queries accept exactly one descriptor.");
+        e = expression_node(p,
+                            t.kind == TK_FILESIZE   ? EX_FILE_SIZE
+                            : t.kind == TK_FILE_EOF ? EX_FILE_EOF
+                                                    : EX_FILE_EOLN,
+                            t.kind == TK_FILESIZE ? TYPE_INTEGER : TYPE_BOOLEAN, t, NULL, NULL);
+        e->lvalue = file;
+        e->depth = file->depth + 1;
+        if (e->depth >= 128) {
+            fail_at(p, "E_LIMIT", "File query path is too deep.", t.line, t.column);
+        }
     } else if (t.kind == TK_CHARACTER_LITERAL) {
         e = expression_node(p, EX_INTEGER, TYPE_CHARACTER, t, NULL, NULL);
         e->integer = (int32_t)t.number;
@@ -1743,6 +1796,203 @@ static Lvalue *storage_argument(Parser *p, Token at)
     return value->lvalue;
 }
 
+/* Validate a file descriptor after its path has already been parsed. The caller
+ * retains this logical lvalue, so a multi-value operation cannot reevaluate it. */
+static Lvalue *file_receiver(Parser *p, Expr *value, Token at)
+{
+    if (value->kind != EX_LOAD || !value->writable) {
+        fail_at(p, "E_LVALUE", "File operations require writable descriptor storage.", at.line,
+                at.column);
+    }
+    if (!file_type(value->lvalue->type)) {
+        fail_at(p, "E_TYPE", "Expected a file descriptor.", at.line, at.column);
+    }
+    require_writable(p, value->lvalue->symbol, at);
+    record_write(p, value->lvalue->symbol);
+    return value->lvalue;
+}
+
+/* Ordinary storage parsing supplies the same static counter/effect checks. */
+static Lvalue *file_storage(Parser *p, Token at)
+{
+    Lvalue *file = storage_argument(p, at);
+    if (!file_type(file->type)) {
+        fail_at(p, "E_TYPE", "Expected a file descriptor.", at.line, at.column);
+    }
+    return file;
+}
+
+/* Console/text output shares formatting and enumeration names. Typed files retain
+ * the declared component rather than converting it to printable text. */
+static Expr *output_value(Parser *p, Expr *value, ValueType component, Token at)
+{
+    if (component) {
+        if (p->token.kind == TK_COLON) {
+            fail(p, "E_TYPE", "Typed file output does not accept formatting.");
+        }
+        return coerce(p, value, component, at);
+    }
+    if (value->type->kind == TYPE_KIND_ENUM) {
+        size_t capacity = 0;
+        for (const EnumMember *member = value->type->members; member; member = member->next) {
+            if (member->length > capacity) {
+                capacity = member->length;
+            }
+        }
+        value = expression_node(p, EX_ENUM_TEXT, string_type(p, capacity, at), at, value, NULL);
+    }
+    if (value->type != TYPE_INTEGER && value->type != TYPE_BOOLEAN && value->type != TYPE_REAL &&
+        value->type != TYPE_CHARACTER && value->type->kind != TYPE_KIND_STRING) {
+        fail(p, "E_TYPE", "writeln requires scalar or string arguments.");
+    }
+    if (p->token.kind == TK_COLON) {
+        Token format = p->token;
+        next(p);
+        value->width = expression(p);
+        require_type(p, value->width, TYPE_INTEGER, format);
+        if (p->token.kind == TK_COLON) {
+            if (value->type != TYPE_REAL) {
+                fail(p, "E_TYPE", "Decimal precision requires a real value.");
+            }
+            next(p);
+            value->precision = expression(p);
+            require_type(p, value->precision, TYPE_INTEGER, format);
+        }
+    }
+    return value;
+}
+
+/* The optional leading descriptor is captured by the whole statement, before its
+ * ordered values; text output without values still permits a trailing newline. */
+static void output_statement(Parser *p, Stmt *s, Token at)
+{
+    s->kind = ST_WRITE;
+    s->newline = at.kind == TK_WRITELN;
+    next(p);
+    if (p->token.kind != TK_LPAREN) {
+        return;
+    }
+    next(p);
+    Expr *value = expression(p);
+    ValueType component = NULL;
+    if (file_type(value->type)) {
+        s->file = file_receiver(p, value, at);
+        if (s->file->type->kind == TYPE_KIND_FILE) {
+            if (s->newline) {
+                fail_at(p, "E_TYPE", "writeln requires a text receiver.", at.line, at.column);
+            }
+            component = s->file->type->element;
+        }
+        if (p->token.kind == TK_RPAREN) {
+            if (!s->newline) {
+                fail(p, "E_ARGUMENT", "write requires at least one output value.");
+            }
+            next(p);
+            return;
+        }
+        expect(p, TK_COMMA, "Expected ',' after file receiver.");
+        value = expression(p);
+    }
+    Expr **tail = &s->expression;
+    for (;;) {
+        *tail = output_value(p, value, component, at);
+        tail = &(*tail)->next;
+        if (p->token.kind != TK_COMMA) {
+            break;
+        }
+        next(p);
+        value = expression(p);
+    }
+    expect(p, TK_RPAREN, "Expected ')' after writeln arguments.");
+}
+
+/* Retain one logical input field, preserving console families or exact typed-file
+ * storage identity. The destination path is evaluated only when this field executes. */
+static Stmt *input_field(Parser *p, Lvalue *target, ValueType component, Token at,
+                         Token destination)
+{
+    ValueType type = type_value(target->type);
+    if (component) {
+        if (type_canonical(target->type) != type_canonical(component)) {
+            fail_at(p, "E_TYPE", "Typed file input requires the declared component storage type.",
+                    destination.line, destination.column);
+        }
+    } else if (type != TYPE_INTEGER && type != TYPE_REAL && type != TYPE_CHARACTER &&
+               type->kind != TYPE_KIND_STRING) {
+        fail_at(p, "E_TYPE", "Input requires an integer, real, char, or string destination.",
+                destination.line, destination.column);
+    }
+    Stmt *field = allocate(p, sizeof(*field));
+    field->kind = ST_READ;
+    field->line = at.line;
+    field->column = at.column;
+    field->input_line = at.kind == TK_READLN;
+    field->target = target;
+    field->symbol = target->symbol;
+    return field;
+}
+
+/* A file receiver belongs to the outer group, avoiding repeated paths/cursors when
+ * multiple destinations follow it. Existing console batches retain their node order. */
+static void input_statement(Parser *p, Stmt *s, Token at)
+{
+    s->kind = ST_BLOCK;
+    s->input_line = at.kind == TK_READLN;
+    Stmt **tail = &s->body;
+    next(p);
+    if (p->token.kind == TK_LPAREN) {
+        next(p);
+        if (p->token.kind != TK_NAME && p->token.kind != TK_LPAREN) {
+            fail(p, "E_SYNTAX", "Input requires a writable destination.");
+        }
+        Token destination = p->token;
+        Lvalue *target = storage_argument(p, destination);
+        ValueType component = NULL;
+        if (file_type(target->type)) {
+            s->kind = ST_FILE_READ;
+            s->file = target;
+            if (target->type->kind == TYPE_KIND_FILE) {
+                if (s->input_line) {
+                    fail_at(p, "E_TYPE", "readln requires a text receiver.", at.line, at.column);
+                }
+                component = target->type->element;
+            }
+            if (p->token.kind == TK_RPAREN) {
+                if (!s->input_line) {
+                    fail(p, "E_ARGUMENT", "read requires at least one destination.");
+                }
+                target = NULL;
+            } else {
+                expect(p, TK_COMMA, "Expected ',' after file receiver.");
+                destination = p->token;
+                target = storage_argument(p, destination);
+            }
+        }
+        while (target) {
+            *tail = input_field(p, target, component, at, destination);
+            tail = &(*tail)->next;
+            if (p->token.kind != TK_COMMA) {
+                break;
+            }
+            next(p);
+            if (p->token.kind != TK_NAME && p->token.kind != TK_LPAREN) {
+                fail(p, "E_SYNTAX", "Input requires a writable destination.");
+            }
+            destination = p->token;
+            target = storage_argument(p, destination);
+        }
+        expect(p, TK_RPAREN, "Expected ')' after input destinations.");
+    } else if (at.kind == TK_READ) {
+        fail(p, "E_SYNTAX", "read requires at least one destination.");
+    }
+    if (s->input_line) {
+        *tail = allocate(p, sizeof(**tail));
+        (*tail)->kind = ST_DISCARD;
+        (*tail)->line = at.line;
+        (*tail)->column = at.column;
+    }
+}
+
 /* A comma list is nested with scopes. The stack namespace exists only while
  * parsing its body; generated references keep identities rather than parser pointers. */
 static void with_statement(Parser *p, Stmt *s)
@@ -1909,52 +2159,7 @@ static Stmt *statement(Parser *p)
             s->otherwise = statement(p);
         }
     } else if (t.kind == TK_WRITELN || t.kind == TK_WRITE) {
-        s->kind = ST_WRITE;
-        s->newline = t.kind == TK_WRITELN;
-        next(p);
-        if (p->token.kind == TK_LPAREN) {
-            next(p);
-            Expr **tail = &s->expression;
-            for (;;) {
-                *tail = expression(p);
-                if ((*tail)->type->kind == TYPE_KIND_ENUM) {
-                    size_t capacity = 0;
-                    for (const EnumMember *member = (*tail)->type->members; member;
-                         member = member->next) {
-                        if (member->length > capacity) {
-                            capacity = member->length;
-                        }
-                    }
-                    *tail = expression_node(p, EX_ENUM_TEXT, string_type(p, capacity, t), t, *tail,
-                                            NULL);
-                }
-                if ((*tail)->type != TYPE_INTEGER && (*tail)->type != TYPE_BOOLEAN &&
-                    (*tail)->type != TYPE_REAL && (*tail)->type != TYPE_CHARACTER &&
-                    (*tail)->type->kind != TYPE_KIND_STRING) {
-                    fail(p, "E_TYPE", "writeln requires scalar or string arguments.");
-                }
-                if (p->token.kind == TK_COLON) {
-                    Token format = p->token;
-                    next(p);
-                    (*tail)->width = expression(p);
-                    require_type(p, (*tail)->width, TYPE_INTEGER, format);
-                    if (p->token.kind == TK_COLON) {
-                        if ((*tail)->type != TYPE_REAL) {
-                            fail(p, "E_TYPE", "Decimal precision requires a real value.");
-                        }
-                        next(p);
-                        (*tail)->precision = expression(p);
-                        require_type(p, (*tail)->precision, TYPE_INTEGER, format);
-                    }
-                }
-                tail = &(*tail)->next;
-                if (p->token.kind != TK_COMMA) {
-                    break;
-                }
-                next(p);
-            }
-            expect(p, TK_RPAREN, "Expected ')' after writeln arguments.");
-        }
+        output_statement(p, s, t);
     } else if (t.kind == TK_RANDOMIZE) {
         s->kind = ST_RANDOMIZE;
         next(p);
@@ -1983,48 +2188,29 @@ static Stmt *statement(Parser *p)
             fail_at(p, "E_TYPE", "Allocation/release requires a typed pointer.", t.line, t.column);
         }
         expect(p, TK_RPAREN, "Allocation/release accepts exactly one argument.");
-    } else if (t.kind == TK_READLN || t.kind == TK_READ) {
-        s->kind = ST_BLOCK;
-        Stmt **tail = &s->body;
+    } else if (t.kind == TK_FILE_ASSIGN || t.kind == TK_REWRITE || t.kind == TK_RESET ||
+               t.kind == TK_CLOSE) {
+        s->kind = ST_FILE_CONTROL;
+        s->file_operation = t.kind == TK_FILE_ASSIGN ? FILE_ASSIGN
+                            : t.kind == TK_REWRITE   ? FILE_REWRITE
+                            : t.kind == TK_RESET     ? FILE_RESET
+                                                     : FILE_CLOSE;
         next(p);
-        if (p->token.kind == TK_LPAREN) {
-            next(p);
-            for (;;) {
-                Stmt *field = allocate(p, sizeof(*field));
-                field->kind = ST_READ;
-                field->line = t.line;
-                field->column = t.column;
-                field->input_line = t.kind == TK_READLN;
-                if (p->token.kind != TK_NAME && p->token.kind != TK_LPAREN) {
-                    fail(p, "E_SYNTAX", "Input requires a writable destination.");
-                }
-                Token destination = p->token;
-                field->target = storage_argument(p, destination);
-                field->symbol = field->target->symbol;
-                ValueType type = type_value(field->target->type);
-                if (type != TYPE_INTEGER && type != TYPE_REAL && type != TYPE_CHARACTER &&
-                    type->kind != TYPE_KIND_STRING) {
-                    fail_at(p, "E_TYPE",
-                            "Input requires an integer, real, char, or string destination.",
-                            destination.line, destination.column);
-                }
-                *tail = field;
-                tail = &field->next;
-                if (p->token.kind != TK_COMMA) {
-                    break;
-                }
-                next(p);
+        expect(p, TK_LPAREN, "File operations require a descriptor.");
+        s->file = file_storage(p, t);
+        if (t.kind == TK_FILE_ASSIGN) {
+            expect(p, TK_COMMA, "assign requires a filename.");
+            s->expression = expression(p);
+            if (s->expression->type == TYPE_CHARACTER) {
+                s->expression = coerce(p, s->expression, string_type(p, 4, t), t);
             }
-            expect(p, TK_RPAREN, "Expected ')' after input destinations.");
-        } else if (t.kind == TK_READ) {
-            fail(p, "E_SYNTAX", "read requires at least one destination.");
+            if (s->expression->type->kind != TYPE_KIND_STRING) {
+                fail_at(p, "E_TYPE", "Filename requires a string value.", t.line, t.column);
+            }
         }
-        if (t.kind == TK_READLN) {
-            *tail = allocate(p, sizeof(**tail));
-            (*tail)->kind = ST_DISCARD;
-            (*tail)->line = t.line;
-            (*tail)->column = t.column;
-        }
+        expect(p, TK_RPAREN, "Unexpected argument to file operation.");
+    } else if (t.kind == TK_READLN || t.kind == TK_READ) {
+        input_statement(p, s, t);
     } else if (t.kind == TK_SEMICOLON || t.kind == TK_END || t.kind == TK_ELSE ||
                t.kind == TK_UNTIL) {
         s->kind = ST_EMPTY;
@@ -2132,6 +2318,38 @@ static int32_t array_bound(Parser *p)
 
 /* Record parsing and element parsing share recursive type construction. */
 static ValueType declaration_type(Parser *p);
+
+/* Resolve the shadowable builtin only in type position. Existing Text variables,
+ * fields, routine names and explicit type aliases retain their ordinary bindings. */
+static int builtin_text(Parser *p, Token name)
+{
+    Binding binding = name.kind == TK_NAME ? find_binding(p, name) : (Binding){SIZE_MAX, NULL};
+    return name.kind == TK_NAME && same_name(name.text, name.length, "text") &&
+           binding.symbol == SIZE_MAX && !binding.routine;
+}
+
+/* File descriptors share identity by exact declared component, as pointers do.
+ * The type remains logical; no target size, handle or serialization is recorded. */
+static ValueType declared_file_type(Parser *p, ValueType component, Token at)
+{
+    component = type_canonical(component);
+    if (file_type(component)) {
+        fail_at(p, "E_TYPE", "A file component cannot be a file descriptor.", at.line, at.column);
+    }
+    for (Type *entry = p->program->file_types; entry; entry = entry->next) {
+        type_step(p);
+        ValueType type = type_canonical(entry);
+        if (type->kind == TYPE_KIND_FILE && type_canonical(type->element) == component) {
+            return type;
+        }
+    }
+    Type *type = new_type(p, TYPE_KIND_FILE, at);
+    type->element = component;
+    type->next = p->program->file_types;
+    p->program->file_types = type;
+    p->program->has_files = 1;
+    return type;
+}
 
 /* Fold an ordinal endpoint without creating runtime storage. Quoted one-scalar
  * constant expressions are character bounds, independent of literal byte length. */
@@ -2468,6 +2686,9 @@ static void record_members(Parser *p, Type *owner, RecordScope *scope, TokenKind
         } while (1);
         expect(p, TK_COLON, "Expected ':' before record field type.");
         ValueType type = declaration_type(p);
+        if (file_type(type)) {
+            fail(p, "E_TYPE", "Record fields cannot contain file descriptors.");
+        }
         for (Field *field = first; field; field = field->next) {
             field->type = type;
         }
@@ -2499,6 +2720,20 @@ static ValueType record_type(Parser *p)
 static ValueType declaration_type(Parser *p)
 {
     ValueType type;
+    if (p->token.kind == TK_FILE) {
+        enter(p);
+        Token at = p->token;
+        next(p);
+        expect(p, TK_OF, "Expected 'of' before file component type.");
+        type = declared_file_type(p, declaration_type(p), at);
+        --p->depth;
+        return type;
+    }
+    if (builtin_text(p, p->token)) {
+        p->program->has_files = 1;
+        next(p);
+        return TYPE_TEXT;
+    }
     if (starts_enumeration(p)) {
         return enumeration_type(p);
     }
@@ -2516,7 +2751,7 @@ static ValueType declaration_type(Parser *p)
             fail_at(p, "E_TYPE", "Pointer target is not a type.", target.line, target.column);
         }
         if (target.kind == TK_NAME && binding.symbol == SIZE_MAX && !binding.routine &&
-            p->type_section) {
+            p->type_section && !builtin_text(p, target)) {
             type = pending_type(p, target);
             next(p);
         } else {
@@ -2588,6 +2823,9 @@ static ValueType declaration_type(Parser *p)
         expect(p, TK_RBRACKET, "Expected ']' after array bounds.");
         expect(p, TK_OF, "Expected 'of' before array element type.");
         dimension->element = declaration_type(p);
+        if (file_type(dimension->element)) {
+            fail(p, "E_TYPE", "Array elements cannot contain file descriptors.");
+        }
         p->depth -= dimensions;
         return array;
     }
@@ -2677,6 +2915,23 @@ static void types(Parser *p)
                         type_canonical(canonical->element) == pointer->element) {
                         pointer->kind = TYPE_KIND_ALIAS;
                         pointer->element = canonical;
+                        changed = 1;
+                        break;
+                    }
+                }
+            }
+            for (Type *file = p->program->file_types; file; file = file->next) {
+                if (file->kind != TYPE_KIND_FILE) {
+                    continue;
+                }
+                file->element = type_canonical(file->element);
+                for (Type *older = file->next; older; older = older->next) {
+                    type_step(p);
+                    ValueType canonical = type_canonical(older);
+                    if (canonical->kind == TYPE_KIND_FILE &&
+                        type_canonical(canonical->element) == file->element) {
+                        file->kind = TYPE_KIND_ALIAS;
+                        file->element = canonical;
                         changed = 1;
                         break;
                     }
@@ -2790,6 +3045,7 @@ static void validate_calls(Parser *p, const Stmt *s, const ForControl *control)
             validate_call(p, s->routine, s->line, s->column, control);
         }
         validate_lvalue_calls(p, s->target, control);
+        validate_lvalue_calls(p, s->file, control);
         validate_expression_calls(p, s->expression, control);
         validate_expression_calls(p, s->limit, control);
         if (s->kind == ST_FOR) {
@@ -2867,6 +3123,10 @@ static Routine *routine_header(Parser *p, Token header, Token name, Routine *pre
         const Symbol *parameter = &p->program->symbols[symbol];
         if (parameter->kind == SYMBOL_VARIABLE) {
             size_t i = parameter->slot;
+            if (file_type(parameter->type) && !parameter->by_reference) {
+                fail_at(p, "E_TYPE", "File parameters require var mode.", header.line,
+                        header.column);
+            }
             routine->parameter_types[i] = parameter->type;
             routine->parameter_modes[i] = parameter->by_reference;
             routine->parameter_symbols[i] = symbol;
@@ -2875,6 +3135,10 @@ static Routine *routine_header(Parser *p, Token header, Token name, Routine *pre
     if (routine->is_function) {
         expect(p, TK_COLON, "Expected ':' before function return type.");
         routine->return_type = declaration_type(p);
+        if (file_type(routine->return_type)) {
+            fail_at(p, "E_TYPE", "Functions cannot return file descriptors.", header.line,
+                    header.column);
+        }
         routine->result_symbol = p->program->symbol_count;
         declare(p, name, 1, SYMBOL_VARIABLE);
         p->program->symbols[routine->result_symbol].type = routine->return_type;

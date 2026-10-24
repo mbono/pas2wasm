@@ -257,5 +257,62 @@
     "output": "ready\n",
     "transcript": "ready\n\ud83d\ude00\n",
     "runtime": "R_UNINITIALIZED"
+  },
+  {
+    "name": "file_typed_console",
+    "source": "program p; var f:file of integer; n:integer; begin assign(f,'numbers'); rewrite(f); write('Number: '); readln(n); write(f,n); close(f); reset(f); read(f,n); writeln(n) end.",
+    "lines": [
+      "42"
+    ],
+    "output": "Number: 42\n",
+    "transcript": "Number: 42\n42\n"
+  },
+  {
+    "name": "file_text_console",
+    "source": "program p; var f:text; s:string[16]; begin assign(f,'text'); rewrite(f); write('Text: '); readln(s); writeln(f,s); close(f); reset(f); readln(f,s); writeln(s) end.",
+    "lines": [
+      "\u00e9\ud83d\ude00"
+    ],
+    "output": "Text: \u00e9\ud83d\ude00\n",
+    "transcript": "Text: \u00e9\ud83d\ude00\n\u00e9\ud83d\ude00\n"
+  },
+  {
+    "name": "file_owner_wait",
+    "source": "program p; type FileType=file of integer; var q:^FileType; n:integer; procedure take(var f:FileType); begin assign(f,'x'); rewrite(f); readln(n); write(f,n); close(f); reset(f); read(f,n); writeln(n) end; begin new(q); take(q^); dispose(q) end.",
+    "lines": [
+      "13"
+    ],
+    "output": "13\n",
+    "transcript": "13\n13\n"
+  },
+  {
+    "name": "file_input_failure",
+    "source": "program p; var f:text; n:integer; begin assign(f,'x'); rewrite(f); readln(n); close(f); reset(f); read(f,n) end.",
+    "lines": [
+      "1"
+    ],
+    "output": "",
+    "runtime": "R_FILE_EOF",
+    "transcript": "1\n"
+  },
+  {
+    "name": "file_group_wait",
+    "source": "program p; var f:file of integer; a,b:integer; function ask:integer; begin write('n?'); readln(ask) end; begin assign(f,'x'); rewrite(f); write(f,ask(),ask()); close(f); reset(f); read(f,a,b); writeln(a+b) end.",
+    "lines": [
+      "1",
+      "2"
+    ],
+    "output": "n?n?3\n",
+    "transcript": "n?1\nn?2\n3\n"
+  },
+  {
+    "name": "file_group_wait_close",
+    "source": "program p; var f:file of integer; function ask:integer; begin readln(ask); close(f) end; begin assign(f,'x'); rewrite(f); write(f,ask()) end.",
+    "lines": [
+      "1"
+    ],
+    "output": "",
+    "runtime": "R_FILE_STATE",
+    "transcript": "1\n"
   }
 ]

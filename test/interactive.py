@@ -53,6 +53,8 @@ def verify_workers(browser, compile_native, legacy):
     """Compare live/closed input in actual workers, including stale input rejection."""
     examples = fixtures()
     artifacts = [compile_native(c['source'],'live-'+c['name']) for c in examples]
+    for case, artifact in zip(examples, artifacts, strict=True):
+        assert 'binary' in artifact, (case['name'], artifact)
     large = compile_native(limit_source(),'live-input-limit')
     output_limit = compile_native('program demo; var i:integer; begin for i:=1 to 300000 do writeln(1234) end.','live-output-limit')
     wire_examples = examples + [dict(name='legacy', lines=['12 ignored','1.25 junk','érest','hello','skip','7'],output='12\n1.25\né\nhello\n7\n')]
@@ -160,6 +162,14 @@ def verify_ui(browser):
     assert browser.js("return document.getElementById('status').textContent;") == 'Stopped'
     assert browser.js("return document.getElementById('console-input').getAttribute('aria-disabled')==='true';")
     verify_console_case(browser,example)
+    file_case = next(case for case in fixtures() if case['name']=='file_group_wait')
+    browser.js("const source=document.getElementById('source');source.value=arguments[0];source.dispatchEvent(new Event('input'));",file_case['source'])
+    browser.click('run')
+    browser.wait("document.getElementById('status').textContent==='Waiting for input'")
+    browser.click('stop')
+    assert browser.js("return document.getElementById('status').textContent;") == 'Stopped'
+    verify_console_case(browser,file_case)
+    browser.js("const source=document.getElementById('source');source.value=arguments[0];source.dispatchEvent(new Event('input'));",example['source'])
     browser.js("const source=document.getElementById('source');source.value='program spin; begin while true do begin end end.';source.dispatchEvent(new Event('input'));document.getElementById('run').click();")
     browser.wait("document.getElementById('status').textContent==='Failed'")
     assert 'R_TIMEOUT' in browser.js("return document.getElementById('diagnostics').textContent;")

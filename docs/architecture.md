@@ -296,20 +296,40 @@ preventing drift without adding a build-time code generator or runtime fetch.
 Third-party support notices accompany compiler assets; the standalone export contains
 only the program and repository-owned host code.
 
-## Planned virtual filesystem
+## Virtual filesystem
 
-Planned Pascal file I/O uses bounded in-memory storage owned by one program execution.
-Each Run starts with an empty filesystem, including repeated Runs in the same HTML
-session. Closing a file releases its open handle but preserves its named contents, so
-the program can reopen it during that execution. Completion, failure, Stop, or timeout
-releases all file contents and handles.
+Virtual files are runtime-owned typed snapshots or UTF-8 text within one program
+execution. They never represent PC paths or persistent storage. The frontend owns
+logical components, noncopyable descriptors and once-evaluated I/O groups; `file.c`
+owns backend packet/import details while the emitter lowers typed snapshots, format
+operands and per-field destination checks. The same services work in synchronous
+hosts, JSPI workers and embedded offline exports without new dependencies.
 
-Filenames identify virtual files and grant no access to the PC's filesystem. The initial
-design has no persistence between executions, browser storage, or file import/download.
-The same execution-scoped behavior must work with either compiler host and in standalone
-offline HTML, without external dependencies. This records the agreed storage lifetime;
-file types, operations, encoding, limits, and diagnostics still require their design gate.
-File I/O remains planned rather than currently supported.
+Descriptors retain opaque IDs; bindings carry their exact storage coordinate and
+actual global/frame/heap owner. Activation epochs and heap generations prevent reuse
+from reviving old bindings. Frame-local sets close only that activation's descriptors;
+forwarded caller aliases survive. Stale heap owners are reclaimed before resource
+checks. File-use checks inspect the actual binding rather than scanning every live
+binding on each value read/write. Returning, closing and reassignment reclaim binding
+resources while preserving named data for reopening in that run.
+
+A grouped operation retains both its owner and opened binding through operand calls
+and input waits. Per-field arena floors preserve the receiver while releasing consumed
+value borrows. Nested I/O on the same binding is legal; close/reopen/reassign during a
+group is rejected. Typed input shares the atomic variant/counter/copy plan, including
+partial initialization, compatible views and character replacement preflight.
+
+Text uses the existing formatters and input parsers. A synchronous cursor context
+selects immutable file lines with closed input, then restores console state in finally;
+file input cannot request a human line or return a Promise. Decoded line arrays are
+shared among readers while their positions remain independent. Formatting takes the
+file's remaining allowance without redirecting console output/accounting. Content
+buffers grow geometrically within a fixed per-run budget.
+
+Main completion, located failures and worker-finally cleanup release all file state;
+Stop/timeout discard the worker. Each Run starts empty even in the same HTML session.
+No browser storage, imports/downloads, filesystem library, WASI or external module is
+needed. Exact limits/protocol and Pascal semantics live in their owning references.
 
 ## Planned CRT compatibility
 

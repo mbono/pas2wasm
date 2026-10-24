@@ -17,14 +17,18 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     const references = new Map(), referenceKeys = new Map(), frames = new Map();
     const referenceLimit = limits.references ?? 65536;
     let referenceSequence = 0;
+    // Files own bounded snapshots; bindings own names, modes/cursors and checked lifetimes.
+    const virtualFiles = new Map(), fileBindings = new Map();
+    let fileSequence = 0, fileBytes = 0, openFiles = 0;
 
     let memory = null, position = 0, offset = 0, outputBytes = 0;
     let closed = !requestLine, inputBytes = encoder.encode(input).length;
-    const lines = input === '' ? [] : input.split(/\r?\n/);
+    let lines = input === '' ? [] : input.split(/\r?\n/);
     if (input.endsWith('\n')) lines.pop();
-    const terminated = lines.map((_, i) => i < lines.length - 1 || input.endsWith('\n'));
+    let terminated = lines.map((_, i) => i < lines.length - 1 || input.endsWith('\n'));
     /* Throw a diagnostic-bearing error; callers must render its fields as text. */
     function fail(code, message, line = 0, column = 0) {
+        finishFiles();
         const error = new Error(message);
         error.code = code; error.line = line; error.column = column;
         throw error;
@@ -112,9 +116,10 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         }
         return (negative ? '-' : '') + text;
     }
-    /* Format one complete field before publishing it. Width counts Unicode scalars;
-     * padding is bounded before allocation and shares the cumulative output budget. */
-    function writeFormatted(kind, value, width, precision, line, column) {
+    /* Format one complete field within the caller's byte budget. Width counts
+     * Unicode scalars; console and virtual text files keep separate allowances. */
+    function formattedValue(kind, value, width, precision, line, column,
+                            available = outputLimit - outputBytes, limitCode = 'R_OUTPUT_LIMIT') {
         if (!Number.isInteger(width) || width < 0 || width > 1048576 ||
             !Number.isInteger(precision) || precision < 0 || precision > 1000 ||
             (kind !== 5 && precision !== 0))
@@ -133,9 +138,9 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         let characterCount = 0;
         for (const scalar of text) characterCount++;
         const padding = Math.max(0, width - characterCount);
-        if (padding + encoder.encode(text).length > outputLimit - outputBytes)
-            fail('R_OUTPUT_LIMIT', 'Program output exceeds the output limit.', line, column);
-        write(' '.repeat(padding) + text);
+        if (padding + encoder.encode(text).length > available)
+            fail(limitCode, 'Formatted output exceeds its byte budget.', line, column);
+        return ' '.repeat(padding) + text;
     }
     /* Fetch one line only when needed. The optional provider owns delivery, not
      * parsing; null closes it permanently. Batch imports never return Promises. */
@@ -433,6 +438,10 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     function variantCopy(destination, source, size, capacity, pointer, line, column) {
         const request = variantRequest(pointer, line, column);
         const value = size ? bytes(source, size, line, column).slice() : stringBytes(source, line, column).slice();
+        commitVariantValue(destination,value,size,capacity,request,line,column);
+    }
+    /* Both memory copies and typed-file snapshots use the same atomic guard plan. */
+    function commitVariantValue(destination, value, size, capacity, request, line, column) {
         const length = size || 16 + capacity;
         bytes(destination, length, line, column);
         if (!size && (capacity < 0 || capacity > 1048576 || value.length > capacity))
@@ -647,8 +656,244 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             view.setInt32(0,plan.value,true); view.setUint8(8,1);
         }
     }
+    /* Close without checks only during validated close/owner retirement/finalization.
+     * Named bytes survive close; dropping a binding never removes their contents. */
+    function closeFile(binding) {
+        if (!binding.file) return;
+        if (binding.mode === 0) binding.file.readers.delete(binding.id);
+        else binding.file.writer = 0;
+        binding.file = null; binding.mode = null; binding.cursor = null; openFiles--;
+    }
+    /* Descriptor IDs never repeat within an attachment, including reassignment. */
+    function dropFileBinding(binding) {
+        closeFile(binding); fileBindings.delete(binding.id);
+        if (binding.owner.kind === 'frame') binding.owner.files.delete(binding.id);
+    }
+    /* Completion/failure discards all run-owned bytes and handles, without touching
+     * Pascal memory used by diagnostic/atomicity assertions. Stop drops the worker. */
+    function finishFiles() {
+        for (const binding of fileBindings.values()) dropFileBinding(binding);
+        virtualFiles.clear(); fileBytes = 0; openFiles = 0;
+    }
+    /* Stale heap owners release their bindings before any capacity/open-mode check.
+     * Frames retire their own small sets directly, avoiding scans on routine return. */
+    function collectFiles() {
+        for (const binding of fileBindings.values())
+            if (!referenceAlive(binding)) dropFileBinding(binding);
+    }
+    /* A descriptor is noncopyable. Both ID and cell coordinate must match, so stale
+     * initialized bytes cannot alias a newly assigned, unrelated file binding. */
+    function fileBinding(target, line, column) {
+        const object = bytes(target,16,line,column);
+        if (!object[8]) fail('R_UNINITIALIZED','File descriptor was used before assign.',line,column);
+        const binding = fileBindings.get(word(target,line,column));
+        if (binding && !referenceAlive(binding)) dropFileBinding(binding);
+        if (!binding || binding.target !== target || !fileBindings.has(binding.id))
+            fail('R_FILE_STATE','File descriptor is no longer assigned.',line,column);
+        return binding;
+    }
+    /* Begin/end freeze the opened binding while operand calls evaluate. Nested I/O
+     * can borrow it; close/reopen/reassign through any alias cannot invalidate it. */
+    function fileUse(id, mode, line, column) {
+        const binding = fileBindings.get(id >>> 0);
+        if (binding && !referenceAlive(binding)) dropFileBinding(binding);
+        if (!binding || !binding.file || binding.mode !== mode || !binding.borrowers)
+            fail('R_FILE_STATE','Virtual file is not open in the required mode.',line,column);
+        return binding;
+    }
+    /* Validate the filename, lifetime and budgets before replacing a closed binding. */
+    function assignFile(target, root, kind, type, size, name, pointer, line, column) {
+        if (target % 16 || root % 16) fail('R_POINTER','Unaligned file descriptor.',line,column);
+        if (!Number.isInteger(type) || !Number.isInteger(size) || (kind !== 0 && kind !== 1) ||
+            (kind === 1 ? type || size : type < 1 || size < 16 || size > 67108864 || size % 16))
+            fail('R_FILE_TYPE','Invalid virtual file component.',line,column);
+        const encoded = stringBytes(name,line,column), filename = stringText(name,line,column);
+        if (!encoded.length || encoded.length > 255 || filename.includes('\0'))
+            fail('R_FILE_NAME','Virtual filenames require 1..255 UTF-8 bytes without NUL.',line,column);
+        const request = variantRequest(pointer,line,column);
+        const owner = addressOwner(target,16,root,request,line,column);
+        collectFiles();
+        const object = bytes(target,16,line,column);
+        const previous = object[8] ? fileBindings.get(word(target,line,column)) : null;
+        if (object[8] && (!previous || previous.target !== target) || previous?.file || previous?.borrowers)
+            fail('R_FILE_STATE','Cannot reassign an open or invalid descriptor.',line,column);
+        if (fileBindings.size - (previous ? 1 : 0) >= 256 || fileSequence === 0xffffffff)
+            fail('R_FILE_LIMIT','Assigned descriptor budget exhausted.',line,column);
+        const operations = variantPlan(request,true,line,column);
+        variantControls(request,target,16,line,column);
+        const id = ++fileSequence;
+        const binding = {id,target,owner,name:filename,kind,type,size,file:null,mode:null,cursor:null,borrowers:0};
+        applyVariantPlan(operations);
+        if (previous) dropFileBinding(previous);
+        fileBindings.set(id,binding);
+        if (owner.kind === 'frame') owner.files.add(id);
+        object.fill(0); new DataView(memory.buffer).setUint32(target,id,true); object[8] = 1;
+    }
+    /* Open modes are exclusive for writers and shared for readers. Rewrite may
+     * replace kind/component metadata only when no other handle retains old data. */
+    function controlFile(target, operation, line, column) {
+        collectFiles();
+        const binding = fileBinding(target,line,column);
+        if (binding.borrowers) fail('R_FILE_STATE','Virtual file is in use by an I/O operation.',line,column);
+        if (operation === 2) {
+            if (!binding.file) fail('R_FILE_STATE','Virtual file is already closed.',line,column);
+            closeFile(binding); return;
+        }
+        if (binding.file || (operation !== 0 && operation !== 1))
+            fail('R_FILE_STATE','Cannot reopen an open descriptor.',line,column);
+        if (openFiles >= 32) fail('R_FILE_LIMIT','Open virtual file budget exhausted.',line,column);
+        let file = virtualFiles.get(binding.name);
+        if (operation === 0) {
+            if (file && (file.writer || file.readers.size))
+                fail('R_FILE_STATE','Cannot truncate a virtual file while it is open.',line,column);
+            if (!file && virtualFiles.size >= 32)
+                fail('R_FILE_LIMIT','Named virtual file budget exhausted.',line,column);
+            const oldLength = file?.length || 0;
+            file = {kind:binding.kind,type:binding.type,size:binding.size,data:new Uint8Array(0),
+                length:0,readers:new Set(),writer:binding.id,text:null};
+            virtualFiles.set(binding.name,file); fileBytes -= oldLength;
+            binding.mode = 1; binding.cursor = 0;
+        } else {
+            if (!file) fail('R_FILE_NOT_FOUND','Virtual file does not exist in this execution.',line,column);
+            if (file.writer) fail('R_FILE_STATE','Virtual file has a live writer.',line,column);
+            if (file.kind !== binding.kind || file.type !== binding.type || file.size !== binding.size)
+                fail('R_FILE_TYPE','Virtual file contents have an incompatible component type.',line,column);
+            let cursor = 0;
+            if (file.kind) {
+                if (!file.text) {
+                    let text;
+                    try {text = decoder.decode(file.data.subarray(0,file.length));}
+                    catch {fail('R_ENCODING','Virtual text file is not valid UTF-8.',line,column);}
+                    const lines = text === '' ? [] : text.split(/\r?\n/);
+                    if (text.endsWith('\n')) lines.pop();
+                    file.text = {lines,terminated:lines.map((_,i)=>i < lines.length-1 || text.endsWith('\n'))};
+                }
+                cursor = {...file.text,position:0,offset:0};
+            }
+            file.readers.add(binding.id); binding.mode = 0; binding.cursor = cursor;
+        }
+        binding.file = file; openFiles++;
+    }
+    /* Capacity grows geometrically under the cumulative byte limit. All file data
+     * capacities together are below twice that limit plus small empty-file overhead. */
+    function appendFile(binding, value, line, column) {
+        const file = binding.file;
+        if (value.length > 1048576 - fileBytes)
+            fail('R_FILE_LIMIT','Virtual file contents exceed 1 MiB.',line,column);
+        const end = file.length + value.length;
+        if (end > file.data.length) {
+            let capacity = Math.max(16,file.data.length);
+            while (capacity < end) capacity *= 2;
+            const data = new Uint8Array(capacity); data.set(file.data.subarray(0,file.length));
+            file.data = data;
+        }
+        file.data.set(value,file.length); file.length = end; fileBytes += value.length; file.text = null;
+    }
+    /* A final unterminated line has no delimiter left after its last scalar. */
+    function fileTextEnd(cursor) {
+        return cursor.position >= cursor.lines.length ||
+            (cursor.position === cursor.lines.length-1 && cursor.offset === cursor.lines[cursor.position].length &&
+             !cursor.terminated[cursor.position]);
+    }
+    /* File contents are already present and immutable while readers are open.
+     * closed=true guarantees shared parsers never suspend or ask for console input. */
+    function withFileCursor(id, line, column, action) {
+        const binding = fileUse(id,0,line,column);
+        if (!binding.kind) fail('R_FILE_TYPE','Expected a virtual text file.',line,column);
+        const saved = {lines,terminated,position,offset,closed}, cursor = binding.cursor;
+        lines = cursor.lines; terminated = cursor.terminated;
+        position = cursor.position; offset = cursor.offset; closed = true;
+        try {return action();}
+        catch (error) {
+            if (error.code === 'R_INPUT_EOF') {
+                error.code = 'R_FILE_EOF'; error.message = 'Virtual file input is exhausted.';
+            }
+            throw error;
+        } finally {
+            cursor.position = position; cursor.offset = offset;
+            ({lines,terminated,position,offset,closed} = saved);
+        }
+    }
     /* ABI record: name/signature pairs are documented in docs/runtime-abi.md. */
     const imports = {
+        file_assign:assignFile,
+        file_control:controlFile,
+        file_begin(target, mode, line, column) {
+            const binding = fileBinding(target,line,column);
+            if (!binding.file || binding.mode !== mode || (mode !== 0 && mode !== 1))
+                fail('R_FILE_STATE','Virtual file is not open in the required mode.',line,column);
+            if (binding.borrowers >= 8192) fail('R_FILE_LIMIT','Virtual file borrow budget exhausted.',line,column);
+            binding.borrowers++; return binding.id;
+        },
+        file_end(id, line, column) {
+            const binding = fileBindings.get(id >>> 0);
+            if (!binding || !binding.borrowers) fail('R_FILE_STATE','Invalid virtual file borrow.',line,column);
+            binding.borrowers--;
+        },
+        file_query(target, query, line, column) {
+            const binding = fileBinding(target,line,column), file = binding.file;
+            if (!file) fail('R_FILE_STATE','Virtual file is closed.',line,column);
+            if (query === 2) {
+                if (binding.kind) fail('R_FILE_TYPE','filesize requires a typed file.',line,column);
+                return file.length / binding.size;
+            }
+            if (binding.mode !== 0 || (query !== 0 && query !== 1))
+                fail('R_FILE_STATE','Virtual file is not open for this input query.',line,column);
+            if (query === 1 && !binding.kind) fail('R_FILE_TYPE','eoln requires a text file.',line,column);
+            if (!binding.kind) return Number(binding.cursor >= file.length);
+            return Number(fileTextEnd(binding.cursor) || (query === 1 &&
+                binding.cursor.offset === binding.cursor.lines[binding.cursor.position].length));
+        },
+        file_write(id, source, size, line, column) {
+            const binding = fileUse(id,1,line,column);
+            if (binding.kind || binding.size !== size) fail('R_FILE_TYPE','Invalid typed file write.',line,column);
+            if (size > 1048576 - fileBytes) fail('R_FILE_LIMIT','Virtual file contents exceed 1 MiB.',line,column);
+            appendFile(binding,bytes(source,size,line,column),line,column);
+        },
+        file_read(id, destination, size, pointer, line, column) {
+            const binding = fileUse(id,0,line,column);
+            if (binding.kind || binding.size !== size) fail('R_FILE_TYPE','Invalid typed file read.',line,column);
+            if (binding.cursor >= binding.file.length) fail('R_FILE_EOF','Virtual file input is exhausted.',line,column);
+            const value = binding.file.data.slice(binding.cursor,binding.cursor+size);
+            const request = variantRequest(pointer,line,column);
+            if (destination < 0) {
+                if (size !== 16 || !value[8]) fail('R_UNINITIALIZED','File character is uninitialized.',line,column);
+                const operations = variantPlan(request,true,line,column);
+                const character = prepareCharacterStore(destination,new DataView(value.buffer).getInt32(0,true),operations,line,column);
+                applyVariantPlan(operations); commitCharacterStore(character);
+            } else commitVariantValue(destination,value,size,0,request,line,column);
+            binding.cursor += size;
+        },
+        file_text_write(id, kind, value, width, precision, line, column) {
+            const binding = fileUse(id,1,line,column);
+            if (!binding.kind) fail('R_FILE_TYPE','Expected a virtual text file.',line,column);
+            const text = kind === 6 ? '\n' : formattedValue(kind,value,width,precision,line,column,
+                1048576-fileBytes,'R_FILE_LIMIT');
+            appendFile(binding,encoder.encode(text),line,column);
+        },
+        file_text_i32(id, mode, line, column) {
+            return withFileCursor(id,line,column,()=>streamNumber(mode,false,line,column));
+        },
+        file_text_f64(id, mode, line, column) {
+            return withFileCursor(id,line,column,()=>streamNumber(mode,true,line,column));
+        },
+        file_text_char(id, mode, line, column) {
+            return withFileCursor(id,line,column,()=>streamCharacter(mode,line,column));
+        },
+        file_text_string(id, destination, capacity, mode, pointer, line, column) {
+            return withFileCursor(id,line,column,()=> {
+                ensureLine(line,column);
+                if (offset > 0 && offset === lines[position].length && !terminated[position])
+                    fail('R_INPUT_EOF','Virtual file input is exhausted.',line,column);
+                const value = inputValue(lines[position].slice(offset),line,column);
+                commitVariantValue(destination,value,0,capacity,variantRequest(pointer,line,column),line,column);
+                offset = lines[position].length;
+            });
+        },
+        file_text_discard(id, line, column) {
+            return withFileCursor(id,line,column,()=>nextLine(line,column));
+        },
+        file_finish:finishFiles,
         address_of:addressOf,
         address_view:addressView,
         variant_bind:variantBind,
@@ -662,12 +907,13 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             bytes(base, size, line, column);
             if ([...frames.values()].some(frame => base < frame.end && base + size > frame.base))
                 fail('R_MEMORY', 'Address frames overlap.', line, column);
-            frames.set(base, {kind:'frame', base, end:base + size, epoch, identities:new Set()});
+            frames.set(base, {kind:'frame', base, end:base + size, epoch, identities:new Set(), files:new Set()});
         },
         frame_leave(base, epoch, line, column) {
             const frame = frames.get(base);
             if (frame?.epoch !== (epoch >>> 0))
                 fail('R_MEMORY', 'Invalid address frame retirement.', line, column);
+            for (const id of frame.files) dropFileBinding(fileBindings.get(id));
             frames.delete(base);
             for (const id of frame.identities) removeReference(id, references.get(id));
         },
@@ -690,7 +936,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         },
         /* Kinds and the f64 transport for exact i32/scalar/string addresses are ABI-defined. */
         write_formatted(kind, value, width, precision, line, column) {
-            writeFormatted(kind, value, width, precision, line, column);
+            write(formattedValue(kind, value, width, precision, line, column));
         },
         /* Fresh state belongs to this runtime; explicit seeds make tests reproducible. */
         randomize() {
@@ -862,9 +1108,10 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             fail(entry[0], entry[1], line, column);
         }
     };
-    return {imports,
+    return {imports, finish:finishFiles,
         /* Bind only the freshly instantiated generated program's bounded memory. */
         attach(instance) {
+            finishFiles(); fileSequence = 0;
             memory = instance.exports.memory;
             variantSchemas.clear(); variantSchemaBytes = 0;
             references.clear(); referenceKeys.clear(); frames.clear(); referenceSequence = 0;
@@ -911,12 +1158,13 @@ function pas2WasmProgramWorker() {
                 postMessage({type:'input-request', id:runId, requestId:waiting.id, line, column});
             });
         }
+        let runtime;
         try {
             const jspi = supported();
             postMessage({type:'capabilities', id:runId, jspi});
             if (data.interactive && !jspi)
                 throw Object.assign(new Error('Interactive console requires browser JSPI support. Choose Batch input.'), {code:'E_JSPI'});
-            const runtime = createPas2WasmRuntime(data.input || '', text => {
+            runtime = createPas2WasmRuntime(data.input || '', text => {
                 pending += text;
                 if (firstOutput || pending.length >= 4096 || performance.now() - flushedAt >= 16) {
                     flush(); firstOutput = false;
@@ -939,7 +1187,7 @@ function pas2WasmProgramWorker() {
                 code:error.code || 'R_TRAP', message:error.message,
                 line:error.line || 0, column:error.column || 0
             }});
-        } finally { waiting = null; }
+        } finally { runtime?.finish(); waiting = null; }
     };
 }
 

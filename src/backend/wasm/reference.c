@@ -110,7 +110,7 @@ void reference_view(Wasm *w, size_t root, size_t size, unsigned line, unsigned c
 
 void reference_frame(Wasm *w, int entering)
 {
-    if (!w->program->has_addresses) {
+    if (!w->program->has_addresses && !w->program->has_files) {
         return;
     }
     unsigned line = w->routine ? w->routine->line : 1;

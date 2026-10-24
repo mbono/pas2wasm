@@ -14,6 +14,7 @@ const Type p2w_type_boolean = {.kind = TYPE_KIND_BOOLEAN};
 const Type p2w_type_real = {.kind = TYPE_KIND_REAL};
 const Type p2w_type_character = {.kind = TYPE_KIND_CHARACTER};
 const Type p2w_type_nil = {.kind = TYPE_KIND_NIL};
+const Type p2w_type_text = {.kind = TYPE_KIND_TEXT};
 
 ValueType type_canonical(ValueType type)
 {

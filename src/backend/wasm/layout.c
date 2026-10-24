@@ -61,9 +61,21 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
         *size = WASM_CELL_SIZE + P2W_SET_CAPACITY / 8;
         return 1;
     }
+    if (type->kind == TYPE_KIND_FILE) {
+        ValueType component = type_canonical(type->element);
+        if (!component || component->kind == TYPE_KIND_FILE || component->kind == TYPE_KIND_TEXT) {
+            return invalid(type, diagnostic);
+        }
+        size_t component_size;
+        if (!object_size(component, &component_size, diagnostic, depth + 1)) {
+            return 0;
+        }
+        *size = WASM_CELL_SIZE;
+        return 1;
+    }
     if (type->kind == TYPE_KIND_INTEGER || type->kind == TYPE_KIND_BOOLEAN ||
         type->kind == TYPE_KIND_REAL || type->kind == TYPE_KIND_CHARACTER ||
-        type->kind == TYPE_KIND_POINTER) {
+        type->kind == TYPE_KIND_POINTER || type->kind == TYPE_KIND_TEXT) {
         *size = WASM_CELL_SIZE;
         return 1;
     }
@@ -78,6 +90,10 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
         if (type->upper < type->lower || (type->index_type && !type_ordinal(type->index_type))) {
             return invalid(type, diagnostic);
         }
+        ValueType child = type_canonical(type->element);
+        if (child && (child->kind == TYPE_KIND_FILE || child->kind == TYPE_KIND_TEXT)) {
+            return invalid(type, diagnostic);
+        }
         if (!object_size(type->element, &element, diagnostic, depth + 1)) {
             return 0;
         }
@@ -90,6 +106,11 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
         size_t fields = 0;
         for (const Field *field = type->fields; field; field = field->next) {
             size_t child;
+            ValueType field_type = type_canonical(field->type);
+            if (field_type &&
+                (field_type->kind == TYPE_KIND_FILE || field_type->kind == TYPE_KIND_TEXT)) {
+                return invalid(type, diagnostic);
+            }
             if (++fields > 4096) {
                 return invalid(type, diagnostic);
             }

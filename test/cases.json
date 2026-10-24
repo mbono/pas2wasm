@@ -8694,5 +8694,516 @@
         "source": "program p; type R=record case boolean of true:(inner:record s:string[8] end);false:(n:integer) end; var v:R; q:^char; begin v.inner.s:='ab'; q:=@v.inner.s[2]; v.n:=7; writeln('ready'); q^:='z' end.",
         "output": "ready\n",
         "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "file_integer_roundtrip",
+        "source": "program p; var f:file of integer; n:integer; begin assign(f,'x'); rewrite(f); write(f,4,7); writeln(filesize(f)); close(f); reset(f); while not eof(f) do begin read(f,n); writeln(n) end; close(f) end.",
+        "output": "2\n4\n7\n",
+        "portable": true
+    },
+    {
+        "name": "file_text_roundtrip",
+        "source": "program p; var f:text; n:integer; r:real; c:char; s:string[32]; begin assign(f,'x'); rewrite(f); writeln(f,12,' ',2.5,' x'); write(f,'hello'); close(f); reset(f); read(f,n,r,c,c); writeln(n,r,c); readln(f); readln(f,s); writeln(s,eof(f)); close(f) end.",
+        "output": "122.5x\nhelloTRUE\n"
+    },
+    {
+        "name": "file_text_format_unicode",
+        "source": "program p; var f:text; s:string[64]; begin assign(f,'x'); rewrite(f); writeln(f,'\u00e9\ud83d\ude00':5,1.25:8:2,true:6,#128512:3); close(f); reset(f); readln(f,s); writeln(s) end.",
+        "output": "   \u00e9\ud83d\ude00    1.25  TRUE  \ud83d\ude00\n"
+    },
+    {
+        "name": "file_all_scalar_components",
+        "source": "program p; type E=(red,blue); R=1..3; var fi:file of R; fb:file of boolean; fc:file of char; fr:file of real; fe:file of E; i:R; b:boolean; c:char; r1:real; e1:E; begin assign(fi,'i'); rewrite(fi); write(fi,2); close(fi); reset(fi); read(fi,i); assign(fb,'b'); rewrite(fb); write(fb,true); close(fb); reset(fb); read(fb,b); assign(fc,'c'); rewrite(fc); write(fc,#128512); close(fc); reset(fc); read(fc,c); assign(fr,'r'); rewrite(fr); write(fr,1); close(fr); reset(fr); read(fr,r1); assign(fe,'e'); rewrite(fe); write(fe,blue); close(fe); reset(fe); read(fe,e1); writeln(i,b,c,r1,e1) end.",
+        "output": "2TRUE\ud83d\ude001blue\n"
+    },
+    {
+        "name": "file_string_component",
+        "source": "program p; type S=string[8]; var f:file of S; s1:S; begin assign(f,'x'); rewrite(f); write(f,'abc'); close(f); reset(f); read(f,s1); writeln(s1) end.",
+        "output": "abc\n",
+        "portable": true
+    },
+    {
+        "name": "file_set_component",
+        "source": "program p; type S=set of 1..5; var f:file of S; a,b:S; begin a:=[1,4]; assign(f,'x'); rewrite(f); write(f,a,[2..3]); a:=[5]; close(f); reset(f); read(f,b); writeln(1 in b,5 in b); read(f,b); writeln(2 in b,4 in b) end.",
+        "output": "TRUEFALSE\nTRUEFALSE\n",
+        "portable": true
+    },
+    {
+        "name": "file_aggregate_component",
+        "source": "program p; type R=record n:integer; s:string[8] end; var f:file of R; r1,r2:R; begin r1.n:=9; r1.s:='hi'; assign(f,'x'); rewrite(f); write(f,r1); r1.s:='other'; close(f); reset(f); read(f,r2); writeln(r2.n,r2.s) end.",
+        "output": "9hi\n",
+        "portable": true
+    },
+    {
+        "name": "file_array_component",
+        "source": "program p; type A=array[1..2] of integer; var f:file of A; a1,a2:A; begin a1[1]:=3; a1[2]:=4; assign(f,'x'); rewrite(f); write(f,a1); a1[1]:=9; close(f); reset(f); read(f,a2); writeln(a2[1],a2[2]) end.",
+        "output": "34\n",
+        "portable": true
+    },
+    {
+        "name": "file_partial_aggregate",
+        "source": "program p; type R=record a,b:integer end; var f:file of R; r1,r2:R; begin r1.a:=7; assign(f,'x'); rewrite(f); write(f,r1); close(f); reset(f); read(f,r2); writeln(r2.a); writeln(r2.b) end.",
+        "output": "7\n",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "file_variant_component",
+        "source": "program p; type R=record case boolean of true:(a:integer);false:(b:real) end; var f:file of R; v,w:R; begin v.b:=1.5; assign(f,'x'); rewrite(f); write(f,v); v.a:=9; close(f); reset(f); read(f,w); writeln(w.b); writeln(w.a) end.",
+        "output": "1.5\n",
+        "runtime": "R_VARIANT"
+    },
+    {
+        "name": "file_pointer_component",
+        "source": "program p; var f:file of ^integer; n:integer; q:^integer; begin n:=42; assign(f,'x'); rewrite(f); write(f,@n); close(f); reset(f); read(f,q); writeln(q^); q^:=7; writeln(n) end.",
+        "output": "42\n7\n"
+    },
+    {
+        "name": "file_pointer_component_stale",
+        "source": "program p; var f:file of ^integer; q:^integer; procedure store; var n:integer; begin n:=1; write(f,@n) end; begin assign(f,'x'); rewrite(f); store; close(f); reset(f); read(f,q); writeln(q^) end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "file_heap_descriptor",
+        "source": "program p; type F=file of integer; var q:^F; n:integer; begin new(q); assign(q^,'x'); rewrite(q^); write(q^,31); close(q^); reset(q^); read(q^,n); writeln(n); dispose(q) end.",
+        "output": "31\n"
+    },
+    {
+        "name": "file_heap_descriptor_cleanup",
+        "source": "program p; type F=file of integer; var q:^F; f1:F; n:integer; begin new(q); assign(q^,'x'); rewrite(q^); write(q^,32); dispose(q); assign(f1,'x'); reset(f1); read(f1,n); writeln(n) end.",
+        "output": "32\n"
+    },
+    {
+        "name": "file_heap_receiver_borrow",
+        "source": "program p; type F=file of integer; var q:^F; function kill:integer; begin dispose(q); kill:=1 end; begin new(q); assign(q^,'x'); rewrite(q^); write(q^,kill()) end.",
+        "output": "",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "file_receiver_once",
+        "source": "program p; type F=file of integer; var q:^F; calls,n:integer; function get:^F; begin inc(calls); get:=q end; begin calls:=0; new(q); assign(get()^,'x'); rewrite(q^); write(get()^,1,2); close(q^); reset(q^); read(get()^,n,n); writeln(calls,n); dispose(q) end.",
+        "output": "32\n"
+    },
+    {
+        "name": "file_var_forwarding",
+        "source": "program p; var f:text; s:string[8]; procedure a(var x:text); begin assign(x,'x') end; procedure b(var y:text); begin a(y) end; begin b(f); rewrite(f); writeln(f,'ok'); close(f); reset(f); readln(f,s); writeln(s) end.",
+        "output": "ok\n",
+        "portable": true
+    },
+    {
+        "name": "file_local_retirement",
+        "source": "program p; var f:text; s:string[8]; procedure t; var local:text; begin assign(local,'x'); rewrite(local); write(local,'ok') end; begin t; assign(f,'x'); reset(f); readln(f,s); writeln(s) end.",
+        "output": "ok\n"
+    },
+    {
+        "name": "file_global_survives_callee",
+        "source": "program p; var f:text; procedure t(var x:text); begin writeln(x,'ok') end; var s:string[8]; begin assign(f,'x'); rewrite(f); t(f); close(f); reset(f); readln(f,s); writeln(s) end.",
+        "output": "ok\n",
+        "portable": true
+    },
+    {
+        "name": "file_local_repeated",
+        "source": "program p; var i:integer; procedure t; var f:text; begin assign(f,'x'); rewrite(f); write(f,'ok'); close(f) end; begin for i:=1 to 2000 do t; writeln('done') end.",
+        "output": "done\n",
+        "portable": true
+    },
+    {
+        "name": "file_read_result_root",
+        "source": "program p; type R=record n:integer end; var f:file of integer; function value:R; begin read(f,value.n) end; begin assign(f,'x'); rewrite(f); write(f,33); close(f); reset(f); writeln(value().n) end.",
+        "output": "33\n"
+    },
+    {
+        "name": "file_character_destination",
+        "source": "program p; var f:file of char; s:string[8]; begin s:='ab'; assign(f,'x'); rewrite(f); write(f,#128512); close(f); reset(f); read(f,s[2]); writeln(s) end.",
+        "output": "a\ud83d\ude00\n"
+    },
+    {
+        "name": "file_character_capacity",
+        "source": "program p; var f:file of char; s:string[2]; begin s:='ab'; assign(f,'x'); rewrite(f); write(f,#128512); close(f); reset(f); read(f,s[2]) end.",
+        "output": "",
+        "runtime": "R_STRING_CAPACITY"
+    },
+    {
+        "name": "file_variant_destination",
+        "source": "program p; type R=record case boolean of true:(a:integer);false:(b:real) end; var f:file of integer; v:R; begin assign(f,'x'); rewrite(f); write(f,34); close(f); reset(f); v.b:=1.5; read(f,v.a); writeln(v.a) end.",
+        "output": "34\n"
+    },
+    {
+        "name": "file_variant_live_copy",
+        "source": "program p; type R=record case boolean of true:(a:integer);false:(b:real) end; var f:file of R; v,w:R; procedure take(var n:integer); begin read(f,v) end; begin v.a:=1; w.b:=1.5; assign(f,'x'); rewrite(f); write(f,w); close(f); reset(f); take(v.a) end.",
+        "output": "",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "file_read_control",
+        "source": "program p; var f:file of integer; n:integer; q:^integer; begin assign(f,'x'); rewrite(f); write(f,5); close(f); reset(f); q:=@n; for n:=1 to 2 do read(f,q^) end.",
+        "output": "",
+        "runtime": "R_FOR_CONTROL"
+    },
+    {
+        "name": "file_text_range",
+        "source": "program p; var f:text; n:1..3; begin assign(f,'x'); rewrite(f); write(f,'4'); close(f); reset(f); n:=2; read(f,n) end.",
+        "output": "",
+        "runtime": "R_RANGE"
+    },
+    {
+        "name": "file_component_range",
+        "source": "program p; type Small=1..3; var f:file of Small; begin assign(f,'x'); rewrite(f); write(f,4) end.",
+        "output": "",
+        "runtime": "R_RANGE"
+    },
+    {
+        "name": "file_component_uninitialized",
+        "source": "program p; var f:file of integer; n:integer; begin assign(f,'x'); rewrite(f); write(f,n) end.",
+        "output": "",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "file_independent_readers",
+        "source": "program p; var f,g:file of integer; n:integer; begin assign(f,'x'); rewrite(f); write(f,1,2); close(f); reset(f); assign(g,'x'); reset(g); read(f,n); read(f,n); writeln(n,eof(f)); read(g,n); writeln(n,eof(g)) end.",
+        "output": "2TRUE\n1FALSE\n",
+        "portable": true
+    },
+    {
+        "name": "file_nested_output_same_binding",
+        "source": "program p; var f:text; s:string[32]; function inner:integer; begin write(f,'inner'); inner:=7 end; begin assign(f,'x'); rewrite(f); write(f,inner()); close(f); reset(f); readln(f,s); writeln(s) end.",
+        "output": "inner7\n"
+    },
+    {
+        "name": "file_close_during_value",
+        "source": "program p; var f:text; function kill:integer; begin close(f); kill:=1 end; begin assign(f,'x'); rewrite(f); write(f,kill()) end.",
+        "output": "",
+        "runtime": "R_FILE_STATE"
+    },
+    {
+        "name": "file_rewrite_during_value",
+        "source": "program p; var f:text; function kill:integer; begin rewrite(f); kill:=1 end; begin assign(f,'x'); rewrite(f); write(f,kill()) end.",
+        "output": "",
+        "runtime": "R_FILE_STATE"
+    },
+    {
+        "name": "file_reassign_during_value",
+        "source": "program p; var f:text; function kill:integer; begin assign(f,'y'); kill:=1 end; begin assign(f,'x'); rewrite(f); write(f,kill()) end.",
+        "output": "",
+        "runtime": "R_FILE_STATE"
+    },
+    {
+        "name": "file_truncate_after_close",
+        "source": "program p; var f:file of integer; begin assign(f,'x'); rewrite(f); write(f,1,2); close(f); rewrite(f); writeln(filesize(f)); write(f,3); writeln(filesize(f)) end.",
+        "output": "0\n1\n",
+        "portable": true
+    },
+    {
+        "name": "file_rewrite_changes_kind",
+        "source": "program p; var f:file of integer; t:text; s:string[8]; begin assign(f,'x'); rewrite(f); write(f,1); close(f); assign(t,'x'); rewrite(t); write(t,'hello'); close(t); reset(t); readln(t,s); writeln(s) end.",
+        "output": "hello\n"
+    },
+    {
+        "name": "file_text_blank_crlf_nul",
+        "source": "program p; var f:text; s:string[8]; c:char; begin assign(f,'x'); rewrite(f); write(f,#13,#10,#0,#10,'\u00e9\ud83d\ude00'); close(f); reset(f); writeln(eoln(f),eof(f)); readln(f,s); writeln(length(s)); read(f,c); writeln(ord(c)); readln(f); readln(f,s); writeln(s,eof(f),eoln(f)) end.",
+        "output": "TRUEFALSE\n0\n0\n\u00e9\ud83d\ude00TRUETRUE\n"
+    },
+    {
+        "name": "file_text_console_cursor",
+        "source": "program p; var f:text; a,b:integer; begin assign(f,'x'); rewrite(f); writeln(f,12); close(f); reset(f); readln(f,a); readln(b); writeln(a+b) end.",
+        "output": "19\n",
+        "input": "7\n",
+        "portable": true
+    },
+    {
+        "name": "file_empty_text",
+        "source": "program p; var f:text; begin assign(f,'x'); rewrite(f); close(f); reset(f); writeln(eof(f),eoln(f)) end.",
+        "output": "TRUETRUE\n",
+        "portable": true
+    },
+    {
+        "name": "file_empty_typed",
+        "source": "program p; var f:file of integer; begin assign(f,'x'); rewrite(f); writeln(filesize(f)); close(f); reset(f); writeln(eof(f)) end.",
+        "output": "0\nTRUE\n",
+        "portable": true
+    },
+    {
+        "name": "file_text_shadow_type",
+        "source": "program p; type Text=string[8]; var s:Text; begin s:='ok'; writeln(s) end.",
+        "output": "ok\n",
+        "portable": true
+    },
+    {
+        "name": "file_unassigned",
+        "source": "program p; var f:text; begin reset(f) end.",
+        "output": "",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "file_missing",
+        "source": "program p; var f:text; begin assign(f,'x'); reset(f) end.",
+        "output": "",
+        "runtime": "R_FILE_NOT_FOUND"
+    },
+    {
+        "name": "file_empty_name",
+        "source": "program p; var f:text; begin assign(f,'') end.",
+        "output": "",
+        "runtime": "R_FILE_NAME"
+    },
+    {
+        "name": "file_nul_name",
+        "source": "program p; var f:text; begin assign(f,'a'+#0+'b') end.",
+        "output": "",
+        "runtime": "R_FILE_NAME"
+    },
+    {
+        "name": "file_closed_twice",
+        "source": "program p; var f:text; begin assign(f,'x'); rewrite(f); close(f); close(f) end.",
+        "output": "",
+        "runtime": "R_FILE_STATE"
+    },
+    {
+        "name": "file_reopen",
+        "source": "program p; var f:text; begin assign(f,'x'); rewrite(f); reset(f) end.",
+        "output": "",
+        "runtime": "R_FILE_STATE"
+    },
+    {
+        "name": "file_read_writer",
+        "source": "program p; var f:text; n:integer; begin assign(f,'x'); rewrite(f); read(f,n) end.",
+        "output": "",
+        "runtime": "R_FILE_STATE"
+    },
+    {
+        "name": "file_write_reader",
+        "source": "program p; var f:text; begin assign(f,'x'); rewrite(f); close(f); reset(f); write(f,1) end.",
+        "output": "",
+        "runtime": "R_FILE_STATE"
+    },
+    {
+        "name": "file_eof_writer",
+        "source": "program p; var f:text; begin assign(f,'x'); rewrite(f); writeln(eof(f)) end.",
+        "output": "",
+        "runtime": "R_FILE_STATE"
+    },
+    {
+        "name": "file_type_mismatch",
+        "source": "program p; var f:file of integer; g:file of real; begin assign(f,'x'); rewrite(f); close(f); assign(g,'x'); reset(g) end.",
+        "output": "",
+        "runtime": "R_FILE_TYPE"
+    },
+    {
+        "name": "file_case_sensitive",
+        "source": "program p; var f:text; begin assign(f,'x'); rewrite(f); close(f); assign(f,'X'); reset(f) end.",
+        "output": "",
+        "runtime": "R_FILE_NOT_FOUND"
+    },
+    {
+        "name": "file_eof_read",
+        "source": "program p; var f:file of integer; n:integer; begin assign(f,'x'); rewrite(f); close(f); reset(f); n:=3; read(f,n) end.",
+        "output": "",
+        "runtime": "R_FILE_EOF"
+    },
+    {
+        "name": "file_text_eof_read",
+        "source": "program p; var f:text; n:integer; begin assign(f,'x'); rewrite(f); close(f); reset(f); read(f,n) end.",
+        "output": "",
+        "runtime": "R_FILE_EOF"
+    },
+    {
+        "name": "file_text_invalid",
+        "source": "program p; var f:text; n:integer; begin assign(f,'x'); rewrite(f); write(f,'bad'); close(f); reset(f); read(f,n) end.",
+        "output": "",
+        "runtime": "R_INPUT_INVALID"
+    },
+    {
+        "name": "file_text_capacity",
+        "source": "program p; var f:text; s:string[1]; begin assign(f,'x'); rewrite(f); write(f,'\u00e9'); close(f); reset(f); readln(f,s) end.",
+        "output": "",
+        "runtime": "R_STRING_CAPACITY"
+    },
+    {
+        "name": "file_reject_copy",
+        "source": "program p; var f,g:text; begin f:=g end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_value_parameter",
+        "source": "program p; procedure p1(f:text); begin end; begin end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_result",
+        "source": "program p; function f:text; begin end; begin end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_field",
+        "source": "program p; type R=record f:text end; begin end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_element",
+        "source": "program p; var a:array[1..2] of text; begin end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_file_component",
+        "source": "program p; var f:file of text; begin end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_compare",
+        "source": "program p; var f,g:text; begin writeln(f=g) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_wrong_input_component",
+        "source": "program p; var f:file of integer; r:real; begin read(f,r) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_wrong_output_component",
+        "source": "program p; var f:file of integer; begin write(f,true) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_typed_format",
+        "source": "program p; var f:file of integer; begin write(f,1:3) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_typed_newline",
+        "source": "program p; var f:file of integer; begin writeln(f,1) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_typed_readln",
+        "source": "program p; var f:file of integer; begin readln(f) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_text_size",
+        "source": "program p; var f:text; begin writeln(filesize(f)) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_typed_eoln",
+        "source": "program p; var f:file of integer; begin writeln(eoln(f)) end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "file_reject_empty_write",
+        "source": "program p; var f:text; begin write(f) end.",
+        "error": "E_ARGUMENT"
+    },
+    {
+        "name": "file_reject_empty_read",
+        "source": "program p; var f:text; begin read(f) end.",
+        "error": "E_ARGUMENT"
+    },
+    {
+        "name": "file_name_byte_limit",
+        "source": "program p; var f:text; begin assign(f,'\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9') end.",
+        "output": "",
+        "runtime": "R_FILE_NAME"
+    },
+    {
+        "name": "file_names_limit",
+        "source": "program p; var f:text; begin assign(f,'n0'); rewrite(f); close(f);assign(f,'n1'); rewrite(f); close(f);assign(f,'n2'); rewrite(f); close(f);assign(f,'n3'); rewrite(f); close(f);assign(f,'n4'); rewrite(f); close(f);assign(f,'n5'); rewrite(f); close(f);assign(f,'n6'); rewrite(f); close(f);assign(f,'n7'); rewrite(f); close(f);assign(f,'n8'); rewrite(f); close(f);assign(f,'n9'); rewrite(f); close(f);assign(f,'n10'); rewrite(f); close(f);assign(f,'n11'); rewrite(f); close(f);assign(f,'n12'); rewrite(f); close(f);assign(f,'n13'); rewrite(f); close(f);assign(f,'n14'); rewrite(f); close(f);assign(f,'n15'); rewrite(f); close(f);assign(f,'n16'); rewrite(f); close(f);assign(f,'n17'); rewrite(f); close(f);assign(f,'n18'); rewrite(f); close(f);assign(f,'n19'); rewrite(f); close(f);assign(f,'n20'); rewrite(f); close(f);assign(f,'n21'); rewrite(f); close(f);assign(f,'n22'); rewrite(f); close(f);assign(f,'n23'); rewrite(f); close(f);assign(f,'n24'); rewrite(f); close(f);assign(f,'n25'); rewrite(f); close(f);assign(f,'n26'); rewrite(f); close(f);assign(f,'n27'); rewrite(f); close(f);assign(f,'n28'); rewrite(f); close(f);assign(f,'n29'); rewrite(f); close(f);assign(f,'n30'); rewrite(f); close(f);assign(f,'n31'); rewrite(f); close(f);assign(f,'n32'); rewrite(f); close(f) end.",
+        "output": "",
+        "runtime": "R_FILE_LIMIT"
+    },
+    {
+        "name": "file_open_limit",
+        "source": "program p; var f0,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18,f19,f20,f21,f22,f23,f24,f25,f26,f27,f28,f29,f30,f31,f32:file of integer; begin assign(f0,'x'); rewrite(f0); close(f0); reset(f0);assign(f1,'x'); reset(f1);assign(f2,'x'); reset(f2);assign(f3,'x'); reset(f3);assign(f4,'x'); reset(f4);assign(f5,'x'); reset(f5);assign(f6,'x'); reset(f6);assign(f7,'x'); reset(f7);assign(f8,'x'); reset(f8);assign(f9,'x'); reset(f9);assign(f10,'x'); reset(f10);assign(f11,'x'); reset(f11);assign(f12,'x'); reset(f12);assign(f13,'x'); reset(f13);assign(f14,'x'); reset(f14);assign(f15,'x'); reset(f15);assign(f16,'x'); reset(f16);assign(f17,'x'); reset(f17);assign(f18,'x'); reset(f18);assign(f19,'x'); reset(f19);assign(f20,'x'); reset(f20);assign(f21,'x'); reset(f21);assign(f22,'x'); reset(f22);assign(f23,'x'); reset(f23);assign(f24,'x'); reset(f24);assign(f25,'x'); reset(f25);assign(f26,'x'); reset(f26);assign(f27,'x'); reset(f27);assign(f28,'x'); reset(f28);assign(f29,'x'); reset(f29);assign(f30,'x'); reset(f30);assign(f31,'x'); reset(f31);assign(f32,'x'); reset(f32) end.",
+        "output": "",
+        "runtime": "R_FILE_LIMIT"
+    },
+    {
+        "name": "file_binding_limit",
+        "source": "program p; var f0,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18,f19,f20,f21,f22,f23,f24,f25,f26,f27,f28,f29,f30,f31,f32,f33,f34,f35,f36,f37,f38,f39,f40,f41,f42,f43,f44,f45,f46,f47,f48,f49,f50,f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65,f66,f67,f68,f69,f70,f71,f72,f73,f74,f75,f76,f77,f78,f79,f80,f81,f82,f83,f84,f85,f86,f87,f88,f89,f90,f91,f92,f93,f94,f95,f96,f97,f98,f99,f100,f101,f102,f103,f104,f105,f106,f107,f108,f109,f110,f111,f112,f113,f114,f115,f116,f117,f118,f119,f120,f121,f122,f123,f124,f125,f126,f127,f128,f129,f130,f131,f132,f133,f134,f135,f136,f137,f138,f139,f140,f141,f142,f143,f144,f145,f146,f147,f148,f149,f150,f151,f152,f153,f154,f155,f156,f157,f158,f159,f160,f161,f162,f163,f164,f165,f166,f167,f168,f169,f170,f171,f172,f173,f174,f175,f176,f177,f178,f179,f180,f181,f182,f183,f184,f185,f186,f187,f188,f189,f190,f191,f192,f193,f194,f195,f196,f197,f198,f199,f200,f201,f202,f203,f204,f205,f206,f207,f208,f209,f210,f211,f212,f213,f214,f215,f216,f217,f218,f219,f220,f221,f222,f223,f224,f225,f226,f227,f228,f229,f230,f231,f232,f233,f234,f235,f236,f237,f238,f239,f240,f241,f242,f243,f244,f245,f246,f247,f248,f249,f250,f251,f252,f253,f254,f255,f256:text; begin assign(f0,'x');assign(f1,'x');assign(f2,'x');assign(f3,'x');assign(f4,'x');assign(f5,'x');assign(f6,'x');assign(f7,'x');assign(f8,'x');assign(f9,'x');assign(f10,'x');assign(f11,'x');assign(f12,'x');assign(f13,'x');assign(f14,'x');assign(f15,'x');assign(f16,'x');assign(f17,'x');assign(f18,'x');assign(f19,'x');assign(f20,'x');assign(f21,'x');assign(f22,'x');assign(f23,'x');assign(f24,'x');assign(f25,'x');assign(f26,'x');assign(f27,'x');assign(f28,'x');assign(f29,'x');assign(f30,'x');assign(f31,'x');assign(f32,'x');assign(f33,'x');assign(f34,'x');assign(f35,'x');assign(f36,'x');assign(f37,'x');assign(f38,'x');assign(f39,'x');assign(f40,'x');assign(f41,'x');assign(f42,'x');assign(f43,'x');assign(f44,'x');assign(f45,'x');assign(f46,'x');assign(f47,'x');assign(f48,'x');assign(f49,'x');assign(f50,'x');assign(f51,'x');assign(f52,'x');assign(f53,'x');assign(f54,'x');assign(f55,'x');assign(f56,'x');assign(f57,'x');assign(f58,'x');assign(f59,'x');assign(f60,'x');assign(f61,'x');assign(f62,'x');assign(f63,'x');assign(f64,'x');assign(f65,'x');assign(f66,'x');assign(f67,'x');assign(f68,'x');assign(f69,'x');assign(f70,'x');assign(f71,'x');assign(f72,'x');assign(f73,'x');assign(f74,'x');assign(f75,'x');assign(f76,'x');assign(f77,'x');assign(f78,'x');assign(f79,'x');assign(f80,'x');assign(f81,'x');assign(f82,'x');assign(f83,'x');assign(f84,'x');assign(f85,'x');assign(f86,'x');assign(f87,'x');assign(f88,'x');assign(f89,'x');assign(f90,'x');assign(f91,'x');assign(f92,'x');assign(f93,'x');assign(f94,'x');assign(f95,'x');assign(f96,'x');assign(f97,'x');assign(f98,'x');assign(f99,'x');assign(f100,'x');assign(f101,'x');assign(f102,'x');assign(f103,'x');assign(f104,'x');assign(f105,'x');assign(f106,'x');assign(f107,'x');assign(f108,'x');assign(f109,'x');assign(f110,'x');assign(f111,'x');assign(f112,'x');assign(f113,'x');assign(f114,'x');assign(f115,'x');assign(f116,'x');assign(f117,'x');assign(f118,'x');assign(f119,'x');assign(f120,'x');assign(f121,'x');assign(f122,'x');assign(f123,'x');assign(f124,'x');assign(f125,'x');assign(f126,'x');assign(f127,'x');assign(f128,'x');assign(f129,'x');assign(f130,'x');assign(f131,'x');assign(f132,'x');assign(f133,'x');assign(f134,'x');assign(f135,'x');assign(f136,'x');assign(f137,'x');assign(f138,'x');assign(f139,'x');assign(f140,'x');assign(f141,'x');assign(f142,'x');assign(f143,'x');assign(f144,'x');assign(f145,'x');assign(f146,'x');assign(f147,'x');assign(f148,'x');assign(f149,'x');assign(f150,'x');assign(f151,'x');assign(f152,'x');assign(f153,'x');assign(f154,'x');assign(f155,'x');assign(f156,'x');assign(f157,'x');assign(f158,'x');assign(f159,'x');assign(f160,'x');assign(f161,'x');assign(f162,'x');assign(f163,'x');assign(f164,'x');assign(f165,'x');assign(f166,'x');assign(f167,'x');assign(f168,'x');assign(f169,'x');assign(f170,'x');assign(f171,'x');assign(f172,'x');assign(f173,'x');assign(f174,'x');assign(f175,'x');assign(f176,'x');assign(f177,'x');assign(f178,'x');assign(f179,'x');assign(f180,'x');assign(f181,'x');assign(f182,'x');assign(f183,'x');assign(f184,'x');assign(f185,'x');assign(f186,'x');assign(f187,'x');assign(f188,'x');assign(f189,'x');assign(f190,'x');assign(f191,'x');assign(f192,'x');assign(f193,'x');assign(f194,'x');assign(f195,'x');assign(f196,'x');assign(f197,'x');assign(f198,'x');assign(f199,'x');assign(f200,'x');assign(f201,'x');assign(f202,'x');assign(f203,'x');assign(f204,'x');assign(f205,'x');assign(f206,'x');assign(f207,'x');assign(f208,'x');assign(f209,'x');assign(f210,'x');assign(f211,'x');assign(f212,'x');assign(f213,'x');assign(f214,'x');assign(f215,'x');assign(f216,'x');assign(f217,'x');assign(f218,'x');assign(f219,'x');assign(f220,'x');assign(f221,'x');assign(f222,'x');assign(f223,'x');assign(f224,'x');assign(f225,'x');assign(f226,'x');assign(f227,'x');assign(f228,'x');assign(f229,'x');assign(f230,'x');assign(f231,'x');assign(f232,'x');assign(f233,'x');assign(f234,'x');assign(f235,'x');assign(f236,'x');assign(f237,'x');assign(f238,'x');assign(f239,'x');assign(f240,'x');assign(f241,'x');assign(f242,'x');assign(f243,'x');assign(f244,'x');assign(f245,'x');assign(f246,'x');assign(f247,'x');assign(f248,'x');assign(f249,'x');assign(f250,'x');assign(f251,'x');assign(f252,'x');assign(f253,'x');assign(f254,'x');assign(f255,'x');assign(f256,'x') end.",
+        "output": "",
+        "runtime": "R_FILE_LIMIT"
+    },
+    {
+        "name": "file_bytes_limit",
+        "source": "program p; var f:text; s:string[32768]; i:integer; begin s:='x'; for i:=1 to 15 do s:=s+s; assign(f,'x'); rewrite(f); for i:=1 to 32 do write(f,s); writeln('limit'); write(f,'x') end.",
+        "output": "limit\n",
+        "runtime": "R_FILE_LIMIT"
+    },
+    {
+        "name": "tutorial_files",
+        "source": "program files;\nvar\n\tf: file of integer;\n\tnum: integer;\nbegin\n\twriteln('inserire una serire di numeri ');\n\twriteln('per fermarsi inserite 0 ');\n\t(*creazione ed apertura in scrittura del file*)\n\tassign(f, 'dati.dat');\n\trewrite(f);\n\t(*inserimento dei dati*)\n\twriteln;\n\twrite('inserisci numero : ');\n\treadln(num);\n\twhile (num <> 0) do begin\n\t\twrite(f, num);\n\t\twrite('inserisci numero : ');\n\t\treadln(num);\n\tend;\n\t(*chiusura del file*)\n\tclose(f);\n\t(*apertura in lettura e lettura dei dati*)\n\treset(f);\n\twriteln;\n\twriteln('hai inserito ', filesize(f), ' numeri');\n\twriteln;\n\twriteln('lettura dei dati memorizzati :');\n\twhile (not eof(f)) do begin\n\t\tread(f, num);\n\t\twriteln(num);\n\tend;\n\tclose(f);\nend.\n",
+        "input": "12\n-3\n0\n",
+        "output": "inserire una serire di numeri \nper fermarsi inserite 0 \n\ninserisci numero : inserisci numero : inserisci numero : \nhai inserito 2 numeri\n\nlettura dei dati memorizzati :\n12\n-3\n",
+        "portable": true
+    },
+    {
+        "name": "file_atomic_eof_variant",
+        "source": "program p; type R=record case boolean of true:(a:integer);false:(b:real) end; var v:R; f:file of integer; begin assign(f,'x'); rewrite(f); close(f); reset(f); v.b:=1.5; writeln('ready'); read(f,v.a) end.",
+        "output": "ready\n",
+        "runtime": "R_FILE_EOF"
+    },
+    {
+        "name": "file_atomic_pinned_copy",
+        "source": "program p; type R=record case boolean of true:(a:integer);false:(b:real) end; var v,w:R; f:file of R; procedure take(var n:integer); begin read(f,v) end; begin v.a:=1; w.b:=1.5; assign(f,'x'); rewrite(f); write(f,w); close(f); reset(f); writeln('ready'); take(v.a) end.",
+        "output": "ready\n",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "file_atomic_text_capacity",
+        "source": "program p; type S=string[2]; R=record case boolean of true:(s:S);false:(n:integer) end; var v:R; f:text; q:^S; begin v.s:='ok'; q:=@v.s; v.n:=9; assign(f,'x'); rewrite(f); write(f,'abc'); close(f); reset(f); writeln('ready'); readln(f,q^) end.",
+        "output": "ready\n",
+        "runtime": "R_STRING_CAPACITY"
+    },
+    {
+        "name": "file_atomic_character_owner",
+        "source": "program p; type R=record case boolean of true:(s:string[8]);false:(n:integer) end; var v:R; f:file of char; q:^char; begin v.s:='ab'; q:=@v.s[2]; v.n:=9; assign(f,'x'); rewrite(f); write(f,'z'); close(f); reset(f); writeln('ready'); read(f,q^) end.",
+        "output": "ready\n",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "file_atomic_text_range",
+        "source": "program p; var n:1..3; f:text; begin n:=2; assign(f,'x'); rewrite(f); write(f,'4'); close(f); reset(f); writeln('ready'); read(f,n) end.",
+        "output": "ready\n",
+        "runtime": "R_RANGE"
+    },
+    {
+        "name": "file_atomic_filename",
+        "source": "program p; var f:text; begin assign(f,'x'); writeln('ready'); assign(f,'') end.",
+        "output": "ready\n",
+        "runtime": "R_FILE_NAME"
+    },
+    {
+        "name": "file_stale_descriptor_pointer",
+        "source": "program p; var q:^text; procedure take; var f:text; begin assign(f,'x'); q:=@f end; begin take; rewrite(q^) end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "file_full_record_control",
+        "source": "program p; type R=record a:integer end; var v,w:R; f:file of R; procedure take(var n:integer); begin for n:=1 to 2 do read(f,v) end; begin w.a:=7; assign(f,'x'); rewrite(f); write(f,w); close(f); reset(f); take(v.a) end.",
+        "output": "",
+        "runtime": "R_FOR_CONTROL"
+    },
+    {
+        "name": "file_text_scalar_snapshot",
+        "source": "program p; var f:text; s:string[8]; function change:integer; begin s:='new'; change:=5 end; begin assign(f,'x'); rewrite(f); s:='old'; write(f,s:change()); close(f); reset(f); readln(f,s); writeln(s) end.",
+        "output": "  old\n"
+    },
+    {
+        "name": "file_name_maximum",
+        "source": "program p; var f:text; begin assign(f,'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'); rewrite(f); close(f); reset(f); writeln(eof(f)) end.",
+        "output": "TRUE\n"
+    },
+    {
+        "name": "file_query_error_location",
+        "source": "program p;\nvar f:text;\nbegin\n assign(f,'x');\n rewrite(f);\n writeln(eof(f))\nend.",
+        "output": "",
+        "runtime": "R_FILE_STATE",
+        "runtimeLine": 6,
+        "runtimeColumn": 10
+    },
+    {
+        "name": "file_opaque_names",
+        "source": "program p; var f:text; s:string[16]; begin assign(f,'../PC/path'); rewrite(f); write(f,'virtual'); close(f); reset(f); readln(f,s); writeln(s) end.",
+        "output": "virtual\n"
     }
 ]

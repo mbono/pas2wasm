@@ -17,6 +17,7 @@ extensions and does not claim full ISO 7185 conformance.
 - [Pseudorandom integers](#pseudorandom-integers)
 - [Checked increment](#checked-increment)
 - [Input and output](#input-and-output)
+- [Virtual files](#virtual-files)
 - [Example playground console](#example-playground-console)
 - [Storage, limits, and diagnostics](#storage-limits-and-diagnostics)
 - [Unsupported features](#unsupported-features)
@@ -134,6 +135,7 @@ ordinary expression values.
 | Fixed array | Constant ordinal bounds or an ordinal type domain, and one element type. | `array[-2..2] of integer` |
 | Record | Named fields and optional checked overlapping variants. | `record x, y: integer end` |
 | Typed pointer | Reference to a declared pointee type, or `nil`. | `^Node` |
+| File descriptor | Noncopyable typed/text resource, confined to one execution. | `file of integer`, `text` |
 | Enumeration | Distinct ordered member values, numbered from zero. | `(Mon, Tue, Wed)` |
 | Set | At most 256 consecutive ordinals from one base type. | `set of 0..255`, `set of Day` |
 | Subrange | Integer, character, or enum values constrained by constant inclusive bounds. | `0..9`, `'a'..'z'`, `#65..#90` |
@@ -778,7 +780,7 @@ checked at runtime. `inc` is reserved; no step argument is supported.
 | `readln(a, b)` | Read left-to-right within the current line, then discard its remainder and delimiter once. |
 | `readln;` | Discard the remaining current line. |
 
-Output accepts integer, real, Boolean, character, enum, and string expressions. Booleans
+Console/text output accepts integer, real, Boolean, character, enum, and string expressions. Booleans
 print as `TRUE`/`FALSE`; enums print their declared member spelling. Arrays, records, and
 pointers cannot be printed as whole values.
 Empty I/O parentheses are unsupported.
@@ -796,7 +798,7 @@ Widths must be 0..1,048,576 and decimal precision 0..1000. Invalid requests repo
 `R_FORMAT` at the field expression; fields still share the cumulative UTF-8 output
 budget (`R_OUTPUT_LIMIT`). Precision on a nonreal value is a compile-time `E_TYPE`.
 
-Input destinations must be writable integer, real, character, or string storage,
+Console/text input destinations must be writable integer, real, character, or string storage,
 including fields, elements, dereferences, and reference character views. Boolean,
 pointer, and whole-aggregate input are unsupported.
 
@@ -845,6 +847,70 @@ writeln('Sum: ', n + m)
 Batch and interactive providers use the same parsing rules. Batch input is supplied
 before Run; interactive input arrives as submitted console lines.
 
+## Virtual files
+
+Files exist only in bounded memory for one execution. Each Run starts empty, including
+repeated runs in the same HTML session. Closing a descriptor preserves named contents
+for reopening during that run. Completion, failure, Stop and timeout discard all files.
+No PC filesystem access, persistence, browser storage or import/download is provided.
+
+```pascal
+var f: file of integer; n: integer;
+begin
+  assign(f, 'numbers'); rewrite(f);
+  write(f, 12, 34); close(f);
+  reset(f);
+  while not eof(f) do begin read(f, n); writeln(n) end;
+  close(f)
+end
+```
+
+| Operation | Rule |
+| --- | --- |
+| `assign(f,name)` | Bind an uninitialized/closed descriptor to an opaque, case-sensitive name: 1..255 UTF-8 bytes, excluding NUL. Slashes have no OS-path meaning. |
+| `rewrite(f)` | Create/truncate and open for output; no other handle may be open on that name. Rewriting may replace its previous component kind. |
+| `reset(f)` | Open existing compatible contents for input at the beginning. Multiple readers retain independent cursors; writers are exclusive. |
+| `close(f)` | Close an open handle, retaining its assigned name and contents. |
+| `filesize(f)` | Count elements in an open typed file, in either mode. |
+| `eof(f)` | Test input exhaustion, including all text delimiters. |
+| `eoln(f)` | Text only: true at LF or EOF. |
+| `read`/`write` | An explicit leading descriptor selects file I/O; remaining operands execute left-to-right. |
+| `readln`/`writeln` | Text files only; discard the line remainder or append LF. `readln(t)`/`writeln(t)` are valid. |
+
+`file of T` accepts supported copyable components, including subranges, enums, reals,
+strings, sets, arrays, records/variants and pointers. Writes perform ordinary value
+coercion/checks and independent snapshots; reads require the identical declared storage
+type. Aggregate snapshots preserve partial initialization and active variants. Pointer
+components retain normal lifetime checks. Typed files require at least one value/target,
+reject formatting, and have no external binary interchange format.
+
+`text` is a shadowable type identifier, distinct from `file of char`. Text I/O shares
+console Unicode, numeric, line and formatting rules with its own cursor and byte budget;
+file reads never request console input or suspend. Console input/output state stays
+independent. Boolean, enum, set, pointer and aggregate text input remain unsupported.
+
+Descriptors can be standalone globals/locals, checked pointer pointees or `var`
+parameters. They cannot be copied, returned by value, compared, or contained directly
+in arrays/records/other files (`E_TYPE`). Aliases preserve descriptor/component identity.
+A group captures its receiver once before other operands and retains its owner/opened
+binding. Operand calls may perform nested I/O, but cannot close/reopen/reassign that
+binding while in use (`R_FILE_STATE`). Each field commits separately; failures preserve
+the failing destination and variant state. Returning from a routine retires its own
+bindings/handles while preserving named contents and forwarded caller descriptors.
+
+| Resource | Per-execution limit |
+| --- | --- |
+| Named files / open handles | 32 / 32 |
+| Assigned descriptors | 256; closed reassignment and owner retirement reclaim bindings |
+| Total contents | 1 MiB, counting complete typed snapshots or text UTF-8 bytes |
+| Filename | 255 UTF-8 bytes |
+
+`R_FILE_NAME`, `R_FILE_STATE`, `R_FILE_NOT_FOUND`, `R_FILE_TYPE`, `R_FILE_EOF` and
+`R_FILE_LIMIT` distinguish name/state/existence/type/end/budget failures. Unassigned
+storage uses `R_UNINITIALIZED`; text parsing, range, encoding, capacity, control and
+lifetime errors retain their ordinary codes. No untyped files, seek, append, erase or
+rename operations are implemented.
+
 ## Example playground console
 
 These controls belong to the example browser integration and exported HTML.
@@ -892,6 +958,7 @@ retain their scope semantics.
 | Set domain | At most 256 consecutive ordinals |
 | String capacity / constant value | At most 1 MiB |
 | Address identities | At most 65,536 live entries per execution; stale IDs never reused |
+| Virtual files | 32 names, 32 open handles, 256 descriptors, 1 MiB total contents |
 | Compiler constant-text budget | 8 MiB |
 | Real literals | At most 768 digits; exponent magnitude at most 4,096 |
 | Browser compilation / active execution | Five seconds each; human input waits are excluded |
@@ -908,6 +975,7 @@ retain their scope semantics.
 | `R_VARIANT` | Read a variant field through an incompatible active view. |
 | `E_SET_RANGE`, `R_SET_RANGE` | Set domain, constructor member, or narrowing exceeds the permitted domain. |
 | `R_INPUT_INVALID`, `R_INPUT_RANGE`, `R_INPUT_EOF` | Malformed, out-of-range, or exhausted input. |
+| `R_FILE_NAME`, `R_FILE_STATE`, `R_FILE_NOT_FOUND`, `R_FILE_TYPE`, `R_FILE_EOF`, `R_FILE_LIMIT` | Invalid virtual file operation, exhaustion or budget. |
 | `R_STRING_CAPACITY`, `R_ENCODING` | Exceed UTF-8 string capacity or supply invalid Unicode. |
 | `E_FOR_CONTROL`, `R_FOR_CONTROL` | Modify or alias an active counted-loop control illegally. |
 | `R_NIL`, `R_DANGLING`, `R_DISPOSE`, `R_LIFETIME` | Invalid pointer dereference, disposal, or borrow lifetime. |
@@ -931,11 +999,13 @@ resolution also have bounded complexity. Exceeding a compiler work budget uses
 | Pointer operations | Pointer arithmetic/casts, ordering, and text I/O |
 | Whole arrays/records | Comparison and text output |
 | Numeric/string conversion | Implicit or built-in numeric-to-string/string-to-numeric conversion |
+| External file capabilities | Host/OS access, persistence, file import/export, untyped files and seek/append/erase/rename |
 | Terminal protocols | ANSI terminal commands and raw keypress input |
 
 Reserved built-ins include `trunc`, `round`, `length`, `char`, `chr`, `ord`, `copy`,
-`nil`, `new`, `dispose`, `inc`, `random`, and `randomize`; `record`, `with`, `set`, and `in`
-are also reserved.
+`nil`, `new`, `dispose`, `inc`, `random`, `randomize`, `assign`, `rewrite`, `reset`,
+`close`, `filesize`, `eof`, and `eoln`; `record`, `with`, `set`, `in`, and `file` are also
+reserved. `text` remains a shadowable type identifier.
 Rename earlier identifiers that use these names.
 
 ## Formal grammar
@@ -961,7 +1031,7 @@ parameters  = "(" [parameter_group {";" parameter_group}] ")" ;
 parameter_group = ["var"] declaration_group ;
 declaration_group = identifier {"," identifier} ":" type ;
 call        = identifier ["(" [expression {"," expression}] ")"] ;
-type        = "set" "of" type | "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier | subrange | enumeration
+type        = "file" "of" type | "text" | "set" "of" type | "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier | subrange | enumeration
             | "array" "[" dimension {"," dimension} "]" "of" type
             | "record" record_fields "end" ;
 record_fields = empty | variant_part | declaration_group [";" record_fields] ;
@@ -981,7 +1051,7 @@ with_statement = "with" storage {"," storage} "do" statement ;
 compound    = "begin" statement {";" statement} "end" ;
 statement   = with_statement | assignment | compound | conditional | loop | repeat_loop | for_loop
             | selection | "break" | "continue" | "exit" ["(" expression ")"]
-            | call | output | input | allocation | increment | "randomize" ["(" ")"] | empty ;
+            | call | output | input | file_control | allocation | increment | "randomize" ["(" ")"] | empty ;
 assignment  = lvalue ":=" expression ;
 conditional = "if" expression "then" statement ["else" statement] ;
 loop        = "while" expression "do" statement ;
@@ -993,10 +1063,16 @@ selection   = "case" expression "of" arm {";" arm} [";"]
 arm         = label {"," label} ":" statement ;
 label       = endpoint [".." endpoint] ;
 endpoint    = ["+" | "-"] (integer_literal | identifier) | "true" | "false" ;
-output      = ("write" | "writeln") ["(" argument {"," argument} ")"] ;
+output      = "write" ["(" [file_receiver ","] argument {"," argument} ")"]
+            | "writeln" ["(" (argument {"," argument}
+                | file_receiver ["," argument {"," argument}]) ")"] ;
+file_receiver = storage ; (* must have file/text type *)
+file_control = "assign" "(" file_receiver "," expression ")"
+             | ("rewrite" | "reset" | "close") "(" file_receiver ")" ;
 argument    = expression [":" expression [":" expression]] ;
-input       = "read" "(" storage {"," storage} ")"
-            | "readln" ["(" storage {"," storage} ")"] ;
+input       = "read" "(" [file_receiver ","] storage {"," storage} ")"
+            | "readln" ["(" (storage {"," storage}
+                | file_receiver ["," storage {"," storage}]) ")"] ;
 allocation  = ("new" | "dispose") "(" storage ")" ;
 increment   = "inc" "(" storage ")" ;
 expression  = simple [relation simple] ;
@@ -1007,6 +1083,7 @@ primary     = set_constructor | integer_literal | real_literal | text_literal | 
             | ("real" | "trunc" | "round" | "length" | "chr" | "ord") "(" expression ")"
             | "copy" "(" expression "," expression "," expression ")"
             | "random" "(" expression ")"
+            | ("filesize" | "eof" | "eoln") "(" file_receiver ")"
             | "(" expression ")" | "not" factor | "@" storage ;
 relation    = "=" | "<>" | "<" | "<=" | ">" | ">=" | "in" ;
 character_literal = "#" ASCII_digit {ASCII_digit} ;

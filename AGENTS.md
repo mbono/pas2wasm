@@ -23,8 +23,8 @@ Do not hand-edit generated files in `build/`.
 - Preserve fresh worker memories, cancellation/recovery, limits, text-only
   rendering, opt-in WAT, and offline `file://` exports.
 - Live input uses browser JSPI; synchronous batch hosts require none. Human input
-  waits do not consume the cumulative execution budget. Pascal gains no filesystem,
-  network, DOM, or arbitrary-JavaScript capability.
+  waits do not consume the cumulative execution budget. Pascal gains no host/OS filesystem,
+  network, DOM, or arbitrary-JavaScript capability. Virtual files are bounded to one run.
 - Read the version from the loaded compiler. VERSION is embedded at build time;
   bump per release, update [changelog.md](docs/changelog.md), and follow the
   [release policy](docs/contributing.md#versioning-and-releases).

@@ -39,6 +39,8 @@ typedef enum {
     TYPE_KIND_BOOLEAN,
     TYPE_KIND_REAL,
     TYPE_KIND_CHARACTER,
+    TYPE_KIND_FILE,
+    TYPE_KIND_TEXT,
     TYPE_KIND_POINTER,
     TYPE_KIND_NIL,
     TYPE_KIND_PENDING,
@@ -127,12 +129,13 @@ struct Lvalue {
     int indirect; /* This path reaches a pointee, even through a temporary pointer value. */
 };
 extern const Type p2w_type_integer, p2w_type_boolean, p2w_type_real, p2w_type_character,
-    p2w_type_nil;
+    p2w_type_nil, p2w_type_text;
 #define TYPE_INTEGER (&p2w_type_integer)
 #define TYPE_BOOLEAN (&p2w_type_boolean)
 #define TYPE_REAL (&p2w_type_real)
 #define TYPE_CHARACTER (&p2w_type_character)
 #define TYPE_NIL (&p2w_type_nil)
+#define TYPE_TEXT (&p2w_type_text)
 /* Only variables have runtime storage; constants/types are frontend declarations. */
 typedef enum { SYMBOL_VARIABLE, SYMBOL_CONSTANT, SYMBOL_TYPE } SymbolKind;
 /* Target-independent expression operations, retaining Pascal evaluation order. */
@@ -140,6 +143,9 @@ typedef enum {
     EX_INTEGER,
     EX_NIL,
     EX_ADDRESS, /* lvalue retains declared storage; no payload is read by address capture. */
+    EX_FILE_SIZE,
+    EX_FILE_EOF,
+    EX_FILE_EOLN,
     EX_REAL,
     EX_RANDOM,
     EX_RANGE_CHECK,
@@ -224,9 +230,13 @@ typedef enum {
     ST_WRITE,
     ST_READ,
     ST_DISCARD,
+    ST_FILE_CONTROL,
+    ST_FILE_READ, /* file is captured once; body holds ordered ST_READ/ST_DISCARD fields. */
     ST_NEW,
     ST_DISPOSE
 } StmtKind;
+/* Logical descriptor operations; concrete handles and host imports belong to the backend. */
+typedef enum { FILE_ASSIGN, FILE_REWRITE, FILE_RESET, FILE_CLOSE } FileOperation;
 /* Located structured statement. next links a block's statements; body/otherwise
  * are nested statements. expression is a condition, value, or output list.
  * ST_EXIT optionally holds its typed function result in expression.
@@ -238,6 +248,8 @@ typedef struct Stmt {
     unsigned line, column;
     size_t symbol;
     Lvalue *target; /* Assignment/input destination; counted controls retain symbol too. */
+    Lvalue *file;   /* Optional explicit I/O receiver, or ST_FILE_CONTROL descriptor. */
+    FileOperation file_operation;
     Expr *expression;
     Expr *limit;
     int descending;
@@ -313,12 +325,14 @@ typedef struct {
     size_t node_count, text_bytes;
     Type *string_types;
     Type *set_types;
+    Type *file_types; /* Interned by declared component identity; descriptors cannot be copied. */
     Type *pointer_types, *types;
     Symbol *symbols;
     size_t symbol_count, symbol_capacity;
     size_t global_count, routine_count, with_count;
     int has_variants;
     int has_addresses;
+    int has_files;
     Routine *routines, *root_routines;
     size_t symbol_head; /* Global declaration chain; SIZE_MAX ends every chain. */
     Stmt *body;

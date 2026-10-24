@@ -4,6 +4,10 @@
 
 ### Added
 
+- Per-execution virtual typed/text files with independent snapshots/cursors, bounded
+  storage, checked owner/group lifetimes, and ordinary console/live/offline integration.
+  Includes unchanged tutorial `files.pas`; `textfiles.pas` awaits partial CRT support.
+
 - Checked `@storage` for globals, locals/results, aliases, aggregate/heap fields and
   string characters, with stable typed identities, bounded registries, frame epochs,
   variant-view checks and unchanged tutorial `pointer_demo2` support.
@@ -24,6 +28,9 @@
   unchanged tutorial `rec` and `record_demo` sources.
 
 ### Compatibility changes
+
+- `file`, `assign`, `rewrite`, `reset`, `close`, `filesize`, `eof`, and `eoln` are now
+  reserved. Rename existing declarations using those names; `text` remains shadowable.
 
 - `with` is now reserved. Rename declarations previously using that name.
 - `set` and `in` are now reserved. Rename declarations previously using those names.

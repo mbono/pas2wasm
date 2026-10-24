@@ -6,6 +6,7 @@
 #include "emitter.h"
 #include "variant.h"
 #include "reference.h"
+#include "file.h"
 #include "ir/number.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,7 +75,21 @@ static const Import imports[] = {{"write_utf8", "ii", 0},
                                  {"frame_enter", "iiiii", 0},
                                  {"frame_leave", "iiii", 0},
                                  {"variant_bind", "iiiii", 0x7e},
-                                 {"variant_char_store", "iiiii", 0}};
+                                 {"variant_char_store", "iiiii", 0},
+                                 {"file_assign", "iiiiiiiii", 0},
+                                 {"file_control", "iiii", 0},
+                                 {"file_begin", "iiii", 0x7f},
+                                 {"file_end", "iii", 0},
+                                 {"file_query", "iiii", 0x7f},
+                                 {"file_write", "iiiii", 0},
+                                 {"file_read", "iiiiii", 0},
+                                 {"file_text_write", "iidiiii", 0},
+                                 {"file_text_i32", "iiii", 0x7f},
+                                 {"file_text_f64", "iiii", 0x7c},
+                                 {"file_text_char", "iiii", 0x7f},
+                                 {"file_text_string", "iiiiiii", 0},
+                                 {"file_text_discard", "iii", 0},
+                                 {"file_finish", "", 0}};
 enum {
     IMPORT_COUNT = sizeof(imports) / sizeof(*imports),
     RUN_TYPE = IMPORT_COUNT,
@@ -704,6 +719,20 @@ static void emit_expression(Wasm *w, const Expr *e)
         string_expression(w, e);
         return;
     }
+    if (e->kind == EX_FILE_SIZE || e->kind == EX_FILE_EOF || e->kind == EX_FILE_EOLN) {
+        size_t saved = w->next_local, target = temporary(w);
+        VariantPath path = {0};
+        capture_path(w, e->lvalue, SIZE_MAX, &path);
+        indexed(w, 0x21, "local.set", target);
+        variant_access(w, &path, 0, e->line, e->column);
+        indexed(w, 0x20, "local.get", target);
+        constant(w, 0, e->kind == EX_FILE_SIZE ? 2 : e->kind == EX_FILE_EOLN ? 1 : 0);
+        constant(w, 0, e->line);
+        constant(w, 0, e->column);
+        indexed(w, 0x10, "call", FILE_QUERY_IMPORT);
+        w->next_local = saved;
+        return;
+    }
     if (e->kind == EX_ADDRESS) {
         size_t saved = w->next_local;
         size_t target = temporary(w), root = temporary(w);
@@ -1028,7 +1057,7 @@ static void check_target(Wasm *w, size_t destination, ValueType type, unsigned l
 /* Resolve the destination before evaluating the source/input and retain its
  * address across arbitrary calls. Indexed writes also mark their root touched. */
 static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, unsigned line,
-                            unsigned column, int input_line)
+                            unsigned column, int input_line, const FileInput *input)
 {
     size_t saved = w->next_local;
     size_t destination = temporary(w), root = temporary(w);
@@ -1038,15 +1067,20 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
     indexed(w, 0x21, "local.set", destination);
     check_target(w, destination, target->type, target->line ? target->line : line,
                  target->column ? target->column : column);
-    if (base_type == TYPE_CHARACTER) {
+    if (input && input->component) {
+        file_read(w, &path, input, destination, target->type, input_line, line, column);
+    } else if (base_type == TYPE_CHARACTER) {
         size_t value = temporary(w);
         if (source) {
             emit_expression(w, source);
         } else {
+            if (input) {
+                indexed(w, 0x20, "local.get", input->binding);
+            }
             constant(w, 0, input_line);
             constant(w, 0, line);
             constant(w, 0, column);
-            indexed(w, 0x10, "call", 25);
+            indexed(w, 0x10, "call", input ? FILE_TEXT_CHAR_IMPORT : 25);
             check_range(w, target->type, line, column);
         }
         indexed(w, 0x21, "local.set", value);
@@ -1069,6 +1103,8 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
             } else {
                 copy_typed(w, destination, target->type, line, column);
             }
+        } else if (input) {
+            file_read(w, &path, input, destination, target->type, input_line, line, column);
         } else if (path.count) {
             variant_read_string(w, &path, destination, target->type->capacity, input_line, line,
                                 column);
@@ -1084,10 +1120,17 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
         if (source) {
             emit_expression(w, source);
         } else {
+            if (input) {
+                indexed(w, 0x20, "local.get", input->binding);
+            }
             constant(w, 0, input_line);
             constant(w, 0, line);
             constant(w, 0, column);
-            indexed(w, 0x10, "call", target->type == TYPE_REAL ? 24 : 23);
+            indexed(w, 0x10, "call",
+                    input ? (target->type == TYPE_REAL ? FILE_TEXT_REAL_IMPORT
+                                                       : FILE_TEXT_INTEGER_IMPORT)
+                    : target->type == TYPE_REAL ? 24
+                                                : 23);
             check_range(w, target->type, line, column);
         }
         if (aggregate(target->type)) {
@@ -1733,7 +1776,7 @@ static void emit_case(Wasm *w, const Stmt *s)
 
 /* Retain the value beneath formatting operands on the Wasm stack. String snapshots
  * outlive alias-changing width/precision calls; consumed pointee leases can end now. */
-static void emit_formatted(Wasm *w, const Expr *e)
+static void emit_formatted(Wasm *w, const Expr *e, size_t file)
 {
     size_t saved = w->next_local, pins = borrow_checkpoint(w);
     int kind = e->type == TYPE_INTEGER     ? 0
@@ -1741,6 +1784,9 @@ static void emit_formatted(Wasm *w, const Expr *e)
                : e->type == TYPE_BOOLEAN   ? 2
                : e->type == TYPE_CHARACTER ? 3
                                            : 4;
+    if (file != SIZE_MAX) {
+        indexed(w, 0x20, "local.get", file);
+    }
     constant(w, 0, kind);
     emit_expression(w, e);
     if (e->type->kind == TYPE_KIND_STRING) {
@@ -1751,7 +1797,11 @@ static void emit_formatted(Wasm *w, const Expr *e)
         op(w, 0xb7, "f64.convert_i32_s");
     }
     release_borrows(w, pins);
-    emit_expression(w, e->width);
+    if (e->width) {
+        emit_expression(w, e->width);
+    } else {
+        constant(w, 0, 0);
+    }
     if (e->precision) {
         emit_expression(w, e->precision);
     } else {
@@ -1759,7 +1809,140 @@ static void emit_formatted(Wasm *w, const Expr *e)
     }
     constant(w, 0, e->line);
     constant(w, 0, e->column);
-    indexed(w, 0x10, "call", 27);
+    indexed(w, 0x10, "call", file == SIZE_MAX ? 27 : FILE_TEXT_WRITE_IMPORT);
+    w->next_local = saved;
+}
+
+/* Descriptor ownership is captured before filename calls or control operations. */
+static void emit_file_control(Wasm *w, const Stmt *s)
+{
+    size_t saved = w->next_local, target = temporary(w), root = temporary(w);
+    VariantPath path = {0};
+    capture_path(w, s->file, root, &path);
+    indexed(w, 0x21, "local.set", target);
+    if (s->file_operation == FILE_ASSIGN) {
+        size_t filename = temporary(w);
+        emit_expression(w, s->expression);
+        indexed(w, 0x21, "local.set", filename);
+        file_assign(w, &path, target, root, s->file->type, filename, s->line, s->column);
+        indexed(w, 0x20, "local.get", root);
+        constant(w, 0, 1);
+        memory_op(w, 0x3a, "i32.store8", 0, 8);
+    } else {
+        variant_access(w, &path, 0, s->line, s->column);
+        indexed(w, 0x20, "local.get", target);
+        constant(w, 0,
+                 s->file_operation == FILE_REWRITE ? 0
+                 : s->file_operation == FILE_RESET ? 1
+                                                   : 2);
+        constant(w, 0, s->line);
+        constant(w, 0, s->column);
+        indexed(w, 0x10, "call", FILE_CONTROL_IMPORT);
+    }
+    w->next_local = saved;
+}
+
+/* Typed components use full declared objects; scalar payloads are initialized and
+ * aggregates retain independent partial-state copies, including bounded strings. */
+static void file_output_value(Wasm *w, size_t binding, ValueType type, const Expr *value)
+{
+    size_t pins = borrow_checkpoint(w);
+    size_t object = reserve_temporary(w, type_size(w, type), value->line, value->column);
+    if (aggregate(type)) {
+        emit_expression(w, value);
+        copy_typed(w, object, type, value->line, value->column);
+    } else {
+        indexed(w, 0x20, "local.get", object);
+        emit_expression(w, value);
+        unsigned scalar = scalar_type(type_value(type));
+        memory_op(w,
+                  scalar == 0x7c   ? 0x39
+                  : scalar == 0x7e ? 0x37
+                                   : 0x36,
+                  scalar == 0x7c   ? "f64.store"
+                  : scalar == 0x7e ? "i64.store"
+                                   : "i32.store",
+                  scalar == 0x7f ? 2 : 3, 0);
+        indexed(w, 0x20, "local.get", object);
+        constant(w, 0, 1);
+        memory_op(w, 0x3a, "i32.store8", 0, 8);
+    }
+    release_borrows(w, pins);
+    indexed(w, 0x20, "local.get", binding);
+    indexed(w, 0x20, "local.get", object);
+    constant(w, 0, (int64_t)type_size(w, type));
+    constant(w, 0, value->line);
+    constant(w, 0, value->column);
+    indexed(w, 0x10, "call", FILE_WRITE_IMPORT);
+}
+
+/* One opened binding and owner survive all fields. Per-field cleanup restores a
+ * local floor, rather than the statement cleanup that would drop receiver borrows. */
+static void emit_file_io(Wasm *w, const Stmt *s)
+{
+    size_t saved = w->next_local, entry_top = temporary(w), entry_pins = borrow_checkpoint(w);
+    indexed(w, 0x23, "global.get", 1);
+    indexed(w, 0x21, "local.set", entry_top);
+    VariantPath path = {0};
+    size_t target = temporary(w), binding = temporary(w);
+    capture_path(w, s->file, SIZE_MAX, &path);
+    indexed(w, 0x21, "local.set", target);
+    variant_access(w, &path, 0, s->line, s->column);
+    indexed(w, 0x20, "local.get", target);
+    constant(w, 0, s->kind == ST_WRITE);
+    constant(w, 0, s->line);
+    constant(w, 0, s->column);
+    indexed(w, 0x10, "call", FILE_BEGIN_IMPORT);
+    indexed(w, 0x21, "local.set", binding);
+    size_t floor = temporary(w), pins = borrow_checkpoint(w);
+    indexed(w, 0x23, "global.get", 1);
+    indexed(w, 0x21, "local.set", floor);
+    size_t fields = w->next_local;
+    ValueType component = s->file->type == TYPE_TEXT ? NULL : s->file->type->element;
+    if (s->kind == ST_WRITE) {
+        for (const Expr *value = s->expression; value; value = value->next) {
+            if (component) {
+                file_output_value(w, binding, component, value);
+            } else {
+                emit_formatted(w, value, binding);
+            }
+            release_borrows(w, pins);
+            restore_top(w, floor, 0);
+            w->next_local = fields;
+        }
+        if (s->newline) {
+            indexed(w, 0x20, "local.get", binding);
+            constant(w, 0, 6);
+            real_constant(w, 0);
+            constant(w, 0, 0);
+            constant(w, 0, 0);
+            constant(w, 0, s->line);
+            constant(w, 0, s->column);
+            indexed(w, 0x10, "call", FILE_TEXT_WRITE_IMPORT);
+        }
+    } else {
+        FileInput input = {binding, component};
+        for (const Stmt *field = s->body; field; field = field->next) {
+            if (field->kind == ST_DISCARD) {
+                indexed(w, 0x20, "local.get", binding);
+                constant(w, 0, field->line);
+                constant(w, 0, field->column);
+                indexed(w, 0x10, "call", FILE_TEXT_DISCARD_IMPORT);
+            } else {
+                emit_assignment(w, field->target, NULL, field->line, field->column,
+                                field->input_line, &input);
+            }
+            release_borrows(w, pins);
+            restore_top(w, floor, 0);
+            w->next_local = fields;
+        }
+    }
+    indexed(w, 0x20, "local.get", binding);
+    constant(w, 0, s->line);
+    constant(w, 0, s->column);
+    indexed(w, 0x10, "call", FILE_END_IMPORT);
+    release_borrows(w, entry_pins);
+    restore_top(w, entry_top, 0);
     w->next_local = saved;
 }
 
@@ -1777,7 +1960,7 @@ static void emit_statement(Wasm *w, const Stmt *s)
             emit_with(w, s);
             break;
         case ST_ASSIGN:
-            emit_assignment(w, s->target, s->expression, s->line, s->column, 0);
+            emit_assignment(w, s->target, s->expression, s->line, s->column, 0, NULL);
             break;
         case ST_INCREMENT:
             emit_increment(w, s);
@@ -1848,7 +2031,7 @@ static void emit_statement(Wasm *w, const Stmt *s)
                 Lvalue result = {.kind = LV_SYMBOL,
                                  .type = w->routine->return_type,
                                  .symbol = w->routine->result_symbol};
-                emit_assignment(w, &result, s->expression, s->line, s->column, 0);
+                emit_assignment(w, &result, s->expression, s->line, s->column, 0, NULL);
             }
             unwind_with(w, NULL);
             for (const Loop *loop = w->loop; loop; loop = loop->outer) {
@@ -1863,10 +2046,20 @@ static void emit_statement(Wasm *w, const Stmt *s)
         case ST_CALL:
             emit_call(w, s->routine, s->expression, s->line, s->column);
             break;
+        case ST_FILE_CONTROL:
+            emit_file_control(w, s);
+            break;
+        case ST_FILE_READ:
+            emit_file_io(w, s);
+            break;
         case ST_WRITE:
+            if (s->file) {
+                emit_file_io(w, s);
+                break;
+            }
             for (const Expr *e = s->expression; e; e = e->next) {
                 if (e->width) {
-                    emit_formatted(w, e);
+                    emit_formatted(w, e, SIZE_MAX);
                 } else if (e->kind == EX_TEXT) {
                     constant(w, 0, (int64_t)w->data.length);
                     constant(w, 0, (int64_t)e->length);
@@ -1892,7 +2085,7 @@ static void emit_statement(Wasm *w, const Stmt *s)
             }
             break;
         case ST_READ:
-            emit_assignment(w, s->target, NULL, s->line, s->column, s->input_line);
+            emit_assignment(w, s->target, NULL, s->line, s->column, s->input_line, NULL);
             break;
         case ST_NEW:
         case ST_DISPOSE:
@@ -2339,6 +2532,9 @@ static void emit_function(Wasm *w, const Routine *routine, Buffer *bodies, Buffe
     }
     release_frame_borrows(w);
     reference_frame(w, 0);
+    if (!routine && w->program->has_files) {
+        indexed(w, 0x10, "call", FILE_FINISH_IMPORT);
+    }
     indexed(w, 0x20, "local.get", w->frame_local);
     memory_op(w, 0x28, "i32.load", 2, 4);
     indexed(w, 0x24, "global.set", 2);
@@ -2405,7 +2601,7 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
     Wasm w = {0};
     w.emit_wat = emit_wat;
     w.program = program;
-    w.heap = program->pointer_types != NULL || program->has_variants;
+    w.heap = program->pointer_types != NULL || program->has_variants || program->has_files;
     if (!wasm_layout_build(program, &w.layout, &result->diagnostic)) {
         wasm_layout_destroy(&w.layout);
         return 0;
@@ -2429,7 +2625,8 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
     uleb(&payload, pages);
     uleb(&payload, 1024);
     section(&result->binary, 5, &payload);
-    size_t globals = (w.heap ? 6u : 3u) + (program->has_addresses ? 1u : 0u);
+    size_t globals =
+        (w.heap ? 6u : 3u) + ((program->has_addresses || program->has_files) ? 1u : 0u);
     uleb(&payload, globals);
     for (size_t i = 0; i < globals; ++i) {
         buffer_byte(&payload, 0x7f);
@@ -2486,7 +2683,7 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
             buffer_printf(&result->wat, "  (global (mut i32) (i32.const 0))\n");
             buffer_printf(&result->wat, "  (global (mut i32) (i32.const 0))\n");
         }
-        if (program->has_addresses) {
+        if (program->has_addresses || program->has_files) {
             buffer_printf(&result->wat, "  (global (mut i32) (i32.const 0))\n");
         }
         buffer_append(&result->wat, functions.data, functions.length);

@@ -436,6 +436,63 @@ int main(void)
     assert(program.body->body->target->field == deep);
     assert(program.body->body->target->depth == 4);
     program_destroy(&program);
+    const char *typed_file = "program p; var f:file of integer; n:integer; "
+                             "procedure use(var g:file of integer); begin writeln(eof(g)) end; "
+                             "begin assign(f,'numbers'); rewrite(f); write(f,1,2); close(f); "
+                             "reset(f); read(f,n,n); writeln(filesize(f),eof(f)); close(f) end.";
+    assert(frontend_parse(&program, typed_file, strlen(typed_file), &diagnostic));
+    assert(program.has_files && program.symbols[0].type->kind == TYPE_KIND_FILE);
+    assert(program.symbols[0].type->element == TYPE_INTEGER);
+    assert(program.routines->parameter_types[0] == program.symbols[0].type);
+    Stmt *file_statement = program.body->body;
+    assert(file_statement->kind == ST_FILE_CONTROL &&
+           file_statement->file_operation == FILE_ASSIGN);
+    assert(file_statement->file->kind == LV_SYMBOL && file_statement->expression->kind == EX_TEXT);
+    file_statement = file_statement->next->next;
+    assert(file_statement->kind == ST_WRITE &&
+           file_statement->file->type == program.symbols[0].type);
+    assert(file_statement->expression->integer == 1 &&
+           file_statement->expression->next->integer == 2);
+    file_statement = file_statement->next->next->next;
+    assert(file_statement->kind == ST_FILE_READ && file_statement->file->symbol == 0);
+    assert(file_statement->body->target->symbol == 1 &&
+           file_statement->body->next->target->symbol == 1);
+    program_destroy(&program);
+    const char *text_file = "program text; var t:text; c:char; begin assign(t,'note'); rewrite(t); "
+                            "writeln(t); write(t,'hi',2:3); close(t); reset(t); "
+                            "if not eoln(t) then read(t,c); readln(t); close(t) end.";
+    assert(frontend_parse(&program, text_file, strlen(text_file), &diagnostic));
+    assert(program.has_files && program.symbols[0].type == TYPE_TEXT);
+    assert(program.body->body->next->next->kind == ST_WRITE);
+    assert(!program.body->body->next->next->expression);
+    program_destroy(&program);
+    const char *shadow_text =
+        "program p; type Text=string[8]; var s:Text; begin s:='hi'; writeln(s) end.";
+    assert(frontend_parse(&program, shadow_text, strlen(shadow_text), &diagnostic));
+    assert(!program.has_files && program.symbols[1].type->kind == TYPE_KIND_STRING);
+    program_destroy(&program);
+    const char *forward_file = "program p; type P=^Later; F=file of P; Q=^Alias; G=file of Q; "
+                               "Later=integer; Alias=Later; var f1:F; f2:G; begin end.";
+    assert(frontend_parse(&program, forward_file, strlen(forward_file), &diagnostic));
+    assert(program.symbols[1].type == program.symbols[3].type);
+    program_destroy(&program);
+    const char *invalid_files[] = {"program p; var f,g:text; begin f:=g end.",
+                                   "program p; procedure t(f:text); begin end; begin end.",
+                                   "program p; function t:text; begin end; begin end.",
+                                   "program p; type R=record f:text end; begin end.",
+                                   "program p; var a:array[1..2] of text; begin end.",
+                                   "program p; var f:file of text; begin end.",
+                                   "program p; var f:text; begin writeln(filesize(f)) end.",
+                                   "program p; var f:file of integer; begin writeln(eoln(f)) end.",
+                                   "program p; var f:file of integer; begin writeln(f,1) end.",
+                                   "program p; var f:file of integer; begin write(f,1:3) end.",
+                                   "program p; var f:file of integer; n:real; begin read(f,n) end.",
+                                   "program p; var f:file of integer; begin readln(f) end."};
+    for (size_t i = 0; i < sizeof(invalid_files) / sizeof(*invalid_files); ++i) {
+        assert(!frontend_parse(&program, invalid_files[i], strlen(invalid_files[i]), &diagnostic));
+        assert(strcmp(diagnostic.code, "E_TYPE") == 0);
+        program_destroy(&program);
+    }
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));
     assert(!frontend_parse(&program, invalid, strlen(invalid), &diagnostic));

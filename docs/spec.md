@@ -41,7 +41,7 @@ implementation is accepted, and references are updated.
 | Browser privacy | Source and program input remain in the browser. Fetch only assets from the same deployment; compilation/execution need no network after they load. |
 | Browser isolation | Compiler and program run in terminable workers with separate memories. Stop/timeout must recover, and every Run uses fresh program/input/output state. |
 | Checked execution | Preserve the language reference's evaluation, initialization, arithmetic, bounds, lifetime, and I/O rules. Limits and metadata remain inside the documented budgets; diagnose failures instead of relying on raw Wasm traps. |
-| Capabilities | Programs receive bounded I/O, pseudorandom integers, and located failures, with no host/OS filesystem, network, DOM, or arbitrary-JavaScript capability. Virtual file I/O remains planned below. Render source-derived text safely. |
+| Capabilities | Programs receive bounded I/O, pseudorandom integers, and located failures, with no host/OS filesystem, network, DOM, or arbitrary-JavaScript capability. Virtual file I/O is confined to bounded per-execution storage. Render source-derived text safely. |
 | Version identity | Embed VERSION at build time in both hosts. Display the loaded compiler version in the example heading/tab; no duplicated UI literal or runtime version-file fetch. Generated Pascal programs have no assigned compiler version. |
 | Licensing | Repository-owned code/docs use MIT. Include the full license with site assets and inside standalone HTML; preserve third-party notices. |
 | Maintainability | Keep code small, readable, documented, and free of speculative backend frameworks or unused dependencies. Follow contributor conventions. |
@@ -211,10 +211,80 @@ uses `R_MEMORY`. Append imports and keep old signatures. Accept unchanged
 and heap owners, nonheap/interior disposal, atomic failures, counters, limits, both
 hosts/WAT/sanitizers/browsers, JSPI and offline exports. No new external dependency.
 
+### Virtual-filesystem gate
+
+Requirement 15 adds `file of T`, the built-in `text` type, `assign`, `rewrite`,
+`reset`, `close`, `filesize`, `eof`, and `eoln`, plus explicit-file forms of existing
+`read`/`readln`/`write`/`writeln`. Reserve `file` and these routine names. `text` remains
+a shadowable type identifier, preserving existing variables, fields and aliases named
+Text. Accept `file of T` for any copyable supported component, including constrained
+ordinals, reals, strings, sets, aggregates/variants and typed pointers. Aliases preserve
+identity; file types intern by declared component identity. `text` is distinct from
+`file of char`.
+
+File descriptors are noncopyable storage: permit standalone globals/locals, checked
+pointer pointees and `var` aliases; reject descriptor assignment, value parameters,
+function results, comparison, direct record/array components, and `file of file` with
+`E_TYPE`. Pointer edges do not constitute by-value containment. Filename/ordinary value
+expressions are evaluated once. Capture the file receiver once before other operands
+and retain its owner through the whole multi-argument operation. Borrow the opened
+descriptor binding for that group: nested I/O may use it, but close/reopen/reassignment
+through an alias while it is in use fails with `R_FILE_STATE`.
+
+| Operation | Contract |
+| --- | --- |
+| `assign(f,name)` | Bind an uninitialized/closed descriptor to a nonempty, NUL-free UTF-8 name of at most 255 bytes. Names are opaque, exact and case-sensitive; slashes provide no OS-path capability. Binding does not create contents. |
+| `rewrite(f)` | Create/truncate named contents and establish their current kind/component identity; open for output. Reject an already open descriptor or contents with any live reader/writer. |
+| `reset(f)` | Open existing compatible contents for input at the beginning. Multiple readers have independent cursors; any live writer excludes other opens. |
+| `close(f)` | Release an open handle, preserving the descriptor's name and file contents for reopening in this execution. Reopening/reassigning an open descriptor or closing a closed one is an error. |
+| `filesize(f)` | Require an open typed file; return its element count in either mode. |
+| `eof(f)`, `eoln(f)` | Require input mode. EOF follows all elements/scalars and delimiters; EOLN is true at LF or EOF and accepts only text. |
+| Typed `write(f,values...)` | Coerce/check each value against the declared component, snapshot it and append one independent element. Scalar values require initialization; aggregates preserve partial initialization/variant state as ordinary value copies do. |
+| Typed `read(f,destinations...)` | Require exact component storage identity; copy the next element with ordinary control, root-written, variant and lifetime checks. Preserve character-view bounds/capacity checks. EOF never changes its destination. |
+| Text I/O | Reuse console UTF-8 parsing/formatting and scalar destination families, with a separate cursor and no console input/output accounting. Output LF for writeln; readln discards the line remainder. Preserve Unicode, blank/unterminated lines, CRLF parsing, widths and precision. |
+
+`readln`/`writeln` accept only text receivers. Typed read/write require at least one
+value/destination and reject formatting; `writeln(t)` and `readln(t)` are valid.
+Each field commits separately in source order, as console I/O does; a later failure
+retains earlier successful fields. Per-field failures leave destination/file bytes and
+activation state unchanged. Typed contents use backend-owned value snapshots including
+initialization/arm state, not a portable external binary format. Pointer components
+retain their ordinary lifetime checks; files do not extend a pointer owner's lifetime.
+
+Every Run starts with an empty virtual filesystem. Bound it to 32 named files, 32
+simultaneously open handles, 256 assigned descriptors and 1 MiB total contents; typed
+snapshots count their full backend size. Preflight mutations and all budgets before
+committing them. Reassignment reclaims a closed binding. Retire a returning activation's
+own bindings/handles while preserving forwarded caller aliases; reclaim stale heap
+bindings before enforcing resource limits. Closing/retirement preserves named contents.
+Completion, failure, Stop and timeout release all contents, handles and bindings. No
+persistence, browser storage, uploads/downloads, host filesystem or network access.
+
+Use located `R_FILE_NAME`, `R_FILE_STATE`, `R_FILE_NOT_FOUND`, `R_FILE_TYPE`,
+`R_FILE_EOF` and `R_FILE_LIMIT` for the respective name/state/existence/type/end/budget
+failures. Unassigned descriptors retain `R_UNINITIALIZED`; text value parsing, encoding,
+range and destination guards retain existing diagnostics. Unknown or unavailable file
+operations remain compile-time errors.
+
+Frontend/IR own logical file types/operations and single-evaluated receiver paths.
+Backend owns descriptor layout, type IDs, materialization, epochs and narrow memory-only
+imports. Runtime owns bounded per-execution contents/cursors; reuse current checked
+copy/variant, formatting and input rules. File reads are synchronous with already present
+contents, including JSPI hosts; console waits keep their existing behavior. No external
+dependency or Pascal host capability is introduced. Passing examples include the
+unchanged `files.pas`, `var` forwarding, typed aggregate/character snapshots and text
+line roundtrips; reject `f:=g`, file-valued results, wrong components/modes, missing files
+and exhausted limits. The unchanged `textfiles.pas` also requires requirement 16.
+Accept through both hosts/WAT/sanitizers/actual browsers and relevant live/offline
+exports, including atomic failures, ownership, cleanup, cancellation and fresh reruns;
+update the language, ABI, architecture, dependency and contributor references before
+marking the feature complete.
+
 ## Future scope and design gates
 
-Virtual files and partial CRT are the next tutorial increments. Other entries below
-remain deferred without delivery promises; resolve each selected gate before coding.
+Virtual files use the contract above; partial CRT is the next tutorial increment. Other
+entries below remain deferred without delivery promises; resolve each selected gate
+before coding.
 
 | Area | Decisions required before implementation |
 | --- | --- |
@@ -223,7 +293,6 @@ remain deferred without delivery promises; resolve each selected gate before cod
 | Dynamic/open arrays, resizable strings | Runtime layout, allocation, bounds, copying, initialization, and lifetime rules. |
 | Broader Pascal dialects | Chosen syntax, type identity, operations, conversions, and compatibility scope. |
 | Native CPU/OS output | Instruction/object/executable formats, calling conventions, runtime services, and linking. Preserve the backend boundary without placeholder targets or a promised native ABI. |
-| Virtual files | Use bounded in-memory storage for one program execution: each Run starts empty, close preserves contents for reopening, and completion/failure/Stop/timeout releases everything. No host filesystem access or persistence across Runs/HTML sessions. See the [planned architecture](architecture.md#planned-virtual-filesystem); resolve types, operations, encoding, limits, and diagnostics before implementation. |
 | Broader I/O, WASI | Capabilities, host interfaces, portability, and offline behavior. |
 | Partial CRT compatibility | Start with a documented subset and directly emitted helpers; extract a separate module if it grows. Browser services retain host imports. See the [planned architecture](architecture.md#planned-crt-compatibility); resolve raw-key input, JSPI, cancellation, and offline behavior before implementation. |
 | Tooling and examples | Debug information, completion, shareable programs/tutorial links, localization, and a Pascal REPL. ANSI emulation/raw keypress input are separate from the current line console. |

@@ -147,10 +147,12 @@ async function main() {
     await require('./io.js')();
     require('./variant-runtime.js')(createPas2WasmRuntime);
     require('./reference-runtime.js')(createPas2WasmRuntime);
+    require('./file-runtime.js')(createPas2WasmRuntime);
     const compile = await createCompiler(require('../build/pas2wasm.js'));
     await verifySubrangeWrites(compile);
     await verifySetWrites(compile);
     await verifyVariantWrites(compile);
+    await require('./file.js')(compile);
     const version = fs.readFileSync(path.join(__dirname, '../VERSION'), 'utf8').trim();
     assert.equal(compile.version, version, 'Wasm compiler embeds VERSION');
     assert.equal(tool(nativeExecutable, ['--version']).stdout, `Pas2Wasm ${version}\n`);
@@ -200,7 +202,7 @@ async function main() {
             if (test.portable) {
                 const executable = path.join(directory, test.name);
                 tool('fpc', ['-Mobjfpc', '-Co', `-o${executable}`, input]);
-                const fpc = tool(executable, [], {input:test.input || ''});
+                const fpc = tool(executable, [], {input:test.input || '', cwd:directory});
                 assert.equal(fpc.stdout, test.output, `Free Pascal: ${test.name}`);
                 comparisons++;
             }

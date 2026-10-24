@@ -272,6 +272,26 @@ def verify_reference_epoch(browser, cases, directory):
         assert result == {'ok':True}, result
 
 
+def verify_file_boundaries(browser, cases, directory):
+    """Observe generated file-input failures against independently captured bytes."""
+    checks = Path('test/reference-runtime.js').read_text(encoding='utf-8')
+    for name, code, size in [
+        ('file_atomic_eof_variant','R_FILE_EOF',48),
+        ('file_atomic_pinned_copy','R_LIFETIME',48),
+        ('file_atomic_text_capacity','R_STRING_CAPACITY',64),
+        ('file_atomic_character_owner','R_UNINITIALIZED',64),
+        ('file_atomic_text_range','R_RANGE',16),
+        ('file_atomic_filename','R_FILE_NAME',16)
+    ]:
+        fixture = next(test for test in cases if test['name']==name)
+        artifact = native_result(fixture['source'],directory,name)
+        result = browser.page_async(checks + '''const done=arguments[arguments.length-1];
+            verifyReferenceAtomic(Uint8Array.from(arguments[0]),createPas2WasmRuntime,arguments[1],arguments[2])
+                .then(()=>done({ok:true}),error=>done({error:String(error)}));''',
+            artifact['binary'],code,size)
+        assert result == {'ok':True}, result
+
+
 def verify_browser(kind, base_url, cases, directory):
     """Check worker parity, UI state, offline reruns, and file:// HTML exports."""
     project_license = Path('LICENSE').read_text()
@@ -292,12 +312,15 @@ def verify_browser(kind, base_url, cases, directory):
         assert browser.js("return document.querySelector('h1').textContent;") == f'Pas2Wasm (v{version})'
         verify_heap_boundaries(browser,cases,directory)
         verify_reference_epoch(browser,cases,directory)
+        verify_file_boundaries(browser,cases,directory)
         boundary_source = Path('test/variant-runtime.js').read_text(encoding='utf-8')
         boundary_source += Path('test/reference-runtime.js').read_text(encoding='utf-8')
+        boundary_source += Path('test/file-runtime.js').read_text(encoding='utf-8')
         boundary_result = browser.page_async(boundary_source + '''
             const done=arguments[arguments.length-1];
             try {
                 verifyVariantRuntime(createPas2WasmRuntime);
+                verifyFileRuntime(createPas2WasmRuntime);
                 verifyReferenceRuntime(createPas2WasmRuntime);done({ok:true});
             }
             catch(error){done({error:String(error)});}''')
@@ -382,6 +405,8 @@ def verify_browser(kind, base_url, cases, directory):
                         'address':'tutorial_pointer_demo2_unchanged',
                         'addressvalues':'address_all_storage_types',
                         'addressviews':'address_variant_nested',
+                        'typedfiles':'tutorial_files', 'textfiles':'file_text_roundtrip',
+                        'filevalues':'file_aggregate_component', 'fileviews':'file_variant_destination',
                         'loops':'for_mixed_loops', 'routines':'procedure_recursion',
                         'functions':'function_factorial', 'exit':'exit_recursive_function',
                         'case':'case_exit_function', 'constants':'constant_scopes',
@@ -404,6 +429,10 @@ def verify_browser(kind, base_url, cases, directory):
         for example in examples.values():
             assert run_ui(browser, example['source'], example.get('input',''), wat=True) == {
                 'output':example['output'], 'diagnostics':''}
+        missing_file = next(test for test in cases if test['name']=='file_missing')
+        created_file = next(test for test in cases if test['name']=='file_integer_roundtrip')
+        assert run_ui(browser,created_file['source'])['diagnostics'] == ''
+        assert 'R_FILE_NOT_FOUND' in run_ui(browser,missing_file['source'])['diagnostics']
         double = next(test for test in cases if test['name']=='double')
         result = run_ui(browser, double['source'], '21', True)
         assert result == {'output':'42\n','diagnostics':''}, (kind, result)
@@ -471,6 +500,9 @@ def verify_browser(kind, base_url, cases, directory):
             'variant_error':next(t['source'] for t in cases if t['name']=='variant_incompatible_read'),
             'address_error':next(t['source'] for t in cases if t['name']=='address_stale_local'),
             'address_dispose':next(t['source'] for t in cases if t['name']=='address_dispose_interior'),
+            'file_missing':missing_file['source'],
+            'file_mode':next(t['source'] for t in cases if t['name']=='file_close_during_value'),
+            'file_limit':next(t['source'] for t in cases if t['name']=='file_bytes_limit'),
             'string_error':next(t['source'] for t in cases if t['name']=='string_capacity_location'),
             'string_memory':next(t['source'] for t in cases if t['name']=='string_frame_budget'),
             'character_error':next(t['source'] for t in cases if t['name']=='character_chr_location'),
@@ -482,7 +514,8 @@ def verify_browser(kind, base_url, cases, directory):
             'pointer_lifetime':next(t['source'] for t in cases if t['name']=='pointer_character_view_lifetime'),
             'pointer_memory':next(t['source'] for t in cases if t['name']=='pointer_allocation_exhaustion'),
             'pointer_borrow_memory':next(t['source'] for t in cases if t['name']=='pointer_borrow_budget_exhaustion'),
-            'infinite':infinite
+            'infinite':infinite,
+            'file_spin':"program p; var f:text; begin assign(f,'x'); rewrite(f); write(f,'secret'); while true do begin end end."
         })
         export_sources['terminal_editor'] = terminal.source()
         export_sources['echo_limit'] = interactive.limit_source()
@@ -516,7 +549,7 @@ def verify_browser(kind, base_url, cases, directory):
                 case=next(c for c in live_examples if name=='live_'+c['name'])
                 for _ in range(2):
                     interactive.verify_console_case(browser,case)
-                if name=='live_prompts':
+                if name in ('live_prompts','live_file_group_wait'):
                     interactive.verify_offline_controls(browser,case)
             elif name=='terminal_editor':
                 terminal.verify(browser)
@@ -541,11 +574,11 @@ def verify_browser(kind, base_url, cases, directory):
                     browser.wait("document.getElementById('status').textContent==='Completed'")
                     assert browser.js("return document.getElementById('output').textContent;")==examples[name]['output']
                     assert browser.js("return document.querySelectorAll('img').length;")==0
-            elif name in ('frame_error','bounds_error','control_error','real_error','subrange_error','enum_error','set_error','with_error','variant_error','address_error','address_dispose','string_error','string_memory','character_error','character_bounds','character_memory','pointer_nil','pointer_dangling','pointer_release','pointer_lifetime','pointer_memory','pointer_borrow_memory'):
+            elif name in ('frame_error','bounds_error','control_error','real_error','subrange_error','enum_error','set_error','with_error','variant_error','address_error','address_dispose','file_missing','file_mode','file_limit','string_error','string_memory','character_error','character_bounds','character_memory','pointer_nil','pointer_dangling','pointer_release','pointer_lifetime','pointer_memory','pointer_borrow_memory'):
                 for _ in range(2):
                     browser.js("document.getElementById('run').click();")
                     browser.wait("document.getElementById('status').textContent==='Failed'")
-                    assert ({'frame_error':'R_MEMORY','bounds_error':'R_BOUNDS','control_error':'R_FOR_CONTROL','real_error':'R_REAL_RANGE','subrange_error':'R_RANGE','enum_error':'R_RANGE','set_error':'R_SET_RANGE','with_error':'R_LIFETIME','variant_error':'R_VARIANT','address_error':'R_DANGLING','address_dispose':'R_DISPOSE','string_error':'R_STRING_CAPACITY','string_memory':'R_MEMORY','character_error':'R_CHARACTER','character_bounds':'R_BOUNDS','character_memory':'R_MEMORY','pointer_nil':'R_NIL','pointer_dangling':'R_DANGLING','pointer_release':'R_DISPOSE','pointer_lifetime':'R_LIFETIME','pointer_memory':'R_MEMORY','pointer_borrow_memory':'R_MEMORY'}[name]) in browser.js("return document.getElementById('diagnostics').textContent;")
+                    assert ({'frame_error':'R_MEMORY','bounds_error':'R_BOUNDS','control_error':'R_FOR_CONTROL','real_error':'R_REAL_RANGE','subrange_error':'R_RANGE','enum_error':'R_RANGE','set_error':'R_SET_RANGE','with_error':'R_LIFETIME','variant_error':'R_VARIANT','address_error':'R_DANGLING','address_dispose':'R_DISPOSE','file_missing':'R_FILE_NOT_FOUND','file_mode':'R_FILE_STATE','file_limit':'R_FILE_LIMIT','string_error':'R_STRING_CAPACITY','string_memory':'R_MEMORY','character_error':'R_CHARACTER','character_bounds':'R_BOUNDS','character_memory':'R_MEMORY','pointer_nil':'R_NIL','pointer_dangling':'R_DANGLING','pointer_release':'R_DISPOSE','pointer_lifetime':'R_LIFETIME','pointer_memory':'R_MEMORY','pointer_borrow_memory':'R_MEMORY'}[name]) in browser.js("return document.getElementById('diagnostics').textContent;")
             elif name=='result_error':
                 browser.js("document.getElementById('run').click();")
                 browser.wait("document.getElementById('status').textContent==='Failed'")

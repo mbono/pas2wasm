@@ -5,7 +5,7 @@ integration use the [MIT license](../LICENSE). There are no third-party parser o
 compiler libraries, frontend packages, JavaScript package dependencies, CDNs, or runtime
 services. JSPI is a browser API, not an external dependency; synchronous batch mode
 requires no JSPI. Fixed-decimal formatting uses built-in JavaScript BigInt and DataView,
-without a numeric library or locale dependency. Runtime programs gain no filesystem/network/DOM or
+without a numeric library or locale dependency. Runtime programs gain no host/OS filesystem/network/DOM or
 arbitrary-JavaScript access.
 
 ## Tool inventory
@@ -37,6 +37,8 @@ required to produce release compiler builds.
   allocator, libm/parser package, or Unicode database is required by generated
   programs. Explicit address identities use a bounded per-execution registry built
   from standard JavaScript Map/BigInt; it stores metadata rather than Pascal heap objects.
+  Virtual files use bounded Map/Uint8Array storage and shared UTF-8/parser helpers.
+  No filesystem package, Emscripten filesystem, WASI or persistent storage is added.
 - New dependencies require a documented necessity, version, license, and explicit
   build/test/runtime classification. No parser generator, frontend framework,
   bundler, WAT assembler, or package manager is a production build requirement.

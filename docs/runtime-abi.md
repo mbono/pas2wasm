@@ -68,7 +68,7 @@ ABI namespace.
 | Singleton/range case labels | 1,024; intervals do not expand |
 | Set domain | At most 256 consecutive ordinals |
 | Decoded/folded compiler text | 8 MiB shared; each string value/capacity at most 1 MiB |
-| Pointer interning/forward resolution | 8,388,608 comparisons |
+| Pointer/file interning and forward resolution | 8,388,608 comparisons |
 | Real literal conversion | 768 significand digits; exponent magnitude 4,096 |
 
 Complexity failures use `E_LIMIT`; invalid capacities, numeric conversions, or physical
@@ -80,7 +80,7 @@ variable slot; used string constants may occupy literal data.
 Generated modules import only `pas2wasm_v1`. They export `run: () -> ()` and `memory`,
 with no start function. Host code attaches the instance/memory and calls run explicitly.
 Memory is capped at 64 MiB; never pass the compiler's memory. Imports validate bounds
-before reading/writing program memory and provide no filesystem, network, DOM, or
+before reading/writing program memory and provide no host/OS filesystem, network, DOM, or
 arbitrary-JavaScript access.
 
 ### Existing imports (indices 0–22)
@@ -189,6 +189,59 @@ integer values 1..65,536, otherwise `R_MEMORY`. A fresh attachment clears all ad
 frame, and schema state. Stale identities are reclaimable, but IDs never repeat within
 an attachment. The language reference defines view equality and lifetime semantics.
 
+### Virtual file services (indices 39–52)
+
+All arguments are i32 except `file_text_write`'s f64 value. These synchronous services
+operate on run-owned memory/contents; do not wrap them with JSPI Suspending. Existing
+console imports keep their cursor and accounting.
+
+| Import | Signature | Contract |
+| --- | --- | --- |
+| `file_assign` | `(target,root,kind,type,size,name,request,line,column) -> ()` | Kind 0 is typed (canonical component ID/size); kind 1 is text (ID/size zero). Validate filename and ownership before assigning. |
+| `file_control` | `(target,operation,line,column) -> ()` | 0 rewrite, 1 reset, 2 close. |
+| `file_begin` | `(target,mode,line,column) -> i32` | Borrow an opened binding, returning an opaque ID; mode 0 input, 1 output. |
+| `file_end` | `(id,line,column) -> ()` | Release one grouped-I/O binding borrow. |
+| `file_query` | `(target,query,line,column) -> i32` | 0 EOF, 1 EOLN, 2 typed element count. |
+| `file_write` | `(id,source,size,line,column) -> ()` | Append one full typed-object snapshot. |
+| `file_read` | `(id,destination,size,request,line,column) -> ()` | Preflight typed input, guards and character views before copy/cursor advance. |
+| `file_text_write` | `(id,kind,value,width,precision,line,column) -> ()` | Existing formatting kinds 0..5; kind 6 appends LF. File bytes have an independent budget. |
+| `file_text_i32` | `(id,mode,line,column) -> i32` | Existing stream integer parsing. |
+| `file_text_f64` | `(id,mode,line,column) -> f64` | Existing finite-real parsing. |
+| `file_text_char` | `(id,mode,line,column) -> i32` | Existing Unicode scalar parsing. |
+| `file_text_string` | `(id,destination,capacity,mode,request,line,column) -> ()` | Atomically copy a text line remainder. |
+| `file_text_discard` | `(id,line,column) -> ()` | Discard one remaining text line/delimiter. |
+| `file_finish` | `() -> ()` | Invalidate all bindings and discard every named file. |
+
+Mode 0/1 retains read/readln field rules. File descriptors are 16-byte objects: opaque
+binding ID u32 at +0, initialized byte at +8, remaining bytes reserved/zero. They are
+noncopyable; their runtime binding also checks the exact cell coordinate and actual
+owner (global, frame epoch, or heap generation). Canonical component IDs come from the
+backend identity table. Typed contents preserve full object bytes/initialization and
+variant tags; heap/frame leases are never serialized. This is an internal per-execution
+format, not portable file encoding. Text stores UTF-8 with LF output/CRLF parsing.
+
+A group captures its receiver before operands, borrows its opened binding and retains
+ordinary heap-owner leases. Nested I/O is allowed; closing/reassigning/reopening a
+borrowed binding fails `R_FILE_STATE`. Per-field cleanup restores a local arena/lease
+floor without dropping the receiver. Owner retirement closes only that owner's
+bindings; stale heap bindings are reclaimed before open/capacity checks.
+
+Limits are 32 names, 32 opens, 256 assigned descriptors, 255 UTF-8 filename bytes, and
+1 MiB total contents. Runtime buffers grow geometrically, below twice the content
+budget plus small empty-file overhead. Read-only text cursors share decoded line data
+per file; positions are independent. The file-content budget is separate from the
+64 MiB Wasm linear memory and console allowances. Private protocol borrows are bounded
+to 8,192 per binding; ordinary compiled nesting is bounded more tightly by call depth.
+File binding IDs never repeat within an attachment.
+
+Generated main calls `file_finish`; runtime failures also clear files, and workers call
+`runtime.finish()` in finally for unexpected host errors. Embeddings may call finish
+when abandoning execution. Stop/timeout terminate the worker. A fresh attach resets
+file and identity metadata; fresh Runs must still use fresh program memories/instances.
+Finishing invalidates handles without mutating Pascal memory retained for diagnostics.
+The language reference defines file failure codes; they are thrown directly, without
+adding numeric `fail` mappings or changing the `pas2wasm_v1` namespace.
+
 ## Runtime diagnostics
 
 Locations use 1-based UTF-8 byte columns. The `fail` import must throw and never return.
@@ -269,7 +322,7 @@ Addresses 0..262143 are reserved for decoded literals. Global objects follow, th
 KiB active-control address table and a 128 KiB frame arena. The remaining region is the
 checked heap; these regions cannot overlap. Initial pages cover globals/frames, with
 maximum 1024 pages. Private globals track call depth, frame top, control depth, heap
-top, free-list head, and borrow head. Programs using address-of add private global 6
+top, free-list head, and borrow head. Programs using address-of or virtual files add private global 6
 for the monotonic frame epoch, stored at frame-header +12. Epoch wrap fails before
 registration. Parameters, locals, and results are copied/cleared
 in each fresh frame, including its 16-byte header reserved for lexical/lifetime
@@ -554,7 +607,7 @@ editing and UI behavior; these add no Wasm imports/exports or messages.
 ## ABI compatibility
 
 Existing import names/signatures and numeric failure mappings remain available. String,
-character, real, and stream helpers extend the v1 import set; newly emitted modules need
+character, real, stream, address and file helpers extend the v1 import set; newly emitted modules need
 a matching host that implements their imports. Older v1 modules run with that extended
 host, and old self-contained exports retain their embedded runtime. New exports embed
 the matching repository implementation. Console input is a host capability, not a new
