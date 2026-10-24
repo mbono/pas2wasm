@@ -212,5 +212,40 @@
     ],
     "output": "Char: Hb\n7\n",
     "transcript": "Char: H\nHb\n7\n"
+  },
+  {
+    "name": "address_local_input",
+    "source": "program p; procedure t; var n:integer; q:^integer; begin q:=@n; write('n?'); readln(q^); writeln(n) end; begin t end.",
+    "lines": [
+      "42"
+    ],
+    "output": "n?42\n",
+    "transcript": "n?42\n42\n"
+  },
+  {
+    "name": "address_variant_input",
+    "source": "program p; type rec=record case boolean of true:(a:string[8]);false:(b:integer) end; str=string[8]; var v:rec; q:^str; begin q:=@v.a; v.b:=2; readln(q^); writeln(v.a) end.",
+    "lines": [
+      "\u00e9\ud83d\ude00"
+    ],
+    "output": "\u00e9\ud83d\ude00\n",
+    "transcript": "\u00e9\ud83d\ude00\n\u00e9\ud83d\ude00\n"
+  },
+  {
+    "name": "address_character_input",
+    "source": "program p; var s:string[8]; q:^char; begin s:='ab'; q:=@s[2]; readln(q^); writeln(s) end.",
+    "lines": [
+      "\ud83d\ude00"
+    ],
+    "output": "a\ud83d\ude00\n",
+    "transcript": "\ud83d\ude00\na\ud83d\ude00\n"
+  },
+  {
+    "name": "address_stale_before_wait",
+    "source": "program p; var q:^integer; procedure t; var n:integer; begin q:=@n end; begin t; readln(q^) end.",
+    "lines": [],
+    "output": "",
+    "runtime": "R_DANGLING",
+    "transcript": ""
   }
 ]

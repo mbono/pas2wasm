@@ -44,7 +44,9 @@ Preserve existing input strings, expected program output, and located diagnostic
 than rewriting batch cases into live scripts. Live scripts belong in
 `test/interactive.json`; `test/interactive.py` covers workers, waits, EOF/limits,
 controls, and exports. `test/variant-runtime.js` shares forged-schema/lease and atomic boundary checks between
-Node and actual browsers. `test/terminal.py` covers native editing, caret geometry,
+Node and actual browsers. `test/reference-runtime.js` similarly checks address identities,
+frame/heap lifetime, dynamic claims and limits; test-only WAT exports also check frame
+epoch exhaustion in Node and both browsers. `test/terminal.py` covers native editing, caret geometry,
 selection, draft/focus state, and offline presentation. Private heap boundary checks use
 test-only WAT exports; production exports stay unchanged. Profiles are temporary and
 retain default browser security; screenshots and verification evidence stay under
@@ -88,7 +90,7 @@ The following scenario groups preserve the integration acceptance contract:
 | Artifacts/targets | Default and explicit `wasm32` agree; unsupported targets fail without artifacts; same revision/source/options agree across hosts. |
 | WAT | Absent by default; enabling leaves binary bytes unchanged; complete helper/import/data/UTF-8 emission; independent reassembly validates and preserves execution/located failures. |
 | Language/storage | Every supported family, value/reference contrasts, partial initialization/copies, evaluation order, recursive frames/captures, counted-control protection, early-return cleanup, arithmetic/index/conversion boundaries, and memory budgets. |
-| Heap | Recursive structures and aliases; nil/uninitialized/stale/reused pointers; generation/fragmentation/growth limits; borrow/view/reference lifetime and counter-precedence checks; repeat boundary helper checks in both browsers. |
+| Heap and addresses | Global/local/result/interior/character addresses, identity limits, stale/reused frame epochs, forwarded ownership, disposal and view identities; recursive structures and aliases; nil/uninitialized/stale/reused pointers; generation/fragmentation/growth limits; borrow/view/reference lifetime and counter-precedence checks; repeat boundary helper checks in both browsers. |
 | Input/output | LF/CRLF, empty/unterminated/trailing lines, invalid/range/EOF/encoding/capacity failures, multi-field reads, shared cursor and legacy imports, Unicode output and literal escaping. |
 | Live versus batch | Equivalent supplied lines/EOF yield identical program output and diagnostics without echo; synchronous hosts work without JSPI; actual worker JSPI waits/resumes the same instance; unsupported JSPI offers batch. |
 | Sessions/limits | Empty input, EOF closure, stale/duplicate delivery, Stop during compute/wait, compile/run timeouts, long human waits excluded, cumulative active budget not replenished, UTF-8 input/echo/output limits, and fresh recovery/reruns. |

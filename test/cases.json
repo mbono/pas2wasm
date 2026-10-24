@@ -5476,7 +5476,8 @@
     {
         "name": "pointer_address_of",
         "source": "program demo; type PInt=^integer; var p:PInt; n:integer; begin p:=@n end.",
-        "error": "E_UNSUPPORTED"
+        "output": "",
+        "portable": true
     },
     {
         "name": "pointer_anonymous_oversized_pointee",
@@ -8209,5 +8210,470 @@
         "name": "variant_reference_frame_budget",
         "source": "program p; type Child=record x:integer end; R=record case boolean of true:(item:Child); false:() end; var r1:R; procedure recurse(var a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a32,a33,a34,a35,a36,a37,a38,a39,a40,a41,a42,a43,a44,a45,a46,a47,a48,a49,a50,a51,a52,a53,a54,a55,a56,a57,a58,a59,a60,a61,a62,a63:Child); begin recurse(r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item) end; begin recurse(r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item,r1.item) end.",
         "runtime": "R_MEMORY"
+    },
+    {
+        "name": "address_global_uninitialized_capture",
+        "source": "program p; var n:integer; a,b:^integer; begin a:=@n; b:=@n; writeln(a=b); a^:=20; writeln(n); b^:=30; writeln(a^) end.",
+        "output": "TRUE\n20\n30\n",
+        "portable": true
+    },
+    {
+        "name": "address_uninitialized_dereference",
+        "source": "program p; var n:integer; a:^integer; begin a:=@n; writeln(a^) end.",
+        "output": "",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "address_distinct_globals",
+        "source": "program p; var n,m:integer; a,b:^integer; begin a:=@n; b:=@m; writeln(a=b,a=nil,b=nil) end.",
+        "output": "FALSEFALSEFALSE\n",
+        "portable": true
+    },
+    {
+        "name": "address_local_recursion",
+        "source": "program p; procedure t(n:integer); var v:integer; a:^integer; begin v:=n; a:=@v; if n>0 then t(n-1); writeln(a^) end; begin t(3) end.",
+        "output": "0\n1\n2\n3\n",
+        "portable": true
+    },
+    {
+        "name": "address_stale_local",
+        "source": "program p; var a:^integer; procedure t; var n:integer; begin a:=@n; n:=7 end; begin t; writeln(a^) end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_stale_reused_frame",
+        "source": "program p; var a:^integer; procedure t(capture:boolean); var n:integer; begin n:=8; if capture then a:=@n else writeln(a^) end; begin t(true); t(false) end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_distinct_frame_epochs",
+        "source": "program p; var a,b:^integer; function t:^integer; var n:integer; begin t:=@n end; begin a:=t(); b:=t(); writeln(a=b) end.",
+        "output": "FALSE\n"
+    },
+    {
+        "name": "address_returned_local",
+        "source": "program p; function t:^integer; var n:integer; begin n:=9; t:=@n end; begin writeln(t()^) end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_var_forward_global",
+        "source": "program p; var n:integer; a:^integer; procedure t(var x:integer); begin a:=@x end; procedure u(var y:integer); begin t(y) end; begin u(n); a^:=22; writeln(n,a=@n) end.",
+        "output": "22TRUE\n",
+        "portable": true
+    },
+    {
+        "name": "address_var_forward_local",
+        "source": "program p; var a:^integer; procedure t(var x:integer); begin a:=@x end; procedure u; var n:integer; begin t(n); a^:=23; writeln(n) end; begin u; writeln(a^) end.",
+        "output": "23\n",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_captured_outer_local",
+        "source": "program p; procedure outer; var n:integer; a:^integer; procedure inner; begin a:=@n end; begin inner; a^:=24; writeln(n) end; begin outer end.",
+        "output": "24\n",
+        "portable": true
+    },
+    {
+        "name": "address_scalar_result",
+        "source": "program p; function t:integer; var a:^integer; begin a:=@t; a^:=25 end; begin writeln(t()) end.",
+        "output": "25\n",
+        "portable": true
+    },
+    {
+        "name": "address_aggregate_result_root",
+        "source": "program p; type rec=record a,b:integer end; function t:rec; var q:^integer; begin q:=@t.b; q^:=26 end; begin writeln(t().b) end.",
+        "output": "26\n",
+        "portable": true
+    },
+    {
+        "name": "address_stale_result",
+        "source": "program p; var a:^integer; function t:integer; begin t:=2; a:=@t end; begin writeln(t()); writeln(a^) end.",
+        "output": "2\n",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_array_once",
+        "source": "program p; type arr=array[1..3] of integer; var v:arr; a:^integer; calls:integer; function index:integer; begin inc(calls); index:=2 end; begin calls:=0; a:=@v[index()]; a^:=27; writeln(calls,v[2],a=@v[2]) end.",
+        "output": "127TRUE\n",
+        "portable": true
+    },
+    {
+        "name": "address_array_bounds",
+        "source": "program p; var v:array[1..2] of integer; a:^integer; begin a:=@v[3] end.",
+        "output": "",
+        "runtime": "R_BOUNDS"
+    },
+    {
+        "name": "address_aggregate_copy",
+        "source": "program p; type rec=record n:integer end; var v,w:rec; a:^rec; begin a:=@v; a^.n:=28; w:=a^; a^.n:=29; writeln(w.n,v.n) end.",
+        "output": "2829\n",
+        "portable": true
+    },
+    {
+        "name": "address_all_storage_types",
+        "source": "program p; type e=(red,blue); subset=set of 1..4; str=string[8]; rec=record n:integer end; arr=array[1..2] of integer; var b:boolean; r:real; c:char; en:e; st:subset; s:str; a:arr; v:rec; pb:^boolean; pr:^real; pc:^char; pe:^e; pt:^subset; ps:^str; pa:^arr; pv:^rec; begin pb:=@b; pr:=@r; pc:=@c; pe:=@en; pt:=@st; ps:=@s; pa:=@a; pv:=@v; pb^:=true; pr^:=2.5; pc^:=#128512; pe^:=blue; pt^:=[1,4]; ps^:='ok'; pa^[2]:=30; pv^.n:=31; writeln(b,r,c,en,4 in st,s,a[2],v.n) end.",
+        "output": "TRUE2.5\ud83d\ude00blueTRUEok3031\n"
+    },
+    {
+        "name": "address_pointer_cell",
+        "source": "program p; type pint=^integer; ppint=^pint; var n:integer; a:pint; b:ppint; begin b:=@a; b^:=@n; b^^:=32; writeln(n,a=@n) end.",
+        "output": "32TRUE\n",
+        "portable": true
+    },
+    {
+        "name": "address_subrange_checked",
+        "source": "program p; type small=1..3; var n:small; a:^small; begin n:=2; a:=@n; a^:=4 end.",
+        "output": "",
+        "runtime": "R_RANGE"
+    },
+    {
+        "name": "address_subrange_type_preserved",
+        "source": "program p; type small=1..3; var n:small; a:^integer; begin a:=@n end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "address_reference_uses_declared_type",
+        "source": "program p; type small=1..3; var n:small; a:^small; procedure t(var v:small); begin inc(v) end; begin n:=2; a:=@n; t(a^); writeln(n) end.",
+        "output": "3\n",
+        "portable": true
+    },
+    {
+        "name": "address_subrange_input",
+        "source": "program p; type small=1..3; var n:small; a:^small; begin n:=2; a:=@n; readln(a^); writeln(n) end.",
+        "output": "",
+        "runtime": "R_RANGE",
+        "input": "4\n"
+    },
+    {
+        "name": "address_input",
+        "source": "program p; var n:integer; a:^integer; begin a:=@n; write('n?'); readln(a^); writeln(n) end.",
+        "output": "n?42\n",
+        "portable": true,
+        "input": "42\n"
+    },
+    {
+        "name": "address_heap_interior",
+        "source": "program p; type rec=record a,b:integer end; var q:^rec; a:^integer; begin new(q); a:=@q^.b; a^:=33; writeln(q^.b); dispose(q); writeln(a^) end.",
+        "output": "33\n",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_heap_generation_reuse",
+        "source": "program p; type rec=record n:integer end; var q:^rec; a:^integer; begin new(q); a:=@q^.n; dispose(q); new(q); q^.n:=34; writeln(a^) end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_heap_identity",
+        "source": "program p; var a,b:^integer; begin new(a); b:=@a^; writeln(a=b); dispose(b) end.",
+        "output": "TRUE\n",
+        "portable": true
+    },
+    {
+        "name": "address_identity_after_dereference",
+        "source": "program p; var n:integer; a,b:^integer; begin a:=@n; b:=@a^; writeln(a=b,b=@n) end.",
+        "output": "TRUETRUE\n",
+        "portable": true
+    },
+    {
+        "name": "address_dispose_global",
+        "source": "program p; var n:integer; a:^integer; begin a:=@n; dispose(a) end.",
+        "output": "",
+        "runtime": "R_DISPOSE"
+    },
+    {
+        "name": "address_dispose_local",
+        "source": "program p; procedure t; var n:integer; a:^integer; begin a:=@n; dispose(a) end; begin t end.",
+        "output": "",
+        "runtime": "R_DISPOSE"
+    },
+    {
+        "name": "address_dispose_interior",
+        "source": "program p; type rec=record n:integer end; var q:^rec; a:^integer; begin new(q); a:=@q^.n; dispose(a) end.",
+        "output": "",
+        "runtime": "R_DISPOSE"
+    },
+    {
+        "name": "address_nil_capture",
+        "source": "program p; var a,b:^integer; begin a:=nil; b:=@a^ end.",
+        "output": "",
+        "runtime": "R_NIL"
+    },
+    {
+        "name": "address_stale_capture",
+        "source": "program p; var a,b,old:^integer; begin new(a); old:=a; dispose(a); b:=@old^ end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_heap_borrow_rhs",
+        "source": "program p; type rec=record n:integer end; var q:^rec; a:^integer; function release:integer; begin dispose(q); release:=1 end; begin new(q); a:=@q^.n; a^:=release() end.",
+        "output": "",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "address_heap_borrow_argument",
+        "source": "program p; type rec=record n:integer end; var q:^rec; a:^integer; procedure t(var n:integer); begin dispose(q) end; begin new(q); a:=@q^.n; t(a^) end.",
+        "output": "",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "address_counter_capture_allowed",
+        "source": "program p; var n:integer; a:^integer; begin for n:=1 to 2 do begin a:=@n; writeln(a^) end end.",
+        "output": "1\n2\n",
+        "portable": true
+    },
+    {
+        "name": "address_counter_assignment",
+        "source": "program p; var n:integer; a:^integer; begin a:=@n; for n:=1 to 2 do a^:=3 end.",
+        "output": "",
+        "runtime": "R_FOR_CONTROL"
+    },
+    {
+        "name": "address_counter_input",
+        "source": "program p; var n:integer; a:^integer; begin a:=@n; for n:=1 to 2 do readln(a^) end.",
+        "output": "",
+        "runtime": "R_FOR_CONTROL",
+        "input": "3\n"
+    },
+    {
+        "name": "address_variant_reactivate",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; a:^integer; begin a:=@v.a; a^:=35; writeln(v.a); v.b:=2.5; a^:=36; writeln(v.a) end.",
+        "output": "35\n36\n"
+    },
+    {
+        "name": "address_variant_wrong_read",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; a:^integer; begin a:=@v.a; a^:=35; v.b:=2.5; writeln(a^) end.",
+        "output": "",
+        "runtime": "R_VARIANT"
+    },
+    {
+        "name": "address_variant_compatible_identity",
+        "source": "program p; type rec=record case boolean of true:(a:real);false:(b:real) end; var v:rec; a,b:^real; begin a:=@v.a; b:=@v.b; writeln(a=b); a^:=4.5; writeln(b^) end.",
+        "output": "TRUE\n4.5\n"
+    },
+    {
+        "name": "address_variant_var_forward",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; q:^integer; procedure capture(var n:integer); begin q:=@n end; begin capture(v.a); q^:=37; writeln(v.a); v.b:=1.5; writeln(q^) end.",
+        "output": "37\n",
+        "runtime": "R_VARIANT"
+    },
+    {
+        "name": "address_variant_with",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; q:^integer; begin with v do q:=@a; q^:=38; writeln(v.a); v.b:=1.5; writeln(q^) end.",
+        "output": "38\n",
+        "runtime": "R_VARIANT"
+    },
+    {
+        "name": "address_variant_nested",
+        "source": "program p; type rec=record case boolean of true:(case boolean of true:(a:integer);false:(b:real));false:(c:char) end; var v:rec; q:^integer; begin q:=@v.a; q^:=39; writeln(v.a); v.c:=#65; q^:=40; writeln(v.a) end.",
+        "output": "39\n40\n"
+    },
+    {
+        "name": "address_variant_reference_binding_pins",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; q:^integer; procedure t(var n:integer); begin v.b:=2.5 end; begin q:=@v.a; t(q^) end.",
+        "output": "",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "address_variant_capture_binding",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; q:^integer; function choose(p:^integer):integer; begin v.b:=2.5; choose:=1 end; begin writeln(choose(@v.a)) end.",
+        "output": "1\n"
+    },
+    {
+        "name": "address_variant_first_read_uninitialized",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; q:^integer; begin q:=@v.a; writeln(q^) end.",
+        "output": "",
+        "runtime": "R_UNINITIALIZED"
+    },
+    {
+        "name": "address_character_recompute",
+        "source": "program p; var s:string[8]; a,b:^char; begin s:='a\ud83d\ude00'; a:=@s[2]; b:=@s[2]; writeln(a=b); a^:='z'; writeln(s); s:='\u00e9\ud83d\ude00'; writeln(a^); s:=''; writeln(a^) end.",
+        "output": "TRUE\naz\n\ud83d\ude00\n",
+        "runtime": "R_BOUNDS"
+    },
+    {
+        "name": "address_character_forward",
+        "source": "program p; var s:string[8]; q:^char; procedure t(var c:char); begin q:=@c end; begin s:='abc'; t(s[2]); q^:=#128512; writeln(s) end.",
+        "output": "a\ud83d\ude00c\n"
+    },
+    {
+        "name": "address_character_frame_lifetime",
+        "source": "program p; var q:^char; procedure t; var s:string[8]; begin s:='abc'; q:=@s[2] end; begin t; writeln(q^) end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_character_heap_lifetime",
+        "source": "program p; type str=string[8]; var s:^str; q:^char; begin new(s); s^:='abc'; q:=@s^[2]; dispose(s); writeln(q^) end.",
+        "output": "",
+        "runtime": "R_DANGLING"
+    },
+    {
+        "name": "address_character_capacity",
+        "source": "program p; var s:string[2]; q:^char; begin s:='ab'; q:=@s[2]; q^:=#128512 end.",
+        "output": "",
+        "runtime": "R_STRING_CAPACITY"
+    },
+    {
+        "name": "address_character_bounds",
+        "source": "program p; var s:string[8]; q:^char; begin s:='a'; q:=@s[2] end.",
+        "output": "",
+        "runtime": "R_BOUNDS"
+    },
+    {
+        "name": "address_stable_char_identity",
+        "source": "program p; var s:string[8]; a,b:^char; begin s:='abc'; a:=@s[2]; s:='\u00e9bc'; b:=@s[2]; writeln(a=b); a^:='z'; writeln(s) end.",
+        "output": "TRUE\n\u00e9zc\n"
+    },
+    {
+        "name": "address_char_and_scalar_distinct",
+        "source": "program p; var s:string[8]; c:char; a,b:^char; begin s:='abc'; a:=@s[2]; b:=@c; writeln(a=b) end.",
+        "output": "FALSE\n"
+    },
+    {
+        "name": "address_loop_reuses_identity",
+        "source": "program p; var n,i:integer; q:^integer; begin n:=0; for i:=1 to 70000 do q:=@n; q^:=41; writeln(n) end.",
+        "output": "41\n",
+        "portable": true
+    },
+    {
+        "name": "address_many_retired_frames",
+        "source": "program p; var i:integer; q:^integer; procedure t; var n:integer; begin q:=@n; q^:=1 end; begin for i:=1 to 70000 do t; writeln('done') end.",
+        "output": "done\n"
+    },
+    {
+        "name": "address_nonstorage_literal",
+        "source": "program p; var q:^integer; begin q:=@1 end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "address_nonstorage_constant",
+        "source": "program p; const n=1; var q:^integer; begin q:=@n end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "address_nonstorage_function",
+        "source": "program p; var q:^integer; function f:integer; begin f:=1 end; begin q:=@f() end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "address_nonstorage_expression",
+        "source": "program p; var n:integer; q:^integer; begin q:=@(n+1) end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "address_nonstorage_record_result",
+        "source": "program p; type rec=record n:integer end; var q:^integer; function f:rec; begin f.n:=1 end; begin q:=@f().n end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "address_nonstorage_string_result",
+        "source": "program p; type str=string[8]; var q:^char; function f:str; begin f:='abc' end; begin q:=@f()[2] end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "address_nonstorage_nil",
+        "source": "program p; var q:^^integer; begin q:=@nil end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "address_pointer_type_mismatch",
+        "source": "program p; var n:real; q:^integer; begin q:=@n end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "tutorial_pointer_demo2_unchanged",
+        "source": "program pointer_demo2;\n\ntype pint = ^integer;\t{definisce un puntatore ad integer}\n\nvar\n\tnum: integer;\n\tp1, p2: pint;\t{dichiarazione dei puntatori}\n\tp3: ^integer;\t{dichiarazione diretta senza ricorrere a type}\n\nbegin\n\tnum := 20;\n\twriteln('num = ', num);\n\tp1 := @num;\t{p1 contiene l'indirizzo di num}\n\twriteln('p1^ = ', p1^);\t{p1^ ci consente di accedere all'indirizzo\n\t\t\t\tcontenuto nel puntatore}\n\tp2 := p1; {ora sia p1 che p2 puntano a num}\n\twriteln('p2^ = ', p2^);\n\n\tp1^ := 30;\t{modifichiamo num attraverso il suo puntatore}\n\twriteln('num = ', num);\nend.\n",
+        "output": "num = 20\np1^ = 20\np2^ = 20\nnum = 30\n",
+        "portable": true
+    },
+    {
+        "name": "address_default_identity_budget",
+        "source": "program p; var a:array[1..65537] of integer; q:^integer; i:integer; begin for i:=1 to 65536 do q:=@a[i]; writeln('limit'); q:=@a[65537] end.",
+        "output": "limit\n",
+        "runtime": "R_MEMORY"
+    },
+    {
+        "name": "address_variant_containing_type_identity",
+        "source": "program p; type A=array[1..1] of integer; B=array[1..1] of integer; rec=record case boolean of true:(a:A);false:(b:B) end; var v:rec; p1,p2:^integer; begin p1:=@v.a[1]; p2:=@v.b[1]; writeln(p1=p2); p1^:=12; writeln(v.a[1]); writeln(p2^) end.",
+        "output": "FALSE\n12\n",
+        "runtime": "R_VARIANT"
+    },
+    {
+        "name": "address_variant_argument_consumed",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; function choose(p:^integer):integer; begin v.b:=2.5; choose:=p^ end; begin writeln(choose(@v.a)) end.",
+        "output": "",
+        "runtime": "R_VARIANT"
+    },
+    {
+        "name": "address_variant_expression_binding",
+        "source": "program p; type pint=^integer; rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; function choose:pint; begin v.b:=2.5; choose:=nil end; begin writeln(@v.a=choose()) end.",
+        "output": "",
+        "runtime": "R_LIFETIME"
+    },
+    {
+        "name": "address_procedure_rejected",
+        "source": "program p; var q:^integer; procedure t; begin end; begin q:=@t end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "address_procedure_shadow",
+        "source": "program p; procedure t; begin end; procedure u; var t:integer; q:^integer; begin q:=@t; q^:=3; writeln(t) end; begin u end.",
+        "output": "3\n"
+    },
+    {
+        "name": "address_with_procedure_shadow",
+        "source": "program p; type rec=record t:integer end; var v:rec; q:^integer; procedure t; begin end; begin with v do q:=@t; q^:=4; writeln(v.t) end.",
+        "output": "4\n"
+    },
+    {
+        "name": "address_error_location",
+        "source": "program p;\nvar n:integer; q:^integer;\nbegin\n  q:=@n;\n  dispose(q)\nend.",
+        "output": "",
+        "runtime": "R_DISPOSE",
+        "runtimeLine": 5,
+        "runtimeColumn": 3
+    },
+    {
+        "name": "address_stale_location",
+        "source": "program p;\nvar q:^integer;\nprocedure t; var n:integer; begin q:=@n end;\nbegin\n  t;\n  writeln(q^)\nend.",
+        "output": "",
+        "runtime": "R_DANGLING",
+        "runtimeLine": 6,
+        "runtimeColumn": 12
+    },
+    {
+        "name": "address_variant_atomic_identity_budget",
+        "source": "program p; type rec=record case boolean of true:(a:integer);false:(b:real) end; var v:rec; n:integer; q:^integer; begin v.b:=1.5; writeln('ready'); q:=@n; q:=@v.a; q^:=2; writeln(v.a) end.",
+        "output": "ready\n2\n"
+    },
+    {
+        "name": "address_variant_atomic_range",
+        "source": "program p; type small=1..3; rec=record case boolean of true:(a:small);false:(b:real) end; var v:rec; q:^small; begin q:=@v.a; v.b:=1.5; writeln('ready'); q^:=4 end.",
+        "output": "ready\n",
+        "runtime": "R_RANGE"
+    },
+    {
+        "name": "address_variant_atomic_input",
+        "source": "program p; type str=string[2]; rec=record case boolean of true:(s:str);false:(n:integer) end; var v:rec; q:^str; begin q:=@v.s; v.n:=9; writeln('ready'); readln(q^) end.",
+        "input": "abc\n",
+        "output": "ready\n",
+        "runtime": "R_STRING_CAPACITY"
+    },
+    {
+        "name": "address_result_capture_is_not_write",
+        "source": "program p; function f:integer; var q:^integer; begin q:=@f end; begin writeln(f()) end.",
+        "output": "",
+        "runtime": "R_RESULT"
+    },
+    {
+        "name": "address_frame_cleanup_independent_globals",
+        "source": "program p; var a:array[1..60000] of integer; q:^integer; i:integer; procedure t; begin end; begin for i:=1 to 60000 do q:=@a[i]; for i:=1 to 60000 do t; q^:=7; writeln(a[60000]) end.",
+        "output": "7\n",
+        "portable": true
     }
 ]

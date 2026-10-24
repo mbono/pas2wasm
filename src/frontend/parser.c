@@ -24,6 +24,7 @@ typedef enum {
     TK_ORD,
     TK_COPY,
     TK_CARET,
+    TK_ADDRESS,
     TK_NIL,
     TK_NEW,
     TK_DISPOSE,
@@ -552,6 +553,9 @@ static void next(Parser *p)
             break;
         case '^':
             t.kind = TK_CARET;
+            break;
+        case '@':
+            t.kind = TK_ADDRESS;
             break;
         case '[':
             t.kind = TK_LBRACKET;
@@ -1085,7 +1089,29 @@ static Expr *factor(Parser *p)
     enter(p);
     Token t = p->token;
     Expr *e = NULL;
-    if (t.kind == TK_CHARACTER_LITERAL) {
+    if (t.kind == TK_ADDRESS) {
+        next(p);
+        if (p->token.kind == TK_NAME) {
+            Routine *routine = find_routine(p, p->token);
+            const Field *field = NULL;
+            if (routine && !routine->is_function && find_symbol(p, p->token) == SIZE_MAX &&
+                !find_with_field(p, p->token, &field)) {
+                fail_at(p, "E_LVALUE", "Address-of requires writable storage.", t.line, t.column);
+            }
+        }
+        Expr *storage = factor(p);
+        if (storage->kind != EX_LOAD || !storage->writable) {
+            fail_at(p, "E_LVALUE", "Address-of requires writable storage.", t.line, t.column);
+        }
+        e = expression_node(p, EX_ADDRESS, pointer_type(p, storage->lvalue->type, t), t, NULL,
+                            NULL);
+        e->lvalue = storage->lvalue;
+        e->depth = storage->depth + 1;
+        if (e->depth >= 128) {
+            fail_at(p, "E_LIMIT", "Address path is too deep.", t.line, t.column);
+        }
+        p->program->has_addresses = 1;
+    } else if (t.kind == TK_CHARACTER_LITERAL) {
         e = expression_node(p, EX_INTEGER, TYPE_CHARACTER, t, NULL, NULL);
         e->integer = (int32_t)t.number;
         next(p);

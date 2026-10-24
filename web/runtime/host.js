@@ -13,6 +13,11 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     const decoder = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true});
     const variantSchemas = new Map(); // Immutable literal schemas, private to this attached instance.
     let variantSchemaBytes = 0;
+    // Identities own only checked memory coordinates/claims; IDs never repeat in a run.
+    const references = new Map(), referenceKeys = new Map(), frames = new Map();
+    const referenceLimit = limits.references ?? 65536;
+    let referenceSequence = 0;
+
     let memory = null, position = 0, offset = 0, outputBytes = 0;
     let closed = !requestLine, inputBytes = encoder.encode(input).length;
     const lines = input === '' ? [] : input.split(/\r?\n/);
@@ -24,6 +29,8 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         error.code = code; error.line = line; error.column = column;
         throw error;
     }
+    if (!Number.isInteger(referenceLimit) || referenceLimit < 1 || referenceLimit > 65536)
+        fail('R_MEMORY', 'Address identity limit must be 1..65536.');
     if (encoder.encode(input).length > inputLimit)
         fail('R_INPUT_LIMIT', 'Program input exceeds the input limit.');
     const configuredSeed = limits.randomSeed;
@@ -295,7 +302,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
      * Variant leases have kind 1 at +12; heap leases retain kind 0 and their old layout. */
     function variantRequest(pointer, line, column) {
         bytes(pointer, 16, line, column);
-        const count = word(pointer, line, column), leases = [], controls = [];
+        const count = word(pointer, line, column), leases = [], heapLeases = [], controls = [], claims = [];
         if (count > 128) fail('R_MEMORY', 'Variant claim limit exceeded.', line, column);
         bytes(pointer + 16, count * 16, line, column);
         const controlBase = word(pointer + 8, line, column);
@@ -304,16 +311,28 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         bytes(controlBase, controlCount * 4, line, column);
         for (let i = 0; i < controlCount; i++) controls.push(word(controlBase + i * 4, line, column));
         const stackBase = controlBase + 32768, stackEnd = stackBase + 131072;
-        let head = word(pointer + 4, line, column), steps = 0;
+        const leaseHead = word(pointer + 4, line, column);
+        let head = leaseHead, steps = 0;
         while (head) {
             if (++steps > 8192 || head < stackBase || head > stackEnd - 16 || head % 16)
                 fail('R_MEMORY', 'Invalid variant lease chain.', line, column);
             const kind = word(head + 12, line, column);
             if (kind > 1) fail('R_MEMORY', 'Invalid lease kind.', line, column);
             if (kind) leases.push({pointer:word(head, line, column), schema:word(head + 8, line, column)});
+            else heapLeases.push(word(head, line, column));
             head = word(head + 4, line, column);
         }
-        return {pointer, count, leases, controls};
+        for (let i = 0; i < count; i++) {
+            const row = pointer + 16 + i * 16;
+            const address = word(row, line, column), schema = word(row + 4, line, column);
+            const selected = word(row + 8, line, column), field = word(row + 12, line, column);
+            if (schema === 0xffffffff) {
+                if (selected || field) fail('R_MEMORY', 'Invalid address claim group.', line, column);
+                if (address) claims.push(...liveReference(address, line, column).claims);
+            } else claims.push({pointer:address, schema, selected, field});
+            if (claims.length > 128) fail('R_MEMORY', 'Expanded variant claim limit exceeded.', line, column);
+        }
+        return {pointer, claims, leases, heapLeases, controls, controlBase, stackBase, stackEnd, leaseHead};
     }
     /* Decode immutable backend schemas. Each arm has fixed typed fields followed
      * by an optional nested variant region; schemas reside in the literal region. */
@@ -370,11 +389,9 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             }
             return word(pointer, line, column);
         }
-        for (let i = 0; i < request.count; i++) {
-            const claim = request.pointer + 16 + i * 16;
-            const pointer = word(claim, line, column);
-            const arms = variantSchema(word(claim + 4, line, column), line, column);
-            const selected = word(claim + 8, line, column), field = word(claim + 12, line, column);
+        for (const claim of request.claims) {
+            const {pointer, selected, field} = claim;
+            const arms = variantSchema(claim.schema, line, column);
             if (!selected || selected > arms.length || (field !== 0xffffffff && field >= arms[selected - 1].members.length))
                 fail('R_MEMORY', 'Invalid variant view.', line, column);
             const size = Math.max(...arms.map(arm => arm.size));
@@ -442,8 +459,188 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         if (size) bytes(destination, size, line, column).set(value);
         else storeString(destination, capacity, value, line, column);
     }
+    /* Heap ownership comes from a live backend lease, never from guessing headers
+     * at arbitrary interior offsets. Validate generation again on every later use. */
+    function heapOwner(header, line, column) {
+        bytes(header, 32, line, column);
+        const size = word(header + 20, line, column), generation = word(header + 8, line, column);
+        if (header % 16 || !generation || word(header + 12, line, column) !== 1 ||
+            !size || size % 16 || size > word(header + 4, line, column))
+            fail('R_DANGLING', 'Address owner is no longer a live allocation.', line, column);
+        bytes(header + 32, size, line, column);
+        return {kind:'heap', base:header + 32, end:header + 32 + size, header, generation, size};
+    }
+    /* Registry entries retain lifetimes without retaining heap or variant leases. */
+    function referenceAlive(entry) {
+        const owner = entry.owner;
+        if (owner.kind === 'global') return true;
+        if (owner.kind === 'frame') return frames.get(owner.base)?.epoch === owner.epoch;
+        return word(owner.header + 8) === owner.generation && word(owner.header + 12) === 1 &&
+            word(owner.header + 20) === owner.size;
+    }
+    /* A missing ID and an expired owner have the same checked dangling diagnostic. */
+    function liveReference(id, line, column) {
+        const entry = references.get(id);
+        if (!entry || !referenceAlive(entry))
+            fail('R_DANGLING', 'Address refers to storage whose lifetime has ended.', line, column);
+        return entry;
+    }
+    /* Removal never reuses an ID, even when a later frame/allocation has the same bytes. */
+    function removeReference(id, entry) {
+        references.delete(id); referenceKeys.delete(entry.key);
+        if (entry.owner.kind === 'frame') entry.owner.identities.delete(id);
+    }
+    /* Infer the actual owner of a captured var/with/heap alias, preserving its root. */
+    function addressOwner(target, length, root, request, line, column) {
+        let owner;
+        if (target >= 262144 && target + length <= request.controlBase)
+            owner = {kind:'global', base:262144, end:request.controlBase};
+        if (!owner) for (const frame of frames.values()) {
+            if (target >= frame.base + 16 && target + length <= frame.end) {
+                owner = frame; break;
+            }
+        }
+        if (!owner) for (const header of request.heapLeases) {
+            const candidate = heapOwner(header, line, column);
+            if (target >= candidate.base && target + length <= candidate.end) {
+                owner = candidate; break;
+            }
+        }
+        if (!owner || root < owner.base || root + 16 > owner.end)
+            fail('R_POINTER', 'Address does not belong to live writable storage.', line, column);
+        return owner;
+    }
+    /* Canonical field signatures make compatible overlapping aliases equal. Exact
+     * ancestor claims remain distinct; they protect the containing logical view. */
+    function addressClaims(request, target, length, line, column) {
+        const claims = request.claims.slice();
+        // A var/with binding can hide the syntactic path; its leases retain ancestors.
+        for (const lease of request.leases) {
+            const arms = variantSchema(lease.schema, line, column);
+            const selected = word(lease.pointer, line, column), arm = arms[selected - 1];
+            if (!arm) fail('R_MEMORY', 'Invalid borrowed variant view.', line, column);
+            const field = arm.members.findIndex(member => target >= lease.pointer + member.offset &&
+                target + length <= lease.pointer + member.offset + member.length);
+            if (field >= 0) claims.push({...lease, selected, field});
+            else if (arm.nestedSize && target >= lease.pointer + arm.nested &&
+                target + length <= lease.pointer + arm.size)
+                claims.push({...lease, selected, field:0xffffffff});
+        }
+        const canonical = new Map();
+        for (const claim of claims) {
+            const arms = variantSchema(claim.schema, line, column);
+            const member = arms[claim.selected - 1]?.members[claim.field];
+            let selected = claim.selected, field = claim.field;
+            if (field !== 0xffffffff) {
+                if (!member) fail('R_MEMORY', 'Invalid address variant field.', line, column);
+                for (let i = 0; i < arms.length; i++) {
+                    const match = arms[i].members.findIndex(other => other.offset === member.offset &&
+                        other.length === member.length && other.type === member.type);
+                    if (match >= 0) { selected = i + 1; field = match; break; }
+                }
+            } else if (!arms[selected - 1]) fail('R_MEMORY', 'Invalid address ancestor.', line, column);
+            const key = `${claim.pointer}:${claim.schema}:${selected}:${field}`;
+            canonical.set(key, {pointer:claim.pointer, schema:claim.schema, selected, field});
+        }
+        const result = [...canonical.values()].sort((a,b) => a.pointer - b.pointer || a.schema - b.schema);
+        if (result.length > 128) fail('R_MEMORY', 'Address view exceeds its claim budget.', line, column);
+        return result;
+    }
+    /* Capture coordinates, not payloads. Character descriptors are transient, so
+     * only their stable string source and Unicode scalar index enter the registry. */
+    function addressOf(target, root, size, type, pointer, line, column) {
+        if (!size || size % 16 || !type) fail('R_MEMORY', 'Invalid address type.', line, column);
+        const request = variantRequest(pointer, line, column);
+        let source = target, length = size, index = 0;
+        if (target < 0) {
+            const character = characterView(target, line, column);
+            source = character.source; index = character.index;
+            stringCharacters(source, index, line, column);
+            length = Math.ceil((16 + word(source + 4, line, column)) / 16) * 16;
+        }
+        const owner = addressOwner(source, length, root, request, line, column);
+        const claims = addressClaims(request, source, length, line, column);
+        // Complete heap-object addresses preserve allocation identity and disposal.
+        if (!index && owner.kind === 'heap' && source === owner.base && size === owner.size && !claims.length)
+            return (BigInt(owner.generation) << 32n) | BigInt(source);
+        const lifetime = owner.kind === 'frame' ? owner.epoch : owner.generation || 0;
+        const key = JSON.stringify([owner.kind, owner.base, lifetime, source, index, root, size, type, claims]);
+        const previous = referenceKeys.get(key);
+        if (previous !== undefined) return (BigInt(previous) << 32n) | 0x80000000n;
+        if (references.size >= referenceLimit) {
+            for (const [id, entry] of references) if (!referenceAlive(entry)) removeReference(id, entry);
+        }
+        if (references.size >= referenceLimit || referenceSequence === 0xffffffff)
+            fail('R_MEMORY', 'Address identity budget exhausted.', line, column);
+        const id = ++referenceSequence;
+        const entry = {key, owner, source, index, root, size, type, claims};
+        references.set(id, entry); referenceKeys.set(key, id);
+        if (owner.kind === 'frame') owner.identities.add(id);
+        return (BigInt(id) << 32n) | 0x80000000n;
+    }
+    /* A resolved reference returns a private 48-byte packet. The compiler borrows
+     * its heap owner before evaluating more Pascal code and expands its view claims. */
+    function addressView(token, id, size, result, line, column) {
+        if ((token >>> 0) !== 0x80000000) fail('R_POINTER', 'Invalid address token.', line, column);
+        const entry = liveReference(id >>> 0, line, column);
+        if (entry.size !== size) fail('R_POINTER', 'Address has an incompatible storage size.', line, column);
+        bytes(result, 48, line, column);
+        const view = new DataView(memory.buffer);
+        let target = entry.source;
+        if (entry.index) {
+            target = (result + 32) | 0x80000000;
+            view.setUint32(result + 32, entry.source, true);
+            view.setUint32(result + 36, entry.index, true);
+        }
+        const owner = entry.owner;
+        [target,entry.root,owner.kind === 'heap' ? owner.base : 0,owner.generation || 0,
+            owner.size || 0,id >>> 0,0,0].forEach((value,i) => view.setUint32(result + i * 4,value,true));
+    }
+    /* Bind may expand a reference group to several ancestors. Snapshot and preflight
+     * the complete request before reusing its temporary bytes as kind-1 leases. */
+    function variantBind(pointer, base, end, line, column) {
+        const request = variantRequest(pointer, line, column);
+        const claims = [...new Map(request.claims.map(claim =>
+            [`${claim.pointer}:${claim.schema}`,claim])).values()];
+        if (base % 16 || base < request.stackBase || end !== request.stackEnd ||
+            base > end - claims.length * 16)
+            fail('R_MEMORY', 'Variant binding exceeds frame storage.', line, column);
+        bytes(base, claims.length * 16, line, column);
+        const operations = variantPlan(request, true, line, column);
+        applyVariantPlan(operations);
+        const view = new DataView(memory.buffer);
+        let head = request.leaseHead;
+        for (let i = 0; i < claims.length; i++) {
+            const address = base + i * 16, claim = claims[i];
+            [claim.pointer,head,claim.schema,1].forEach((value,j) => view.setUint32(address + j*4,value,true));
+            head = address;
+        }
+        return (BigInt(head) << 32n) | BigInt(base + claims.length * 16);
+    }
     /* ABI record: name/signature pairs are documented in docs/runtime-abi.md. */
     const imports = {
+        address_of:addressOf,
+        address_view:addressView,
+        variant_bind:variantBind,
+        /* Frame epochs are monotonic private Wasm state, independent of reusable
+         * arena coordinates. Retire only references owned by this activation. */
+        frame_enter(base, size, epoch, line, column) {
+            epoch >>>= 0;
+            if (!epoch || base % 16 || size < 16 || size % 16 || frames.size >= 65 ||
+                frames.has(base) || word(base + 12, line, column) !== epoch)
+                fail('R_MEMORY', 'Invalid address frame registration.', line, column);
+            bytes(base, size, line, column);
+            if ([...frames.values()].some(frame => base < frame.end && base + size > frame.base))
+                fail('R_MEMORY', 'Address frames overlap.', line, column);
+            frames.set(base, {kind:'frame', base, end:base + size, epoch, identities:new Set()});
+        },
+        frame_leave(base, epoch, line, column) {
+            const frame = frames.get(base);
+            if (frame?.epoch !== (epoch >>> 0))
+                fail('R_MEMORY', 'Invalid address frame retirement.', line, column);
+            frames.delete(base);
+            for (const id of frame.identities) removeReference(id, references.get(id));
+        },
         /* Read only validated ranges in the generated program's linear memory. */
         write_utf8(pointer, length) {
             if (!memory || pointer < 0 || length < 0 || pointer > memory.buffer.byteLength - length)
@@ -643,6 +840,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         attach(instance) {
             memory = instance.exports.memory;
             variantSchemas.clear(); variantSchemaBytes = 0;
+            references.clear(); referenceKeys.clear(); frames.clear(); referenceSequence = 0;
             if (!(memory instanceof WebAssembly.Memory) || memory.buffer.byteLength > 67108864)
                 fail('R_MEMORY', 'Program memory exceeds 64 MiB or is missing.');
         }

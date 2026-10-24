@@ -29,6 +29,14 @@ int main(void)
     assert(assignment->target->type == TYPE_BOOLEAN);
     assert(assignment->expression->left->lvalue->type == TYPE_INTEGER);
     program_destroy(&program);
+    const char *address = "program p; var n:integer; q:^integer; begin q:=@n end.";
+    assert(frontend_parse(&program, address, strlen(address), &diagnostic));
+    Expr *reference = program.body->body->expression;
+    assert(program.has_addresses && reference->kind == EX_ADDRESS);
+    assert(reference->type->kind == TYPE_KIND_POINTER && reference->type->element == TYPE_INTEGER);
+    assert(reference->lvalue->kind == LV_SYMBOL && reference->lvalue->symbol == 0);
+    assert(reference->lvalue->type == TYPE_INTEGER);
+    program_destroy(&program);
     const char *duplicate_underscore = "program _;\nvar _Name,_name:integer;\nbegin end.";
     assert(
         !frontend_parse(&program, duplicate_underscore, strlen(duplicate_underscore), &diagnostic));

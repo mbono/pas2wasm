@@ -12,13 +12,23 @@
 typedef struct VariantPath {
     size_t count;
     struct {
-        const VariantArm *arm;
-        const Field *field; /* NULL requires the exact ancestor arm. */
+        const VariantArm *arm; /* NULL denotes an address-reference claim group. */
+        const Field *field;    /* NULL requires the exact ancestor arm. */
         size_t address;
     } claims[128];
 } VariantPath;
 
 enum { VARIANT_ACCESS_IMPORT = 30, VARIANT_COPY_IMPORT, VARIANT_READ_IMPORT };
+enum {
+    ADDRESS_OF_IMPORT = 33,
+    ADDRESS_VIEW_IMPORT,
+    FRAME_ENTER_IMPORT,
+    FRAME_LEAVE_IMPORT,
+    VARIANT_BIND_IMPORT
+};
+/* Backend identities and requests remain opaque to the frontend and Pascal code. */
+size_t variant_identity(Wasm *w, ValueType type);
+size_t variant_request(Wasm *w, const VariantPath *path, unsigned line, unsigned column);
 /* Append a field's ancestor claims, relative to its captured outer record base. */
 void variant_capture(Wasm *w, VariantPath *path, const Field *field, size_t base);
 /* pin == 0 validates reads; -1 activates a validated scalar commit; +1 activates

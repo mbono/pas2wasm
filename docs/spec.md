@@ -176,9 +176,45 @@ dependencies are implemented. Preserve the full acceptance gate and separate com
 | Record with scopes | Reserve with; accept with record_storage {, record_storage} do statement for writable record paths, including indexed/nested records, references and returned-pointer dereferences. Capture each path once, left-to-right; later bindings can use earlier fields, and the rightmost/innermost matching field shadows ordinary lexical names. Unmatched names retain lexical lookup; bindings do not escape the body or enter called routines. Reading the record root is unnecessary; selected fields preserve initialization and ordinary type/reference/control guards. Fields may be assignment/input/inc/value/reference targets but cannot serve as simple for controls or constant case labels. Reject nonrecords and nonstorage temporaries with existing E_TYPE/E_LVALUE. Keep captured addresses/owning roots stable across calls, input waits and pointer/index mutation; pin heap owners for the scope and unwind pins/temporary storage on normal completion, break/continue/exit, cancellation and failure. Use backend-neutral binding identities in IR, bounded by existing nesting/node budgets; backend owns saved addresses and cleanup. No imports or public ABI changes. Cover shadowing, once-only paths, partial initialization, aliases/captures/results, transfers/loops, lifetime and memory reuse, both hosts/WAT/browsers/live/offline. The variant-record increment completes acceptance of record_demo.pas. |
 | Checked variant records | Accept a final case [tag_name:] ordinal_type of labels:(fields) {; labels:(fields)} part, including nested variant parts, empty arms, optional trailing semicolons, named/anonymous tags, and constant ordinal label lists/ranges. Tags are ordinary independent fields: their values do not select/check arms. Reject duplicate field names across the record, overlapping/reversed/mistyped labels, and existing field/label/nesting/layout limits. Arms physically overlap. Fields at the same offset with identical declared type share values/initialization; writing one real view and reading its compatible real alias must work, regardless of the tag. A part tracks its current storage arm independently: initial reads use R_UNINITIALIZED; incompatible arm reads use located R_VARIANT (failure 21). Writes activate the needed arm, preserve exactly compatible fixed fields, clear incompatible incoming fields/nested parts, and commit only after all value/input/range/control/lifetime checks pass. Writable var/with/character bindings activate and pin their selected arm as a binding effect; incompatible arm changes or whole-value copies through a live pin use R_LIFETIME. Nested views pin their ancestors. Copies preserve arm/initialization state but never copy leases. Keep captured paths single-evaluated across calls, waits, aliases and transfers; include activation regions in counted-control checks. Frontend/IR own only logical parts/arms/fields/labels. Backend owns overlap layouts and bounded immutable schemas; narrow memory-only runtime helpers validate/read/commit atomically, using the existing frame lease chain without new external dependencies. Append imports without changing legacy signatures, and retain both synchronous and JSPI string input. Accept unchanged rec.pas (10.00, 20.00, 40.00) and record_demo.pas; cover all supported field types, nested/copy/reference/heap/control/snapshot interactions, atomic failures, budgets, both hosts/WAT/browsers/live/offline. |
 
+### Address-of gate
+
+Requirement 14 adds `@storage` for writable globals, locals/results, fields/elements,
+references, heap subobjects, variant views, and stored-string characters. Capture paths
+once without reading ordinary payloads; reject constants, routines and nonstorage
+temporaries with `E_LVALUE`. Pointer types retain the declared storage constraint.
+Taking a counter's address is allowed; writes through it retain `R_FOR_CONTROL`.
+
+Keep legacy heap handles and allocation/disposal behavior. Address references use
+opaque typed identities recording their owning root and global/frame/heap lifetime;
+never expose raw addresses or permit casts/arithmetic. Frame epochs prevent reuse after
+return (`R_DANGLING`), including escaped results and forwarded `var` aliases. Globals
+last for the run; heap references retain allocation generation. `@p^` for a complete
+heap object remains the original heap handle. Nonheap/interior disposal is `R_DISPOSE`.
+Identical logical locations/lifetimes/types/views share identity; compatible variant
+field aliases normalize by offset/type, while incompatible containing views stay
+distinct. Canonical compatible views select a stable representative arm on later writes.
+
+Address capture activates/pins selected variant views as a binding effect, but stored
+pointers do not pin arms permanently. Consumed value arguments release capture borrows
+before later arguments/callee execution, following existing snapshot rules. Dereferences carry their captured claims through
+the existing read/deferred-write checks and temporarily borrow heap owners. Pointer
+reads never activate an incompatible view. String-character references retain source
+and scalar index, reconstruct transient descriptors, and recheck bounds after changes.
+Preserve root-written flags, value/reference copies, input waits and transfer cleanup.
+
+Frontend/IR retain only an address expression and its logical lvalue/type. Backend
+owns tagged tokens, frame epochs and bounded access packets. Memory-only runtime
+services track at most 65,536 live address identities (optional host `limits.references`
+may lower this); reclaim stale identities without reusing IDs. Epoch/identity exhaustion
+uses `R_MEMORY`. Append imports and keep old signatures. Accept unchanged
+`pointer_demo2.pas`; cover all storage/type/view families, equality, stale/reused frames
+and heap owners, nonheap/interior disposal, atomic failures, counters, limits, both
+hosts/WAT/sanitizers/browsers, JSPI and offline exports. No new external dependency.
+
 ## Future scope and design gates
 
-The following are deferred, without effort or delivery promises:
+Virtual files and partial CRT are the next tutorial increments. Other entries below
+remain deferred without delivery promises; resolve each selected gate before coding.
 
 | Area | Decisions required before implementation |
 | --- | --- |

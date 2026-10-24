@@ -124,7 +124,7 @@ struct Lvalue {
     Expr *index;
     Expr *value; /* Temporary selector base; a returned pointer may yield writable pointees. */
     const Field *field;
-    int indirect; /* This path reaches a heap pointee, even through a temporary pointer value. */
+    int indirect; /* This path reaches a pointee, even through a temporary pointer value. */
 };
 extern const Type p2w_type_integer, p2w_type_boolean, p2w_type_real, p2w_type_character,
     p2w_type_nil;
@@ -139,6 +139,7 @@ typedef enum { SYMBOL_VARIABLE, SYMBOL_CONSTANT, SYMBOL_TYPE } SymbolKind;
 typedef enum {
     EX_INTEGER,
     EX_NIL,
+    EX_ADDRESS, /* lvalue retains declared storage; no payload is read by address capture. */
     EX_REAL,
     EX_RANDOM,
     EX_RANGE_CHECK,
@@ -317,6 +318,7 @@ typedef struct {
     size_t symbol_count, symbol_capacity;
     size_t global_count, routine_count, with_count;
     int has_variants;
+    int has_addresses;
     Routine *routines, *root_routines;
     size_t symbol_head; /* Global declaration chain; SIZE_MAX ends every chain. */
     Stmt *body;

@@ -5,6 +5,7 @@
 
 #include "emitter.h"
 #include "variant.h"
+#include "reference.h"
 #include "ir/number.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,7 +68,12 @@ static const Import imports[] = {{"write_utf8", "ii", 0},
                                  {"random_i32", "iii", 0x7f},
                                  {"variant_access", "iiii", 0},
                                  {"variant_copy", "iiiiiii", 0},
-                                 {"variant_read_string", "iiiiii", 0}};
+                                 {"variant_read_string", "iiiiii", 0},
+                                 {"address_of", "iiiiiii", 0x7e},
+                                 {"address_view", "iiiiii", 0},
+                                 {"frame_enter", "iiiii", 0},
+                                 {"frame_leave", "iiii", 0},
+                                 {"variant_bind", "iiiii", 0x7e}};
 enum {
     IMPORT_COUNT = sizeof(imports) / sizeof(*imports),
     RUN_TYPE = IMPORT_COUNT,
@@ -469,6 +475,10 @@ static void emit_path(Wasm *w, const Lvalue *value, size_t root)
             indexed(w, 0x20, "local.get", address);
             memory_op(w, 0x29, "i64.load", 3, 0);
         }
+        if (w->program->has_addresses) {
+            reference_view(w, root, type_size(w, value->type), value->line, value->column);
+            return; /* Dynamic claim locals must survive until their consumer commits. */
+        }
         constant(w, 0, (int64_t)type_size(w, value->type));
         constant(w, 0, value->line);
         constant(w, 0, value->column);
@@ -691,6 +701,19 @@ static void emit_expression(Wasm *w, const Expr *e)
         e->kind == EX_LENGTH || e->kind == EX_CHARACTER_STRING || e->kind == EX_SLICE ||
         (e->kind != EX_CALL && e->left && e->left->type->kind == TYPE_KIND_STRING)) {
         string_expression(w, e);
+        return;
+    }
+    if (e->kind == EX_ADDRESS) {
+        size_t saved = w->next_local;
+        size_t target = temporary(w), root = temporary(w);
+        VariantPath path = {0};
+        capture_path(w, e->lvalue, root, &path);
+        indexed(w, 0x21, "local.set", target);
+        reference_address(w, &path, target, root, e->lvalue->type, e->line, e->column);
+        /* Resolve identity/limits before activation; the i64 value stays on the
+         * operand stack while binding uses its own scratch local and frame leases. */
+        variant_access(w, &path, 1, e->line, e->column);
+        w->next_local = saved;
         return;
     }
     if (e->kind == EX_NIL) {
@@ -2263,6 +2286,7 @@ static void emit_function(Wasm *w, const Routine *routine, Buffer *bodies, Buffe
         indexed(w, 0x23, "global.get", 5);
         memory_op(w, 0x36, "i32.store", 2, 8);
     }
+    reference_frame(w, 1);
     size_t hidden_slot = routine && routine->parent ? 1 : 0;
     size_t parameter = hidden + hidden_slot;
     for (size_t i = 0; routine && i < routine->parameter_count; ++i) {
@@ -2310,6 +2334,7 @@ static void emit_function(Wasm *w, const Routine *routine, Buffer *bodies, Buffe
         }
     }
     release_frame_borrows(w);
+    reference_frame(w, 0);
     indexed(w, 0x20, "local.get", w->frame_local);
     memory_op(w, 0x28, "i32.load", 2, 4);
     indexed(w, 0x24, "global.set", 2);
@@ -2400,8 +2425,9 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
     uleb(&payload, pages);
     uleb(&payload, 1024);
     section(&result->binary, 5, &payload);
-    uleb(&payload, w.heap ? 6 : 3);
-    for (size_t i = 0; i < (w.heap ? 6u : 3u); ++i) {
+    size_t globals = (w.heap ? 6u : 3u) + (program->has_addresses ? 1u : 0u);
+    uleb(&payload, globals);
+    for (size_t i = 0; i < globals; ++i) {
         buffer_byte(&payload, 0x7f);
         buffer_byte(&payload, 1);
         buffer_byte(&payload, 0x41);
@@ -2454,6 +2480,9 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
             buffer_printf(&result->wat, "  (global (mut i32) (i32.const %zu))\n",
                           w.layout.stack_limit);
             buffer_printf(&result->wat, "  (global (mut i32) (i32.const 0))\n");
+            buffer_printf(&result->wat, "  (global (mut i32) (i32.const 0))\n");
+        }
+        if (program->has_addresses) {
             buffer_printf(&result->wat, "  (global (mut i32) (i32.const 0))\n");
         }
         buffer_append(&result->wat, functions.data, functions.length);

@@ -4,6 +4,10 @@
 
 ### Added
 
+- Checked `@storage` for globals, locals/results, aliases, aggregate/heap fields and
+  string characters, with stable typed identities, bounded registries, frame epochs,
+  variant-view checks and unchanged tutorial `pointer_demo2` support.
+
 - Nominal enumerations with member constants, comparisons, ordinals, checked
   increment/loops, subranges, case ranges, and formatted member-name output.
 - Ordinal array domains for integers, characters, Booleans, and enumerations,

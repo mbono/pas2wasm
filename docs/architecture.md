@@ -188,7 +188,8 @@ string bytes as protection flags or copying protection identity with values.
 String-character references use caller-owned tagged descriptors containing the string
 object and scalar position. Each access rereads the live string and rechecks bounds
 after aliases change lengths or byte widths. The normal reference root pair propagates
-result writes; views cannot escape their owner's lifetime.
+result writes. Address-of captures their source/index in a checked identity; each later
+dereference reconstructs a temporary descriptor and rechecks the owner lifetime.
 
 ## Control flow and Wasm emission
 
@@ -211,7 +212,7 @@ hidden arguments, and resource limits are in the ABI reference.
 
 The Wasm backend emits private allocation/validation/borrow/release helpers in `heap.c`
 using shared binary/WAT primitives from `emitter.h`. Ownership stays in program memory;
-JavaScript has no allocator or persistent object registry. Generational handles prevent
+JavaScript does not allocate Pascal heap objects. Generational handles prevent
 disposed aliases from becoming valid after reuse. Whole-block first-fit reuse and
 checked bump growth are deliberately simple; fragmentation can exhaust the budget
 without promising compaction/coalescing.
@@ -223,6 +224,26 @@ body. Cleanup unpins before restoring frame/lease storage. Active-counter checks
 lifetime rejection when both apply; pointer aliases alone do not borrow. Test-only WAT
 exports reach private boundary helpers without adding capabilities to production
 modules.
+
+## Address identities
+
+`reference.c` lowers logical `@storage` without exposing raw coordinates to Pascal.
+Legacy allocation handles remain unchanged. Nonheap/interior references use tagged i64
+identities in a bounded, per-runtime JavaScript registry. The registry stores only
+checked coordinates, owning roots/lifetimes and view claims, never Pascal payloads or
+host capabilities. Globals last for the run; monotonic activation epochs and allocation
+generations prevent stale references from reviving when storage is reused. Frame return
+retires only that owner's identities, preserving forwarded caller aliases.
+
+Compatible overlapping fields normalize by canonical declared type and offset, so
+aliases share identity without giving incompatible containing views the same identity.
+A stable representative arm defines later reactivation. Stored pointers retain claims
+without permanent leases. Dereferencing borrows any heap owner and carries dynamic
+claims into existing read/binding/atomic-commit services; a pointer cannot bypass a
+subrange, counted-control, initialization, or variant check. Binding preflights expanded
+lease capacity before activation and reuses the request buffer after snapshotting it.
+This keeps frontend/IR independent of Wasm layout and avoids a second allocator or
+unbounded host ownership. Standalone exports embed the same self-contained runtime.
 
 ## Browser compilation, execution, and input
 

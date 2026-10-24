@@ -668,6 +668,7 @@ type
 | --- | --- | --- |
 | Allocate | `new(p)` | Create an uninitialized pointee and assign its pointer. |
 | Dereference | `p^.value := 1` | Access pointee storage with lifetime/bounds checks. |
+| Address | `p := @n` | Capture writable storage without reading its payload. |
 | Empty pointer | `p := nil` | `nil` converts to any pointer value type. |
 | Compare | `p = q`, `p <> nil` | Compare tokens without dereferencing them. |
 | Dispose | `dispose(p)` | Release the object and set `p` to `nil`; aliases become stale. |
@@ -680,8 +681,8 @@ must cross pointer edges; all pointee layouts, including anonymous/unused types,
 finite (`E_LAYOUT`). Pointer interning/resolution is bounded as documented in the ABI
 reference. Pointers to the same resolved target are compatible; distinct record/array
 targets remain distinct. Nil converts to any pointer value type. Only assignment,
-parameters/results, and `=`/`<>` are allowed; there is no address-of, pointer
-arithmetic/cast, ordering, or pointer text I/O.
+parameters/results, address capture, and `=`/`<>` are allowed; pointer
+arithmetic/casts, ordering, and pointer text I/O remain unsupported.
 
 `p^.value:=1; p^.next:=nil;` initializes the fields of a new object. A new handle is
 assigned only after allocation succeeds. Initialize links explicitly and dispose owned
@@ -694,8 +695,8 @@ Dereferences can select fields/elements/strings, bind var parameters, and appear
 returned pointer values, e.g. `fill(first()^.value)`. Pointees stay borrowed through an
 expression or var call, preventing disposal while a destination/ref/ character view is
 live (`R_LIFETIME`). Value snapshots release their borrows before later arguments.
-Active counted controls retain `R_FOR_CONTROL` protection. No reference escapes its
-caller and no local address becomes a pointer: source pointers originate from `new`.
+Active counted controls retain `R_FOR_CONTROL` protection. Stored addresses can escape
+their owner, but dereferencing them after that lifetime ends uses `R_DANGLING`.
 Pointer aliases alone do not borrow. Conditions release their borrows before the body;
 value snapshots release them before later arguments, while reference borrows last until
 return. Counter protection takes precedence over `R_LIFETIME`. Returned-pointer pointees
@@ -705,6 +706,38 @@ Heap allocation and generation checks are private generated Wasm code, with no e
 allocator. Memory remains bounded to 64 MiB, with borrowed leases in the existing
 activation arena. Simple whole-block reuse may fail under fragmentation; there is no
 garbage collector. All behavior works in offline HTML exports.
+
+### Addresses and lifetimes
+
+`@storage` accepts writable globals, locals, function results, fields/elements, `var`
+aliases, heap subobjects, and stored-string characters. Paths run once; ordinary
+uninitialized payloads need not be read. Constants, routine values and nonstorage
+results use `E_LVALUE`. The pointer retains the declared storage type, including
+subrange constraints. Taking a counter's address is allowed; modifying it through that
+pointer still uses `R_FOR_CONTROL`.
+
+| Owner | Address lifetime / disposal |
+| --- | --- |
+| Global | Valid throughout the run; `dispose` uses `R_DISPOSE`. |
+| Routine activation | Valid until its normal/early return; later accesses use `R_DANGLING`, even if another call reuses that storage. |
+| Heap | Valid until the owning allocation is disposed; generation checks reject reuse. |
+| Complete heap object | `@p^` equals `p` and supports ordinary disposal. |
+| Heap interior or string character | Retains its owner's lifetime; `dispose` uses `R_DISPOSE`. |
+
+Repeated addresses of the same location/type/lifetime/view compare equal, including
+forwarded aliases. Compatible overlapping variant fields normalize by offset/type;
+incompatible containing views retain distinct identities. Address capture activates a
+selected variant view as a binding effect. Consumed value arguments release capture
+borrows before later arguments/callee execution; stored pointers never pin arms
+permanently. Reading a pointer through an incompatible active view uses `R_VARIANT`;
+writing can reactivate its captured view after ordinary value/control/lifetime checks.
+Canonical compatible views choose a stable representative arm when reactivated.
+
+Character pointers retain the string object and scalar index. They recheck bounds
+against the current string, so shortening it may cause `R_BOUNDS`; changing UTF-8 widths
+does not change the logical location. Address identities are bounded to 65,536 live
+entries. Retired frame identities and stale heap identities can be reclaimed, without
+reusing their IDs. Identity/frame-epoch exhaustion uses `R_MEMORY`.
 
 ## Pseudorandom integers
 
@@ -855,6 +888,7 @@ retain their scope semantics.
 | Labels/ranges per `case` | 1,024; a range counts as one |
 | Set domain | At most 256 consecutive ordinals |
 | String capacity / constant value | At most 1 MiB |
+| Address identities | At most 65,536 live entries per execution; stale IDs never reused |
 | Compiler constant-text budget | 8 MiB |
 | Real literals | At most 768 digits; exponent magnitude at most 4,096 |
 | Browser compilation / active execution | Five seconds each; human input waits are excluded |
@@ -891,7 +925,7 @@ resolution also have bounded complexity. Exceeding a compiler work budget uses
 | Dynamic types | Dynamic/open arrays and other unlisted dialect-specific types |
 | Routine values | Escaping closures or first-class routine values |
 | Function syntax | `Result` alias and `return` keyword |
-| Pointer operations | Address-of, pointer arithmetic/casts, ordering, and text I/O |
+| Pointer operations | Pointer arithmetic/casts, ordering, and text I/O |
 | Whole arrays/records | Comparison and text output |
 | Numeric/string conversion | Implicit or built-in numeric-to-string/string-to-numeric conversion |
 | Terminal protocols | ANSI terminal commands and raw keypress input |
@@ -970,7 +1004,7 @@ primary     = set_constructor | integer_literal | real_literal | text_literal | 
             | ("real" | "trunc" | "round" | "length" | "chr" | "ord") "(" expression ")"
             | "copy" "(" expression "," expression "," expression ")"
             | "random" "(" expression ")"
-            | "(" expression ")" | "not" factor ;
+            | "(" expression ")" | "not" factor | "@" storage ;
 relation    = "=" | "<>" | "<" | "<=" | ">" | ">=" | "in" ;
 character_literal = "#" ASCII_digit {ASCII_digit} ;
 identifier  = (ASCII_letter | "_") {ASCII_letter | ASCII_digit | "_"} ;

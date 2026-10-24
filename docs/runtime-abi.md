@@ -162,13 +162,31 @@ schemas and frame-owned requests; they expose no filesystem or other host capabi
 
 | Import | Signature | Behavior |
 | --- | --- | --- |
-| `variant_access` | `(request,writable,line,column) -> ()` | Check selected views; writable mode atomically activates them. Emitted code then links binding leases when required. |
+| `variant_access` | `(request,writable,line,column) -> ()` | Check selected views; writable mode atomically activates them. Legacy emitted code may then link binding leases; current binding uses `variant_bind` below. |
 | `variant_copy` | `(destination,source,size,capacity,request,line,column) -> ()` | Snapshot and validate the source, activation plan, controls, and live views before commit. Positive size is a whole fixed-size value; zero is a string with the given destination capacity. |
 | `variant_read_string` | `(destination,capacity,mode,request,line,column) -> ()` | Validate line-remainder input before activating/storing its destination; stream cursor and mode rules remain unchanged. |
 
 Only `variant_read_string` may suspend under JSPI. Synchronous batch hosts need no JSPI.
 Requests and schemas use the private layouts below; legacy import signatures remain
 unchanged, and older modules continue to work with the updated runtime.
+
+### Address and binding services (indices 33–37)
+
+All parameters are i32. These synchronous services expose only checked coordinates in
+the attached program memory; they require no JSPI or external dependency.
+
+| Import | Signature | Behavior |
+| --- | --- | --- |
+| `address_of` | `(target,root,size,type,request,line,column) -> i64` | Intern a checked typed storage identity, or preserve a complete heap handle. |
+| `address_view` | `(token,id,size,result,line,column) -> ()` | Validate lifetime/size and write a private 48-byte resolution packet. |
+| `frame_enter` | `(base,size,epoch,line,column) -> ()` | Register an activation's unique nonzero u32 epoch and storage range. |
+| `frame_leave` | `(base,epoch,line,column) -> ()` | Retire this activation and its owned identities; forwarded caller references survive. |
+| `variant_bind` | `(request,base,end,line,column) -> i64` | Expand claims and preflight capacity/activation before linking kind-1 leases at base; return lease head in the high u32 and new frame top in the low u32. |
+
+`limits.references` optionally lowers the default 65,536 live identity budget; accept
+integer values 1..65,536, otherwise `R_MEMORY`. A fresh attachment clears all address,
+frame, and schema state. Stale identities are reclaimable, but IDs never repeat within
+an attachment. The language reference defines view equality and lifetime semantics.
 
 ## Runtime diagnostics
 
@@ -250,7 +268,9 @@ Addresses 0..262143 are reserved for decoded literals. Global objects follow, th
 KiB active-control address table and a 128 KiB frame arena. The remaining region is the
 checked heap; these regions cannot overlap. Initial pages cover globals/frames, with
 maximum 1024 pages. Private globals track call depth, frame top, control depth, heap
-top, free-list head, and borrow head. Parameters, locals, and results are copied/cleared
+top, free-list head, and borrow head. Programs using address-of add private global 6
+for the monotonic frame epoch, stored at frame-header +12. Epoch wrap fails before
+registration. Parameters, locals, and results are copied/cleared
 in each fresh frame, including its 16-byte header reserved for lexical/lifetime
 metadata. Allocation checks the frame end before any write and emits located failure 7
 on exhaustion. Large activations may exhaust the frame sub-budget before reaching 64
@@ -291,7 +311,7 @@ parameters, not hidden ones. All snapshot/result buffers are checked leases in t
 existing frame arena and produce located `R_MEMORY` on exhaustion. Argument/nested-call
 leases are released on return; result leases survive until consumed. Statement/loop-test
 cleanup prevents accumulation. These private copy addresses do not become Pascal
-pointers; pointers use separate typed heap handles.
+pointers; explicit address-of uses checked storage identities, described below.
 
 ### Variant layouts, requests, and leases
 
@@ -314,6 +334,13 @@ head, control-table address, and active-control count. Each 16-byte claim has pa
 address, schema address, one-based selected arm, and fixed-field index; `0xffffffff`
 requires the exact ancestor arm. Validation plans account for earlier ancestor clears
 before reading nested headers. No plan mutates memory until all checks succeed.
+
+A claim with schema `0xffffffff` is a dynamic address-reference group: its first
+word is the registry ID (zero means no claims), and its selected-arm/field words are
+zero. The runtime snapshots and expands groups to at most 128 ordinary claims before
+planning. `variant_bind` snapshots the whole request before reusing temporary packet
+bytes as leases; it checks the expanded lease end against the 128 KiB frame limit
+before changing any arm. Its packed result updates private globals 1 and 5.
 
 Variant leases use the shared 16-byte frame chain: part address +0, previous lease +4,
 schema address +8, kind 1 at +12. Heap leases retain kind 0. Leases are outside copied
@@ -416,22 +443,44 @@ distinguish cells/views, re-read the current string, and recheck scalar bounds a
 aliases change lengths/byte widths. Replacement preflights capacity before mutation.
 Root-written addresses retain the normal reference pair. Caller-owned leases keep
 descriptors live through calls, forwards, and captures; consumed values/calls/loop
-iterations release them. Views cannot escape as Pascal values or become integer counted
-controls. Normal cells retain interval guards.
+iterations release them. Address-of stores the source/index in a checked identity and
+reconstructs a descriptor for each dereference; it never stores this transient descriptor
+as a long-lived pointer. Character views cannot become integer counted controls. Normal
+cells retain interval guards.
 
 copy snapshots its source, then evaluates start/count. It queries checked UTF-8 byte
 size before reserving a result lease and copying scalars. Char-to-string widening uses a
 bounded four-byte capacity object. Existing frame/literal/memory limits and
 failed-instance disposal apply. Matching hosts and standalone exports embed the same
-fixed helpers without persistent host ownership.
+fixed helpers; only explicit address identities retain bounded host metadata.
+
+### Address identities and activation epochs
+
+The backend owns canonical type IDs, tagged tokens and access packets. Frontend/IR
+retain only logical address expressions/lvalues. Each registry entry records source,
+optional scalar character index, declared type/size, root-written address, canonical
+variant claims, and global/frame/heap owner. Capture validates coordinates without
+reading ordinary payloads. Frame owners resolve by active range and epoch; heap owners
+resolve through kind-0 leases and retain allocation header/generation/actual size.
+No conservative memory/header scan is performed. References do not keep owners alive.
+
+`address_view` writes target +0, owning root +4, heap payload or zero +8, heap generation
++12, heap size +16, registry ID +20, reserved +24/+28, and optional character source/index
++32/+36 (remaining words reserved) in its 48-byte result. A character target tags the
+result+32 descriptor. The generated caller borrows a returned heap owner before running
+more Pascal code, and adds a dynamic claim group to its current capture. Ordinary read,
+deferred scalar commit and atomic aggregate/string services then validate those views.
+References to complete heap objects without variant claims retain the old handle;
+nonheap/interior disposal is rejected by existing heap validation as `R_DISPOSE`.
 
 ### Pointer handles and heap leases
 
-Pointer payloads/parameters/results use i64 handles: high generation u32, low payload
-address u32; nil is zero. Logical type compatibility is frontend-owned; target
+Pointer payloads/parameters/results use i64 tokens; nil is zero. Heap handles have
+high generation u32 and low payload address u32. Address-reference tokens instead have
+low word `0x80000000` and high word registry ID; heap addresses never use this tag. Logical type compatibility is frontend-owned; target
 widths/layout remain backend-owned. Every constructed pointee layout, including
 anonymous/unused types, is checked independently; pointer edges cut by-value recursion.
-No address-of, arithmetic, integer cast, or pointer I/O exists.
+No arithmetic, integer cast, or pointer I/O exists.
 
 Heap starts at the frame limit. A 16-byte-aligned block has a 32-byte header: free link
 +0, capacity +4, generation +8, live +12, borrow count +16, actual size +20, reserved

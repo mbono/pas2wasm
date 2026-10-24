@@ -146,6 +146,7 @@ async function main() {
     verifyStringWrites();
     await require('./io.js')();
     require('./variant-runtime.js')(createPas2WasmRuntime);
+    require('./reference-runtime.js')(createPas2WasmRuntime);
     const compile = await createCompiler(require('../build/pas2wasm.js'));
     await verifySubrangeWrites(compile);
     await verifySetWrites(compile);
@@ -157,6 +158,7 @@ async function main() {
     let roundtrips = 0, comparisons = 0;
     try {
         await require('./heap.js')(compile, tool, directory);
+        await require('./reference.js')(compile, tool, directory);
         const legacy = path.join(directory, 'legacy-io.wasm');
         tool('wasm-as', [path.join(__dirname, 'fixtures/legacy-io.wat'), '-o', legacy]);
         assert.deepEqual(await execute(fs.readFileSync(legacy), '12 ignored\n1.25 junk\nérest\nhello\nskip\n7\n'),

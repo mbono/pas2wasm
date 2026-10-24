@@ -34,8 +34,9 @@ required to produce release compiler builds.
 
 - Prefer repository-owned code and standard C/browser facilities. Core parsing,
   numeric/UTF-8 helpers, and heap ownership are maintained here; no external
-  allocator, libm/parser package, Unicode database, or persistent JS object registry
-  is required by generated programs.
+  allocator, libm/parser package, or Unicode database is required by generated
+  programs. Explicit address identities use a bounded per-execution registry built
+  from standard JavaScript Map/BigInt; it stores metadata rather than Pascal heap objects.
 - New dependencies require a documented necessity, version, license, and explicit
   build/test/runtime classification. No parser generator, frontend framework,
   bundler, WAT assembler, or package manager is a production build requirement.

@@ -31,7 +31,7 @@ static size_t value_size(Wasm *w, ValueType type)
 }
 
 /* Intern a canonical identity without putting target metadata on frontend types. */
-static size_t type_identity(Wasm *w, ValueType type)
+size_t variant_identity(Wasm *w, ValueType type)
 {
     type = type_canonical(type);
     for (const VariantIdentity *entry = w->variant_types; entry; entry = entry->next) {
@@ -109,7 +109,7 @@ static size_t schema_address(Wasm *w, const VariantPart *part)
             size_t child = value_size(w, field->type);
             data_word(w, offset);
             data_word(w, child);
-            data_word(w, type_identity(w, field->type));
+            data_word(w, variant_identity(w, field->type));
             offset += child;
         }
     }
@@ -158,7 +158,7 @@ static void store_constant(Wasm *w, size_t object, unsigned offset, size_t value
 
 /* Reserve a request header (claim count, lease head, controls base/count), followed
  * by part-address/schema/one-based-arm/field-index claims. UINT32_MAX means exact arm. */
-static size_t request(Wasm *w, const VariantPath *path, unsigned line, unsigned column)
+size_t variant_request(Wasm *w, const VariantPath *path, unsigned line, unsigned column)
 {
     size_t object = temporary(w);
     allocate_storage(w, 16 + path->count * 16, object, line, column);
@@ -176,6 +176,12 @@ static size_t request(Wasm *w, const VariantPath *path, unsigned line, unsigned 
         indexed(w, 0x20, "local.get", object);
         indexed(w, 0x20, "local.get", path->claims[i].address);
         memory_op(w, 0x36, "i32.store", 2, offset);
+        if (!arm) {
+            store_constant(w, object, offset + 4, UINT32_MAX);
+            store_constant(w, object, offset + 8, 0);
+            store_constant(w, object, offset + 12, 0);
+            continue;
+        }
         store_constant(w, object, offset + 4, schema_address(w, arm->part));
         store_constant(w, object, offset + 8, arm->index + 1);
         size_t field_index = UINT32_MAX;
@@ -213,28 +219,29 @@ void variant_access(Wasm *w, const VariantPath *path, int pin, unsigned line, un
         return;
     }
     size_t saved = w->next_local, top = request_top(w);
-    size_t object = request(w, path, line, column);
+    size_t object = variant_request(w, path, line, column);
     indexed(w, 0x20, "local.get", object);
-    constant(w, 0, pin != 0);
-    constant(w, 0, line);
-    constant(w, 0, column);
-    indexed(w, 0x10, "call", VARIANT_ACCESS_IMPORT);
-    release_request(w, top);
     if (pin > 0) {
-        for (size_t i = 0; i < path->count; ++i) {
-            size_t lease = temporary(w);
-            allocate_storage(w, 16, lease, line, column);
-            indexed(w, 0x20, "local.get", lease);
-            indexed(w, 0x20, "local.get", path->claims[i].address);
-            memory_op(w, 0x36, "i32.store", 2, 0);
-            indexed(w, 0x20, "local.get", lease);
-            indexed(w, 0x23, "global.get", 5);
-            memory_op(w, 0x36, "i32.store", 2, 4);
-            store_constant(w, lease, 8, schema_address(w, path->claims[i].arm->part));
-            store_constant(w, lease, 12, 1);
-            indexed(w, 0x20, "local.get", lease);
-            indexed(w, 0x24, "global.set", 5);
-        }
+        indexed(w, 0x20, "local.get", top);
+        constant(w, 0, (int64_t)w->layout.stack_limit);
+        constant(w, 0, line);
+        constant(w, 0, column);
+        indexed(w, 0x10, "call", VARIANT_BIND_IMPORT);
+        indexed(w, 0x21, "local.set", w->wide_local);
+        indexed(w, 0x20, "local.get", w->wide_local);
+        op(w, 0xa7, "i32.wrap_i64");
+        indexed(w, 0x24, "global.set", 1);
+        indexed(w, 0x20, "local.get", w->wide_local);
+        constant(w, 1, 32);
+        op(w, 0x88, "i64.shr_u");
+        op(w, 0xa7, "i32.wrap_i64");
+        indexed(w, 0x24, "global.set", 5);
+    } else {
+        constant(w, 0, pin != 0);
+        constant(w, 0, line);
+        constant(w, 0, column);
+        indexed(w, 0x10, "call", VARIANT_ACCESS_IMPORT);
+        release_request(w, top);
     }
     w->next_local = saved;
 }
@@ -243,7 +250,7 @@ void variant_copy(Wasm *w, const VariantPath *path, size_t destination, size_t s
                   size_t capacity, unsigned line, unsigned column)
 {
     size_t saved = w->next_local, top = request_top(w);
-    size_t object = request(w, path, line, column);
+    size_t object = variant_request(w, path, line, column);
     indexed(w, 0x20, "local.get", destination);
     indexed(w, 0x20, "local.get", source);
     constant(w, 0, (int64_t)size);
@@ -260,7 +267,7 @@ void variant_read_string(Wasm *w, const VariantPath *path, size_t destination, s
                          int input_line, unsigned line, unsigned column)
 {
     size_t saved = w->next_local, top = request_top(w);
-    size_t object = request(w, path, line, column);
+    size_t object = variant_request(w, path, line, column);
     indexed(w, 0x20, "local.get", destination);
     constant(w, 0, (int64_t)capacity);
     constant(w, 0, input_line);

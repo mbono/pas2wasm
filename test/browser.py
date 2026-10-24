@@ -238,6 +238,37 @@ def verify_heap_boundaries(browser, cases, directory):
     assert result == {'stale':'R_DANGLING','lifetime':'R_LIFETIME','wrap':'R_MEMORY'},result
 
 
+def verify_reference_epoch(browser, cases, directory):
+    """Exhaust the real emitted frame epoch through a test-only WAT export."""
+    source = 'program p; var n:integer; q:^integer; begin q:=@n; q^:=3 end.'
+    artifact = native_result(source, directory, 'private-reference')
+    wat = re.sub(r'\)\s*$', '(export "epoch" (global 6))\n)', artifact['wat'])
+    input_path, output_path = directory/'private-reference.wat', directory/'private-reference.wasm'
+    input_path.write_text(wat)
+    subprocess.run(['wasm-as',str(input_path),'-o',str(output_path)],check=True,capture_output=True)
+    checks = Path('test/reference-runtime.js').read_text(encoding='utf-8')
+    result = browser.page_async(checks + '''const binary=Uint8Array.from(arguments[0]),done=arguments[arguments.length-1];
+        (async()=>{
+            const host=createPas2WasmRuntime('',()=>{});
+            const {instance}=await WebAssembly.instantiate(binary,{pas2wasm_v1:host.imports});
+            host.attach(instance);verifyReferenceEpoch(instance.exports);done({ok:true});
+        })().catch(error=>done({error:String(error)}));''',list(output_path.read_bytes()))
+    assert result == {'ok':True}, result
+    for name, code, size, input_text, limit in [
+        ('address_variant_atomic_identity_budget','R_MEMORY',48,'',1),
+        ('address_variant_atomic_range','R_RANGE',48,'',65536),
+        ('address_variant_atomic_input','R_STRING_CAPACITY',64,'abc\n',65536)
+    ]:
+        fixture = next(test for test in cases if test['name']==name)
+        artifact = native_result(fixture['source'],directory,name)
+        result = browser.page_async(checks + '''const done=arguments[arguments.length-1];
+            verifyReferenceAtomic(Uint8Array.from(arguments[0]),createPas2WasmRuntime,
+                arguments[1],arguments[2],arguments[3],arguments[4])
+                .then(()=>done({ok:true}),error=>done({error:String(error)}));''',
+            artifact['binary'],code,size,input_text,limit)
+        assert result == {'ok':True}, result
+
+
 def verify_browser(kind, base_url, cases, directory):
     """Check worker parity, UI state, offline reruns, and file:// HTML exports."""
     project_license = Path('LICENSE').read_text()
@@ -257,10 +288,15 @@ def verify_browser(kind, base_url, cases, directory):
         version = Path('VERSION').read_text(encoding='utf-8').strip()
         assert browser.js("return document.querySelector('h1').textContent;") == f'Pas2Wasm (v{version})'
         verify_heap_boundaries(browser,cases,directory)
+        verify_reference_epoch(browser,cases,directory)
         boundary_source = Path('test/variant-runtime.js').read_text(encoding='utf-8')
+        boundary_source += Path('test/reference-runtime.js').read_text(encoding='utf-8')
         boundary_result = browser.page_async(boundary_source + '''
             const done=arguments[arguments.length-1];
-            try {verifyVariantRuntime(createPas2WasmRuntime);done({ok:true});}
+            try {
+                verifyVariantRuntime(createPas2WasmRuntime);
+                verifyReferenceRuntime(createPas2WasmRuntime);done({ok:true});
+            }
             catch(error){done({error:String(error)});}''')
         assert boundary_result == {'ok':True}, boundary_result
         legacy = directory/'legacy-io.wasm'
@@ -340,6 +376,9 @@ def verify_browser(kind, base_url, cases, directory):
                         'withrecords':'with_record_values', 'withheap':'with_heap_alias',
                         'variants':'tutorial_rec', 'variantrecords':'tutorial_record_demo',
                         'nestedvariants':'variant_nested_parts',
+                        'address':'tutorial_pointer_demo2_unchanged',
+                        'addressvalues':'address_all_storage_types',
+                        'addressviews':'address_variant_nested',
                         'loops':'for_mixed_loops', 'routines':'procedure_recursion',
                         'functions':'function_factorial', 'exit':'exit_recursive_function',
                         'case':'case_exit_function', 'constants':'constant_scopes',
@@ -427,6 +466,8 @@ def verify_browser(kind, base_url, cases, directory):
             'set_error':next(t['source'] for t in cases if t['name']=='set_constructor_range_location'),
             'with_error':next(t['source'] for t in cases if t['name']=='with_heap_lifetime'),
             'variant_error':next(t['source'] for t in cases if t['name']=='variant_incompatible_read'),
+            'address_error':next(t['source'] for t in cases if t['name']=='address_stale_local'),
+            'address_dispose':next(t['source'] for t in cases if t['name']=='address_dispose_interior'),
             'string_error':next(t['source'] for t in cases if t['name']=='string_capacity_location'),
             'string_memory':next(t['source'] for t in cases if t['name']=='string_frame_budget'),
             'character_error':next(t['source'] for t in cases if t['name']=='character_chr_location'),
@@ -497,11 +538,11 @@ def verify_browser(kind, base_url, cases, directory):
                     browser.wait("document.getElementById('status').textContent==='Completed'")
                     assert browser.js("return document.getElementById('output').textContent;")==examples[name]['output']
                     assert browser.js("return document.querySelectorAll('img').length;")==0
-            elif name in ('frame_error','bounds_error','control_error','real_error','subrange_error','enum_error','set_error','with_error','variant_error','string_error','string_memory','character_error','character_bounds','character_memory','pointer_nil','pointer_dangling','pointer_release','pointer_lifetime','pointer_memory','pointer_borrow_memory'):
+            elif name in ('frame_error','bounds_error','control_error','real_error','subrange_error','enum_error','set_error','with_error','variant_error','address_error','address_dispose','string_error','string_memory','character_error','character_bounds','character_memory','pointer_nil','pointer_dangling','pointer_release','pointer_lifetime','pointer_memory','pointer_borrow_memory'):
                 for _ in range(2):
                     browser.js("document.getElementById('run').click();")
                     browser.wait("document.getElementById('status').textContent==='Failed'")
-                    assert ({'frame_error':'R_MEMORY','bounds_error':'R_BOUNDS','control_error':'R_FOR_CONTROL','real_error':'R_REAL_RANGE','subrange_error':'R_RANGE','enum_error':'R_RANGE','set_error':'R_SET_RANGE','with_error':'R_LIFETIME','variant_error':'R_VARIANT','string_error':'R_STRING_CAPACITY','string_memory':'R_MEMORY','character_error':'R_CHARACTER','character_bounds':'R_BOUNDS','character_memory':'R_MEMORY','pointer_nil':'R_NIL','pointer_dangling':'R_DANGLING','pointer_release':'R_DISPOSE','pointer_lifetime':'R_LIFETIME','pointer_memory':'R_MEMORY','pointer_borrow_memory':'R_MEMORY'}[name]) in browser.js("return document.getElementById('diagnostics').textContent;")
+                    assert ({'frame_error':'R_MEMORY','bounds_error':'R_BOUNDS','control_error':'R_FOR_CONTROL','real_error':'R_REAL_RANGE','subrange_error':'R_RANGE','enum_error':'R_RANGE','set_error':'R_SET_RANGE','with_error':'R_LIFETIME','variant_error':'R_VARIANT','address_error':'R_DANGLING','address_dispose':'R_DISPOSE','string_error':'R_STRING_CAPACITY','string_memory':'R_MEMORY','character_error':'R_CHARACTER','character_bounds':'R_BOUNDS','character_memory':'R_MEMORY','pointer_nil':'R_NIL','pointer_dangling':'R_DANGLING','pointer_release':'R_DISPOSE','pointer_lifetime':'R_LIFETIME','pointer_memory':'R_MEMORY','pointer_borrow_memory':'R_MEMORY'}[name]) in browser.js("return document.getElementById('diagnostics').textContent;")
             elif name=='result_error':
                 browser.js("document.getElementById('run').click();")
                 browser.wait("document.getElementById('status').textContent==='Failed'")
