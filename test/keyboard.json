@@ -1,0 +1,193 @@
+[
+  {
+    "name": "controls",
+    "source": "program p; uses crt; var i:integer; begin write('Keys: '); for i:=1 to 7 do writeln(ord(readkey)) end.",
+    "input": "a\r\u001b\b\t\u007f\ud83d\ude00",
+    "output": "Keys: 97\n13\n27\n8\n9\n127\n128512\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "a",
+        "keys": "a"
+      },
+      {
+        "kind": "key",
+        "text": "\r",
+        "keys": "\ue007"
+      },
+      {
+        "kind": "key",
+        "text": "\u001b",
+        "keys": "\ue00c"
+      },
+      {
+        "kind": "key",
+        "text": "\b",
+        "keys": "\ue003"
+      },
+      {
+        "kind": "key",
+        "text": "\t",
+        "keys": "\ue004"
+      },
+      {
+        "kind": "key",
+        "text": "\u007f",
+        "keys": "\ue017"
+      },
+      {
+        "kind": "key",
+        "text": "\ud83d\ude00",
+        "keys": null
+      }
+    ],
+    "transcript": "Keys: 97\n13\n27\n8\n9\n127\n128512\n"
+  },
+  {
+    "name": "chunk",
+    "source": "program p; uses crt; var i:integer; begin for i:=1 to 9 do writeln(ord(readkey)) end.",
+    "input": "<img>\u00e9\ud83d\ude00\n\u001b",
+    "output": "60\n105\n109\n103\n62\n233\n128512\n13\n27\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "<img>\u00e9\ud83d\ude00\r\n\u001b"
+      }
+    ],
+    "transcript": "60\n105\n109\n103\n62\n233\n128512\n13\n27\n"
+  },
+  {
+    "name": "complete_line",
+    "source": "program p; uses crt; var n:integer; begin writeln(ord(readkey)); readln(n); writeln(n); writeln(ord(readkey)) end.",
+    "input": "x42\nZ",
+    "output": "120\n42\n90\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "x42\rZ"
+      }
+    ],
+    "transcript": "120\n42\n90\n"
+  },
+  {
+    "name": "prefix",
+    "source": "program p; uses crt; var s:string; begin writeln(ord(readkey)); readln(s); writeln(s); writeln(ord(readkey)) end.",
+    "input": "abcD\n\u001b",
+    "output": "97\nbcD\n27\n",
+    "transcript": "97\nbcD\nbcD\n27\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "abc"
+      },
+      {
+        "kind": "line",
+        "prefix": "bc",
+        "text": "bcD"
+      },
+      {
+        "kind": "key",
+        "text": "\u001b",
+        "keys": "\ue00c"
+      }
+    ]
+  },
+  {
+    "name": "prefix_eof",
+    "source": "program p; uses crt; var s:string; begin writeln(ord(readkey)); readln(s); writeln(s) end.",
+    "input": "abc",
+    "output": "97\nbc\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "abc"
+      },
+      {
+        "kind": "line",
+        "prefix": "bc",
+        "text": null,
+        "draft": "unsubmitted"
+      }
+    ],
+    "transcript": "97\nbc\n"
+  },
+  {
+    "name": "eof",
+    "source": "program p; uses crt; begin write('Key: '); writeln(ord(readkey)) end.",
+    "input": "",
+    "output": "Key: ",
+    "runtime": "R_INPUT_EOF",
+    "steps": [
+      {
+        "kind": "key",
+        "text": null
+      }
+    ],
+    "transcript": "Key: "
+  },
+  {
+    "name": "composition",
+    "source": "program p; uses crt; var i:integer; begin for i:=1 to 3 do writeln(ord(readkey)) end.",
+    "input": "\u00e9\ud83d\ude00\u001b",
+    "output": "233\n128512\n27\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "\u00e9\ud83d\ude00",
+        "composition": true
+      },
+      {
+        "kind": "key",
+        "text": "\u001b",
+        "keys": "\ue00c"
+      }
+    ],
+    "transcript": "233\n128512\n27\n"
+  },
+  {
+    "name": "borrowed_character",
+    "source": "program p; uses crt; type R=record s:string[8] end; PRef=^R; var v:PRef; procedure accept(var c:char); begin c:=readkey end; begin new(v); v^.s:='abc'; accept(v^.s[2]); writeln(v^.s); dispose(v) end.",
+    "input": "\u00e9",
+    "output": "a\u00e9c\n",
+    "transcript": "a\u00e9c\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "\u00e9"
+      }
+    ]
+  },
+  {
+    "name": "variant_with",
+    "source": "program p; uses crt; type R=record case boolean of true:(c:char); false:(n:integer) end; var v:R; begin v.n:=7; with v do c:=readkey; writeln(v.c) end.",
+    "input": "Z",
+    "output": "Z\n",
+    "transcript": "Z\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "Z",
+        "keys": "Z"
+      }
+    ]
+  },
+  {
+    "name": "file_group",
+    "source": "program p; uses crt; var f:text; s:string; begin assign(f,'result'); rewrite(f); write(f,readkey,readkey); close(f); reset(f); readln(f,s); writeln(s); close(f) end.",
+    "input": "xy",
+    "output": "xy\n",
+    "transcript": "xy\n",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "x",
+        "keys": "x"
+      },
+      {
+        "kind": "key",
+        "text": "y",
+        "keys": "y"
+      }
+    ]
+  }
+]

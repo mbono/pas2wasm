@@ -4,9 +4,14 @@
 
 ### Added
 
+- Built-in partial `uses crt;` with directly emitted `readkey` helpers, checked Unicode
+  scalars, synchronous batch input and live JSPI keys without automatic echo.
+- Shared key/line typeahead with bounded paste/IME chunks, preserved editable prefixes,
+  controls, EOF/accounting rules and matching offline HTML behavior.
+
 - Per-execution virtual typed/text files with independent snapshots/cursors, bounded
   storage, checked owner/group lifetimes, and ordinary console/live/offline integration.
-  Includes unchanged tutorial `files.pas`; `textfiles.pas` awaits partial CRT support.
+  Includes unchanged tutorial `files.pas` and CRT-backed `textfiles.pas`.
 
 - Checked `@storage` for globals, locals/results, aliases, aggregate/heap fields and
   string characters, with stable typed identities, bounded registries, frame epochs,
@@ -28,6 +33,9 @@
   unchanged tutorial `rec` and `record_demo` sources.
 
 ### Compatibility changes
+
+- `readkey` is now reserved. Rename existing declarations using that name. Only the
+  documented CRT subset is available; other units and CRT routines remain unsupported.
 
 - `file`, `assign`, `rewrite`, `reset`, `close`, `filesize`, `eof`, and `eoln` are now
   reserved. Rename existing declarations using those names; `text` remains shadowable.

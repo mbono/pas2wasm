@@ -9,6 +9,7 @@ Run from the repository root after make; use --browser chromium for a quick pass
 import argparse
 import interactive
 import terminal
+import keyboard
 import base64
 import functools
 import http.server
@@ -332,6 +333,8 @@ def verify_browser(kind, base_url, cases, directory):
         interactive.verify_clock(browser)
         interactive.verify_ui(browser)
         terminal.verify_ui(browser)
+        key_examples = keyboard.verify_workers(browser, lambda source,name: native_result(source,directory,name))
+        keyboard.verify_ui(browser)
         # Exercise the exact bundled worker implementation. Do not inspect app
         # lexical variables: Firefox WebDriver evaluates in a separate sandbox.
         results = browser.page_async('''const cases=arguments[0], done=arguments[arguments.length-1];
@@ -520,6 +523,8 @@ def verify_browser(kind, base_url, cases, directory):
         export_sources['terminal_editor'] = terminal.source()
         export_sources['echo_limit'] = interactive.limit_source()
         export_sources.update({'live_'+case['name']:case['source'] for case in live_examples if case['name']!='invalid_unicode'})
+        export_sources.update({'key_'+case['name']:case['source'] for case in key_examples})
+        export_sources['crt_spin'] = keyboard.spin_source()
         for name, source in export_sources.items():
             artifact = native_result(source,directory,f'export-{name}')
             html = browser.js('return exportPas2WasmHtml(Uint8Array.from(arguments[0]));',artifact['binary'])
@@ -542,7 +547,7 @@ def verify_browser(kind, base_url, cases, directory):
             browser.navigate(target.as_uri())
             assert browser.js("return document.getElementById('input').value === '' && document.getElementById('status').textContent === 'Ready';")
             assert browser.js("return document.getElementById('io-mode').value;") == 'interactive'
-            if not (name.startswith('live_') or name in ('terminal_editor','echo_limit')):
+            if not (name.startswith(('live_','key_')) or name in ('terminal_editor','echo_limit')):
                 interactive.select_mode(browser,'batch')
             if name.startswith('live_'):
                 interactive.select_mode(browser,'interactive')
@@ -551,6 +556,18 @@ def verify_browser(kind, base_url, cases, directory):
                     interactive.verify_console_case(browser,case)
                 if name in ('live_prompts','live_file_group_wait'):
                     interactive.verify_offline_controls(browser,case)
+            elif name.startswith('key_'):
+                case=next(c for c in key_examples if name=='key_'+c['name'])
+                if name=='key_controls':
+                    keyboard.verify_controls(browser)
+                for _ in range(2):
+                    keyboard.verify_console_case(browser,case)
+                interactive.select_mode(browser,'batch')
+                browser.js("document.getElementById('input').value=arguments[0];document.getElementById('run').click();",case['input'])
+                browser.wait("['Completed','Failed'].includes(document.getElementById('status').textContent)")
+                assert browser.js("return document.getElementById('output').textContent;") == case['output'],case['name']
+            elif name=='crt_spin':
+                keyboard.verify_timeout(browser)
             elif name=='terminal_editor':
                 terminal.verify(browser)
             elif name=='echo_limit':

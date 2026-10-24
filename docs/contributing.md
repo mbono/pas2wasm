@@ -43,12 +43,17 @@ Add descriptively named positive/negative and boundary records to `test/cases.js
 Preserve existing input strings, expected program output, and located diagnostics rather
 than rewriting batch cases into live scripts. Live scripts belong in
 `test/interactive.json`; `test/interactive.py` covers workers, waits, EOF/limits,
-controls, and exports. `test/variant-runtime.js` shares forged-schema/lease and atomic boundary checks between
-Node and actual browsers. `test/reference-runtime.js` similarly checks address identities,
+controls, and exports. `test/variant-runtime.js` shares forged-schema/lease and atomic
+boundary checks between Node and actual browsers. `test/reference-runtime.js` similarly checks address identities,
 frame/heap lifetime, dynamic claims and limits; test-only WAT exports also check frame
 epoch exhaustion in Node and both browsers. `test/file-runtime.js` and `test/file.js`
-cover virtual-file ownership, modes, cursor isolation, cleanup and atomic input. FPC
-executables run in the temporary test directory so comparison file I/O stays there. `test/terminal.py` covers native editing, caret geometry,
+cover virtual-file ownership, modes, cursor isolation, cleanup and atomic input.
+`test/keyboard.json` / `test/keyboard.py` cover raw-key worker requests, trusted controls,
+Unicode chunks, paste/IME, mixed line prefixes, EOF/limits and offline reruns.
+`test/keyboard-runtime.js` shares cursor/accounting and forged-scalar boundary checks
+between Node and both browsers; `test/keyboard.js` checks on-demand CRT emission. FPC
+executables run in the temporary test directory so comparison file I/O stays there.
+`test/terminal.py` covers native editing, caret geometry,
 selection, draft/focus state, and offline presentation. Private heap boundary checks use
 test-only WAT exports; production exports stay unchanged. Profiles are temporary and
 retain default browser security; screenshots and verification evidence stay under
@@ -94,10 +99,10 @@ The following scenario groups preserve the integration acceptance contract:
 | Language/storage | Every supported family, value/reference contrasts, partial initialization/copies, evaluation order, recursive frames/captures, counted-control protection, early-return cleanup, arithmetic/index/conversion boundaries, and memory budgets. |
 | Heap and addresses | Global/local/result/interior/character addresses, identity limits, stale/reused frame epochs, forwarded ownership, disposal and view identities; recursive structures and aliases; nil/uninitialized/stale/reused pointers; generation/fragmentation/growth limits; borrow/view/reference lifetime and counter-precedence checks; repeat boundary helper checks in both browsers. |
 | Virtual files | Typed/text snapshots, exact component identity, names/modes/independent cursors, EOF/EOLN, budgets, receiver evaluation and group borrows, frame/heap retirement, failure/cancellation/completion cleanup, fresh runs, live console interaction, and offline exports. |
-| Input/output | LF/CRLF, empty/unterminated/trailing lines, invalid/range/EOF/encoding/capacity failures, multi-field reads, shared cursor and legacy imports, Unicode output and literal escaping. |
+| Input/output | Raw CRT keys, key/line cursor mixing, prefix accounting, chunk/EOF boundaries, LF/CRLF, empty/unterminated/trailing lines, invalid/range/EOF/encoding/capacity failures, multi-field reads, shared cursor and legacy imports, Unicode output and literal escaping. |
 | Live versus batch | Equivalent supplied lines/EOF yield identical program output and diagnostics without echo; synchronous hosts work without JSPI; actual worker JSPI waits/resumes the same instance; unsupported JSPI offers batch. |
 | Sessions/limits | Empty input, EOF closure, stale/duplicate delivery, Stop during compute/wait, compile/run timeouts, long human waits excluded, cumulative active budget not replenished, UTF-8 input/echo/output limits, and fresh recovery/reruns. |
-| Terminal | Same-line prompts and visible empty/typed caret; trusted Enter/native editing; no IME/paste submission; immutable history, Unicode deletion, focus/selection/draft preservation, scrolling/copying, and empty lines. Supplement functional checks with visual review. |
+| Terminal | Same-line prompts and visible empty/typed caret; trusted Enter/Escape/native editing; no line IME/paste submission; raw committed chunks once without echo; immutable history, Unicode deletion, focus/selection/draft preservation, scrolling/copying, and empty lines. Supplement functional checks with visual review. |
 | UI/artifacts | Version comes from loaded compiler; source edits/failed compilation invalidate WAT/downloads; toggle both WAT states; no stale execution/export; Run/Stop/Reset and repeated recovery work. |
 | Static/offline use | Block third-party requests; compile/run/download after asset loading without network; relocate exported HTML, close playground, and open via `file://` in fresh offline profiles without caches/sibling assets. |
 | Export safety/notices | Exact program and matching helpers; no execution before Run; Stop/timeout/reruns/input failures and both modes; literal `</script>`/Unicode never executes HTML; complete MIT notice and preserved third-party notices in their distributions. |

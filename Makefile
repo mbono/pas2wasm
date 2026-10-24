@@ -18,10 +18,10 @@ FRONTEND = src/ir/program.c src/ir/number.c src/frontend/parser.c \
 CORE = src/buffer.c src/compiler.c $(FRONTEND) \
        src/backend/backend.c src/backend/wasm/layout.c src/backend/wasm/emitter.c \
        src/backend/wasm/heap.c src/backend/wasm/variant.c src/backend/wasm/reference.c \
-       src/backend/wasm/file.c
+       src/backend/wasm/file.c src/backend/wasm/crt.c
 HEADERS = src/pas2wasm.h src/ir/program.h src/ir/number.h src/backend/backend.h \
           src/backend/wasm/layout.h src/backend/wasm/emitter.h src/backend/wasm/variant.h \
-          src/backend/wasm/reference.h src/backend/wasm/file.h
+          src/backend/wasm/reference.h src/backend/wasm/file.h src/backend/wasm/crt.h
 WEB = index.html style.css app.js compiler.js compiler-worker.js export.js runtime/host.js runtime/terminal.js runtime/session.js
 WEB_OUTPUTS = $(addprefix build/,$(WEB)) build/supported-language.md build/THIRD_PARTY_NOTICES.txt build/LICENSE
 

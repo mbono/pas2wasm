@@ -89,7 +89,7 @@ to reproduce the same UI.
 - Use one scrolling terminal surface with immutable history and an inline editable
   tail directly after prompts, with a visible caret while waiting. No separate
   input box or Send button. Keep Stop and End input outside transcript text.
-- Enter commits/echoes a line once with one transcript LF. Empty lines are valid.
+- In line mode, Enter commits/echoes a line once with one transcript LF. Empty lines are valid.
   Typing, paste, and IME confirmation do not submit. Support Unicode editing,
   Backspace/Delete, arrows, Home/End, and selection without changing history.
   Paste is plain text with line breaks normalized to spaces.
@@ -280,11 +280,66 @@ exports, including atomic failures, ownership, cleanup, cancellation and fresh r
 update the language, ABI, architecture, dependency and contributor references before
 marking the feature complete.
 
+### Partial CRT and raw-key gate
+
+Requirement 16 accepts `uses crt;` immediately after the program header, before
+ordinary declarations. Unit spelling is case-insensitive; unknown units use `E_UNIT`
+and duplicate CRT entries use `E_DUPLICATE`. This built-in compatibility unit exposes
+only `readkey`/`readkey()`, returning one Unicode `char`. Calling it without CRT uses
+`E_UNIT`; arguments use `E_ARGUMENT`; constant evaluation uses `E_CONST`. Reserve
+`readkey` and retain `uses` as reserved; `crt` itself remains an ordinary identifier
+outside the unit clause. Unknown CRT routines remain ordinary compile-time errors.
+
+Emit the CRT wrapper directly in generated Wasm and optional WAT, calling a narrow
+memory-only keyboard import and validating its returned Unicode scalar. Do not add a
+precompiled CRT module, external terminal library, WASI or dependency. Frontend/IR own
+only the unit/call semantics; backend owns helper/import details. Native and Wasm hosts
+must retain binary/WAT parity, opt-in WAT and unchanged production exports.
+
+| Input source | Required behavior |
+| --- | --- |
+| Batch | Use the existing supplied-input cursor synchronously without JSPI. Preserve remaining buffered scalars and map LF/CRLF line delimiters to Enter (13). Literal CR and Escape are supported. Exhaustion uses `R_INPUT_EOF`. |
+| Interactive key | Suspend the same instance with JSPI only when no buffered input remains. Return printable Unicode scalars, Enter 13, Escape 27, Backspace 8, Tab 9 or Delete 127. Ignore unsupported navigation/modifier keys while protecting transcript history; Shift+Tab retains normal focus navigation. |
+| Paste/composition | Commit a bounded raw-key chunk once, normalize CRLF/LF to CR and consume its scalars in order. Raw-key input has no automatic echo: the Pascal program decides what to print. Native IME preedit is permitted; confirmation must not add a second character or Enter. |
+| Mixed line/key reads | Share the logical console cursor. Keys consume existing line remainder/delimiters first. Complete CR-delimited raw chunks may satisfy later line reads without waiting. An unterminated queued suffix becomes the next line editor's prefix, preserving all accepted input. |
+
+Line-mode editing/paste/Enter and existing batch fixtures retain their current behavior.
+Raw-key paste is a key stream, so its queued CR may complete a later line; line-mode
+paste still normalizes breaks to spaces and never submits. When an accepted raw suffix
+becomes a line prefix, Enter commits the edited line with ordinary UI echo. End input
+instead delivers only the already accepted suffix as an unterminated final line,
+without echoing unsubmitted edits; remove that prefilled draft from the editor. Empty
+queues at End input use ordinary EOF. Typed keys/committed compositions remain inert
+text; no ANSI emulation, arbitrary key hooks, DOM or JavaScript capability is granted.
+
+Input requests distinguish `line` and `key` (legacy requests default to line), retaining
+run/request IDs and stale-reply rejection. The optional host provider gains backward
+compatible kind/prefix arguments. Key responses may contain multiple scalars, bounded
+by the cumulative 1 MiB input budget. Charge normalized key chunks once without an
+extra delimiter; charge line submissions/delimiters while crediting an already charged
+prefix once. Queue storage stays inside that allowance. Buffered processing consumes
+active execution time; only actual human waits pause the existing cumulative budget.
+A virtual-file cursor never consumes raw console input or requests a human key/line.
+
+Keep one console with an inline visible caret while waiting, protected history, focus,
+selection and normal copy behavior. Do not echo raw keys or create a separate keyboard
+input control. Stop, End input, source/mode changes, errors, timeouts and new Runs must
+clean up input queues/workers and preserve recovery. Both input modes and all behavior
+must also work in standalone offline `file://` exports in Chromium and Firefox.
+
+Accept unchanged `textfiles.pas`, plus key/line mixing, Unicode/controls, chunking,
+IME/paste, EOF, input limits, lifetime/counter/variant/file interactions, unsupported
+JSPI fallback, trusted browser Enter/Escape, caret visual review, cancellation and
+active-budget checks. Preserve all existing batch/line cases. Run the full acceptance
+gate and update the language/grammar, ABI, architecture, dependencies, contributor
+references and changelog. FPC CRT reads use different terminal services; compare only
+where semantics agree. Finally verify all 23 unchanged tutorial sources from the pinned
+revision with appropriate input and expected output before completing the full goal.
+
 ## Future scope and design gates
 
-Virtual files use the contract above; partial CRT is the next tutorial increment. Other
-entries below remain deferred without delivery promises; resolve each selected gate
-before coding.
+The tutorial increments use the resolved contracts above. Other entries below remain
+deferred without delivery promises; resolve each selected gate before coding.
 
 | Area | Decisions required before implementation |
 | --- | --- |
@@ -294,8 +349,7 @@ before coding.
 | Broader Pascal dialects | Chosen syntax, type identity, operations, conversions, and compatibility scope. |
 | Native CPU/OS output | Instruction/object/executable formats, calling conventions, runtime services, and linking. Preserve the backend boundary without placeholder targets or a promised native ABI. |
 | Broader I/O, WASI | Capabilities, host interfaces, portability, and offline behavior. |
-| Partial CRT compatibility | Start with a documented subset and directly emitted helpers; extract a separate module if it grows. Browser services retain host imports. See the [planned architecture](architecture.md#planned-crt-compatibility); resolve raw-key input, JSPI, cancellation, and offline behavior before implementation. |
-| Tooling and examples | Debug information, completion, shareable programs/tutorial links, localization, and a Pascal REPL. ANSI emulation/raw keypress input are separate from the current line console. |
+| Tooling and examples | Debug information, completion, shareable programs/tutorial links, localization, and a Pascal REPL. ANSI emulation and broader terminal protocols remain separate from the documented key/line console. |
 
 Self-hosting, an optimizing/SSA IR, garbage collection, external frontend packages, and
 dynamic backend plugins are not prerequisites. Add them only for an explicit

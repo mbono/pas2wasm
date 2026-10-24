@@ -17,6 +17,7 @@ extensions and does not claim full ISO 7185 conformance.
 - [Pseudorandom integers](#pseudorandom-integers)
 - [Checked increment](#checked-increment)
 - [Input and output](#input-and-output)
+- [Partial CRT unit](#partial-crt-unit)
 - [Virtual files](#virtual-files)
 - [Example playground console](#example-playground-console)
 - [Storage, limits, and diagnostics](#storage-limits-and-diagnostics)
@@ -39,6 +40,7 @@ Declaration sections are optional and appear before the main `begin ... end.`:
 
 ```text
 program name;
+[uses crt;]
 [source-ordered const/type/var sections and routine declarations]
 begin
   statements
@@ -845,7 +847,43 @@ writeln('Sum: ', n + m)
 | Read a number and keep the rest as text | `read(n); readln(tail)` | `7 rest` gives `n = 7`, `tail = ' rest'`. |
 
 Batch and interactive providers use the same parsing rules. Batch input is supplied
-before Run; interactive input arrives as submitted console lines.
+before Run; interactive input arrives as submitted lines or raw-key chunks.
+
+## Partial CRT unit
+
+`uses crt;` immediately after the program header enables `readkey` or `readkey()`,
+returning one Unicode `char`. Unit names are case-insensitive. No other CRT routines
+are supplied; for example, `clrscr` remains unknown. Unknown units report `E_UNIT`,
+duplicate CRT entries `E_DUPLICATE`, missing CRT on a `readkey` call `E_UNIT`, arguments
+`E_ARGUMENT`, and constant evaluation `E_CONST`. `crt` remains an ordinary name outside
+the unit clause.
+
+```pascal
+program keys;
+uses crt;
+var c: char;
+begin
+  repeat c := readkey; write(c) until c = #27
+end.
+```
+
+| Provider | `readkey` behavior |
+| --- | --- |
+| Batch | Consume the shared supplied-input cursor synchronously; map LF/CRLF delimiters to Enter (13). Literal CR and Escape remain characters. Exhaustion reports `R_INPUT_EOF`. |
+| Interactive | Wait only when buffered input is exhausted. Return printable Unicode, Enter 13, Escape 27, Backspace 8, Tab 9, or Delete 127; ignore unsupported navigation/modifier keys. Shift+Tab leaves the console by normal focus navigation. |
+| Raw paste / IME | Accept committed text once as a chunk; normalize CRLF/LF to CR. No automatic echo; Pascal controls its output. Composition confirmation adds neither a second character nor Enter. |
+
+Key and line reads share accepted input. A key read first consumes any existing line
+remainder/delimiter. Complete CR-delimited raw chunks satisfy subsequent line reads
+without waiting; an unterminated raw suffix appears as the next line editor prefix.
+Enter commits the edited line with normal echo. End input instead delivers the original
+accepted suffix as an unterminated final line, clears the prefilled draft and ignores
+unsubmitted edits without echo. Virtual-file input never consumes console typeahead.
+
+Normalized raw chunks count UTF-8 bytes once, without an extra delimiter. A later line
+credits its already charged prefix once and charges new bytes plus LF. The cumulative
+1 MiB allowance, active-time budget, fresh runs and ordinary storage/lifetime checks
+remain in force. No ANSI sequences or broader terminal/library API are implemented.
 
 ## Virtual files
 
@@ -920,10 +958,10 @@ These controls belong to the example browser integration and exported HTML.
 | **Interactive console** | Default input mode; display output and submitted input in one transcript. |
 | **Run** | Start a fresh execution and input/output state. |
 | **Waiting for input** | Type at the caret directly after the prompt. |
-| Enter | Submit one line, including an empty line. |
-| Backspace/Delete, arrows, Home/End | Edit the active input; previous transcript text stays read-only. |
-| Paste | Insert plain text; line breaks become spaces; do not submit automatically. |
-| IME confirmation | Confirm composition without submitting the line. |
+| Enter (line reads) | Submit one line, including an empty line. |
+| Backspace/Delete, arrows, Home/End (line reads) | Edit the active input; previous transcript text stays read-only. |
+| Paste (line reads) | Insert plain text; line breaks become spaces; do not submit automatically. |
+| IME confirmation (line reads) | Confirm composition without submitting the line. |
 | **End input** | Close input; a subsequent read without available data reports `R_INPUT_EOF`. |
 | **Stop** | Cancel computing or waiting. |
 | **Batch input** | Supply complete input before Run; no JSPI requirement. |
@@ -933,7 +971,8 @@ requires built-in browser JSPI; choose batch input when it is unavailable. Input
 do not count toward the cumulative execution budget, and resuming does not reset it.
 Input echo uses the input allowance rather than the program output allowance. Downloaded
 runnable HTML supports both modes offline via `file://` in a compatible browser. This is
-a line console, without ANSI terminal commands or raw keypress input.
+a line/key console; [readkey](#partial-crt-unit) has no automatic input echo or ANSI
+terminal emulation.
 
 ## Storage, limits, and diagnostics
 
@@ -1000,12 +1039,12 @@ resolution also have bounded complexity. Exceeding a compiler work budget uses
 | Whole arrays/records | Comparison and text output |
 | Numeric/string conversion | Implicit or built-in numeric-to-string/string-to-numeric conversion |
 | External file capabilities | Host/OS access, persistence, file import/export, untyped files and seek/append/erase/rename |
-| Terminal protocols | ANSI terminal commands and raw keypress input |
+| Terminal protocols | ANSI terminal commands, extended navigation-key codes and CRT routines beyond `readkey` |
 
 Reserved built-ins include `trunc`, `round`, `length`, `char`, `chr`, `ord`, `copy`,
 `nil`, `new`, `dispose`, `inc`, `random`, `randomize`, `assign`, `rewrite`, `reset`,
-`close`, `filesize`, `eof`, and `eoln`; `record`, `with`, `set`, `in`, and `file` are also
-reserved. `text` remains a shadowable type identifier.
+`close`, `filesize`, `eof`, `eoln`, and `readkey`; `record`, `with`, `set`, `in`, and `file` are also
+reserved. `uses` is reserved; `text` remains a shadowable type identifier.
 Rename earlier identifiers that use these names.
 
 ## Formal grammar
@@ -1018,7 +1057,8 @@ requirements, type checks, and other constraints are defined in the sections abo
 rather than repeated as grammar rules.
 
 ```text
-program     = "program" identifier ";" declarations compound "." EOF ;
+program     = "program" identifier ";" [units] declarations compound "." EOF ;
+units       = "uses" identifier {"," identifier} ";" ; (* only crt is supported *)
 declarations = {constants | types | variables | routine} ;
 constants   = "const" identifier "=" expression ";" {identifier "=" expression ";"} ;
 types       = "type" identifier "=" type ";" {identifier "=" type ";"} ;
@@ -1082,6 +1122,7 @@ factor      = primary {selector} ;
 primary     = set_constructor | integer_literal | real_literal | text_literal | character_literal | "true" | "false" | "nil" | call | identifier
             | ("real" | "trunc" | "round" | "length" | "chr" | "ord") "(" expression ")"
             | "copy" "(" expression "," expression "," expression ")"
+            | "readkey" ["(" ")"]
             | "random" "(" expression ")"
             | ("filesize" | "eof" | "eoln") "(" file_receiver ")"
             | "(" expression ")" | "not" factor | "@" storage ;

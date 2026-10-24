@@ -262,7 +262,7 @@ invokes them. Each execution owns its input cursor and output limits; failed, st
 or timed-out instances are discarded rather than resumed.
 
 A runtime owns a line queue, offset, and closed/open provider. Batch imports remain
-synchronous. Only fetching an unavailable interactive line may suspend; buffered
+synchronous. Only fetching unavailable interactive input may suspend; buffered
 operations retain synchronous behavior. All modes share parsing/storage helpers. The
 parser lowers multi-field input into sequential reads, with one final discard for
 `readln`; `write` uses output helpers without a newline call.
@@ -331,19 +331,31 @@ Stop/timeout discard the worker. Each Run starts empty even in the same HTML ses
 No browser storage, imports/downloads, filesystem library, WASI or external module is
 needed. Exact limits/protocol and Pascal semantics live in their owning references.
 
-## Planned CRT compatibility
+## Partial CRT compatibility and shared input
 
-CRT support is planned as a built-in compatibility unit exposing a documented subset,
-initially `readkey`. The compiler will emit the required CRT helpers directly into each
-generated program, with matching optional WAT. A separate precompiled Wasm CRT library
-is not required initially. Browser services such as keyboard events still use narrow
-host-runtime imports; emitted Wasm helpers do not access the DOM directly.
+CRT is a built-in compatibility unit exposing only `readkey`. The frontend records the
+unit/call and logical character result; `src/backend/wasm/crt.c` emits a private wrapper
+directly into the program and optional WAT, validating the narrow keyboard import's
+returned scalar. An unused unit emits no helper. A separate precompiled CRT library is
+unnecessary; helpers can move to a module later if the subset grows, preserving the
+Pascal interface. Unknown units/routines remain compile-time errors.
 
-If CRT support grows, its helpers can be extracted into a separate module while
-preserving the Pascal-facing interface. Accepting `uses crt;` will expose only supported
-declarations, without implying full CRT compatibility; unavailable routines remain
-compile-time errors. This describes future implementation direction, not current
-language support.
+The runtime owns a bounded raw chunk/offset alongside its line cursor. Buffered lines
+have priority; LF/CRLF delimiters become Enter for key reads. A later line read promotes
+a complete queued CR-delimited line synchronously, or transfers its unterminated suffix
+to a provider/editor prefix. Prefix credit prevents double input accounting; End input
+preserves only already accepted bytes. Closed virtual-file cursor contexts cannot drain
+the console queue. Runtime completion and worker disposal release typeahead.
+
+The worker requests distinguish line/key and carry a prefix without changing run/request
+identity checks. The same JSPI instance preserves stack, frames, file groups and borrows.
+The renderer submits raw printable text from `beforeinput`, controls from `keydown`,
+and committed paste/IME chunks once, without transcript echo. Composition guards handle
+late final insertions and confirming Enter. Line editing retains its native behavior;
+raw navigation is ignored and Shift+Tab permits leaving the console. All display text is
+inert. Only genuine human waits pause the active-time watchdog; buffered work is charged.
+No ANSI library, precompiled module or new external dependency is involved. Exports
+embed these same functions, retaining both batch and interactive operation offline.
 
 ## Platform references
 

@@ -153,6 +153,7 @@ async function main() {
     await verifySetWrites(compile);
     await verifyVariantWrites(compile);
     await require('./file.js')(compile);
+    await require('./keyboard.js')(compile);
     const version = fs.readFileSync(path.join(__dirname, '../VERSION'), 'utf8').trim();
     assert.equal(compile.version, version, 'Wasm compiler embeds VERSION');
     assert.equal(tool(nativeExecutable, ['--version']).stdout, `Pas2Wasm ${version}\n`);

@@ -146,6 +146,7 @@ typedef enum {
     EX_FILE_SIZE,
     EX_FILE_EOF,
     EX_FILE_EOLN,
+    EX_READKEY,
     EX_REAL,
     EX_RANDOM,
     EX_RANGE_CHECK,
@@ -333,6 +334,7 @@ typedef struct {
     int has_variants;
     int has_addresses;
     int has_files;
+    int uses_crt, has_readkey; /* A unit declaration alone emits no CRT helper. */
     Routine *routines, *root_routines;
     size_t symbol_head; /* Global declaration chain; SIZE_MAX ends every chain. */
     Stmt *body;

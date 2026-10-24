@@ -23,6 +23,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
 
     let memory = null, position = 0, offset = 0, outputBytes = 0;
     let closed = !requestLine, inputBytes = encoder.encode(input).length;
+    let keyQueue = '', keyOffset = 0; // Accepted raw chunks share the cumulative input allowance.
     let lines = input === '' ? [] : input.split(/\r?\n/);
     if (input.endsWith('\n')) lines.pop();
     let terminated = lines.map((_, i) => i < lines.length - 1 || input.endsWith('\n'));
@@ -142,22 +143,60 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             fail(limitCode, 'Formatted output exceeds its byte budget.', line, column);
         return ' '.repeat(padding) + text;
     }
-    /* Fetch one line only when needed. The optional provider owns delivery, not
-     * parsing; null closes it permanently. Batch imports never return Promises. */
+    /* Release consumed chunk storage promptly; offsets count UTF-16 units while
+     * each delivered value is a complete Unicode scalar. */
+    function consumeKeys(units) {
+        keyOffset += units;
+        if (keyOffset === keyQueue.length) {keyQueue = '';keyOffset = 0;}
+    }
+    /* Fetch a line only when needed. Complete queued key lines stay synchronous;
+     * an unfinished suffix is offered to the line editor as an already paid prefix.
+     * File cursors set closed=true, so they never consume this console queue. */
     function ensureLine(line, column) {
         if (position < lines.length) return;
+        let prefix = '';
+        if (!closed && keyQueue) {
+            const end = keyQueue.indexOf('\r',keyOffset);
+            if (end >= 0) {
+                lines.push(keyQueue.slice(keyOffset,end)); terminated.push(true);
+                consumeKeys(end-keyOffset+1); return;
+            }
+            prefix = keyQueue.slice(keyOffset); consumeKeys(keyQueue.length-keyOffset);
+        }
         if (closed) fail('R_INPUT_EOF', 'Program input is exhausted.', line, column);
-        return Promise.resolve(requestLine(line, column)).then(text => {
+        return Promise.resolve(requestLine(line, column, 'line', prefix)).then(text => {
             if (text === null) {
                 closed = true;
+                if (prefix) {lines.push(prefix);terminated.push(false);return;}
                 fail('R_INPUT_EOF', 'Program input is exhausted.', line, column);
             }
             if (typeof text !== 'string' || /[\r\n]/.test(text))
                 fail('R_INPUT_INVALID', 'Expected one submitted input line.', line, column);
-            inputBytes += encoder.encode(text).length + 1;
+            inputBytes += Math.max(0,encoder.encode(text).length-encoder.encode(prefix).length) + 1;
             if (inputBytes > inputLimit) fail('R_INPUT_LIMIT', 'Program input exceeds the input limit.', line, column);
-            lines.push(text);
-            terminated.push(true);
+            lines.push(text); terminated.push(true);
+        });
+    }
+    /* CRT keys consume buffered console input before asking the live provider.
+     * Raw chunks have no synthetic delimiter or echo, and remain bounded/validated. */
+    function readKey(line, column) {
+        if (position < lines.length)
+            return mapped(streamCharacter(0,line,column), value=>value === 10 ? 13 : value);
+        if (keyQueue) {
+            const value = keyQueue.codePointAt(keyOffset);
+            consumeKeys(value > 0xffff ? 2 : 1); return value;
+        }
+        if (closed) fail('R_INPUT_EOF','Program input is exhausted.',line,column);
+        return Promise.resolve(requestLine(line,column,'key','')).then(text=> {
+            if (text === null) {closed = true;fail('R_INPUT_EOF','Program input is exhausted.',line,column);}
+            if (typeof text !== 'string' || !text.length)
+                fail('R_INPUT_INVALID','Expected a nonempty key chunk.',line,column);
+            text = text.replace(/\r\n|\n/g,'\r');
+            const value = inputValue(text,line,column);
+            inputBytes += value.length;
+            if (inputBytes > inputLimit) fail('R_INPUT_LIMIT','Program input exceeds the input limit.',line,column);
+            keyQueue = text; keyOffset = 0;
+            return readKey(line,column);
         });
     }
     /* Map a possibly suspended operation without making batch callers async. */
@@ -675,6 +714,12 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         for (const binding of fileBindings.values()) dropFileBinding(binding);
         virtualFiles.clear(); fileBytes = 0; openFiles = 0;
     }
+    /* Abandoning a worker/embedding releases accepted typeahead as well as files.
+     * File-only finish stays separate so virtual I/O never changes console state. */
+    function finishRuntime() {
+        finishFiles(); keyQueue = ''; keyOffset = 0;
+        lines = []; terminated = []; position = offset = 0; closed = true;
+    }
     /* Stale heap owners release their bindings before any capacity/open-mode check.
      * Frames retire their own small sets directly, avoiding scans on routine return. */
     function collectFiles() {
@@ -816,6 +861,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     }
     /* ABI record: name/signature pairs are documented in docs/runtime-abi.md. */
     const imports = {
+        key_i32:readKey,
         file_assign:assignFile,
         file_control:controlFile,
         file_begin(target, mode, line, column) {
@@ -1108,13 +1154,14 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             fail(entry[0], entry[1], line, column);
         }
     };
-    return {imports, finish:finishFiles,
+    return {imports, finish:finishRuntime,
         /* Bind only the freshly instantiated generated program's bounded memory. */
         attach(instance) {
             finishFiles(); fileSequence = 0;
             memory = instance.exports.memory;
             variantSchemas.clear(); variantSchemaBytes = 0;
             references.clear(); referenceKeys.clear(); frames.clear(); referenceSequence = 0;
+            keyQueue = ''; keyOffset = 0;
             if (!(memory instanceof WebAssembly.Memory) || memory.buffer.byteLength > 67108864)
                 fail('R_MEMORY', 'Program memory exceeds 64 MiB or is missing.');
         }
@@ -1150,12 +1197,12 @@ function pas2WasmProgramWorker() {
                 flushedAt = performance.now();
             }
         }
-        /* A provider requests one line. The runtime handles limits and EOF. */
-        function requestLine(line, column) {
+        /* Kind/prefix extend the line protocol without changing run/request guards. */
+        function requestLine(line, column, kind = 'line', prefix = '') {
             flush();
             return new Promise(resolve => {
                 waiting = {id:++sequence, resolve};
-                postMessage({type:'input-request', id:runId, requestId:waiting.id, line, column});
+                postMessage({type:'input-request', id:runId, requestId:waiting.id, line, column, kind, prefix});
             });
         }
         let runtime;
@@ -1173,7 +1220,7 @@ function pas2WasmProgramWorker() {
             const imports = {...runtime.imports};
             if (data.interactive) {
                 for (const name of ['read_i32','read_f64','read_char','string_read','discard_line',
-                    'stream_i32','stream_f64','stream_char','stream_string','variant_read_string'])
+                    'stream_i32','stream_f64','stream_char','stream_string','variant_read_string','key_i32'])
                     imports[name] = new WebAssembly.Suspending(imports[name]);
             }
             const {instance} = await WebAssembly.instantiate(data.binary, {pas2wasm_v1:imports});

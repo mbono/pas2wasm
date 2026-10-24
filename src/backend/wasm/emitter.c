@@ -7,6 +7,7 @@
 #include "variant.h"
 #include "reference.h"
 #include "file.h"
+#include "crt.h"
 #include "ir/number.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,12 +90,18 @@ static const Import imports[] = {{"write_utf8", "ii", 0},
                                  {"file_text_char", "iiii", 0x7f},
                                  {"file_text_string", "iiiiiii", 0},
                                  {"file_text_discard", "iii", 0},
-                                 {"file_finish", "", 0}};
+                                 {"file_finish", "", 0},
+                                 {"key_i32", "ii", 0x7f}};
 enum {
     IMPORT_COUNT = sizeof(imports) / sizeof(*imports),
     RUN_TYPE = IMPORT_COUNT,
     ROUTINE_TYPE_BASE = IMPORT_COUNT + 1
 };
+
+size_t crt_index(const Wasm *w)
+{
+    return IMPORT_COUNT + 1 + w->program->routine_count + (w->heap ? HEAP_HELPER_COUNT : 0);
+}
 
 /* All heap ownership helpers are module-private functions after Pascal routines. */
 size_t heap_index(const Wasm *w, unsigned helper)
@@ -717,6 +724,12 @@ static void emit_expression(Wasm *w, const Expr *e)
         e->kind == EX_LENGTH || e->kind == EX_CHARACTER_STRING || e->kind == EX_SLICE ||
         (e->kind != EX_CALL && e->left && e->left->type->kind == TYPE_KIND_STRING)) {
         string_expression(w, e);
+        return;
+    }
+    if (e->kind == EX_READKEY) {
+        constant(w, 0, e->line);
+        constant(w, 0, e->column);
+        indexed(w, 0x10, "call", crt_index(w));
         return;
     }
     if (e->kind == EX_FILE_SIZE || e->kind == EX_FILE_EOF || e->kind == EX_FILE_EOLN) {
@@ -2153,13 +2166,17 @@ static void module_header(Buffer *binary, const Program *program, int heap)
         uleb(&payload, i);
     }
     section(binary, 2, &payload);
-    uleb(&payload, 1 + program->routine_count + (heap ? HEAP_HELPER_COUNT : 0));
+    uleb(&payload,
+         1 + program->routine_count + (heap ? HEAP_HELPER_COUNT : 0) + program->has_readkey);
     uleb(&payload, RUN_TYPE);
     for (const Routine *r = program->routines; r; r = r->next) {
         uleb(&payload, ROUTINE_TYPE_BASE + r->index);
     }
     for (unsigned i = 0; heap && i < HEAP_HELPER_COUNT; ++i) {
         uleb(&payload, ROUTINE_TYPE_BASE + program->routine_count + i);
+    }
+    if (program->has_readkey) {
+        uleb(&payload, CRT_KEY_IMPORT); /* Same (line,column)->scalar signature as its import. */
     }
     section(binary, 3, &payload);
 }
@@ -2607,13 +2624,17 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
         return 0;
     }
     Buffer bodies = {0}, functions = {0}, payload = {0};
-    uleb(&bodies, 1 + program->routine_count + (w.heap ? HEAP_HELPER_COUNT : 0));
+    uleb(&bodies,
+         1 + program->routine_count + (w.heap ? HEAP_HELPER_COUNT : 0) + program->has_readkey);
     emit_function(&w, NULL, &bodies, &functions);
     for (const Routine *routine = program->routines; routine; routine = routine->next) {
         emit_function(&w, routine, &bodies, &functions);
     }
     if (w.heap) {
         heap_emit(&w, &bodies, &functions);
+    }
+    if (program->has_readkey) {
+        crt_emit(&w, &bodies, &functions);
     }
     unsigned pages = (unsigned)((w.layout.stack_limit + 65535) / 65536);
     if (!pages) {

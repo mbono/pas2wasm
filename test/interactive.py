@@ -114,7 +114,7 @@ def verify_workers(browser, compile_native, legacy):
     return examples
 
 
-def verify_clock(browser):
+def verify_clock(browser, kind='line'):
     """Exercise the production session budget using real worker busy intervals.
 
     A protocol fixture supplies three 140ms active segments and two 500ms waits.
@@ -123,11 +123,12 @@ def verify_clock(browser):
     """
     result = browser.page_async('''const done=arguments[arguments.length-1];
         const original=window.pas2WasmWorkerSource;
+        const kind=arguments[0];
         window.pas2WasmWorkerSource=()=>`let id,request=0;onmessage=({data})=>{
             if(data.type==='run')id=data.id;
             postMessage({type:'running',id});
             const end=performance.now()+140;while(performance.now()<end){}
-            if(++request<3)postMessage({type:'input-request',id,requestId:request});
+            if(++request<3)postMessage({type:'input-request',id,requestId:request,kind:${JSON.stringify(kind)}});
             else postMessage({type:'done',id});
         };`;
         let waits=0,diagnostic=null;
@@ -136,7 +137,7 @@ def verify_clock(browser):
             if(state==='Failed'||state==='Completed')done({state,diagnostic,waits});
         }},350);
         try{session.run(new Uint8Array(),'',true);}finally{window.pas2WasmWorkerSource=original;}
-        ''')
+        ''', kind)
     assert result['state'] == 'Failed' and result['diagnostic']['code'] == 'R_TIMEOUT',result
     assert result['waits'] == 2,result
 

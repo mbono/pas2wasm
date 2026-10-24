@@ -6032,13 +6032,13 @@
     },
     {
         "name": "tutorial_parametri",
-        "source": "program parametri;\nprocedure foo(a,b: integer; var c: integer);\n{a e b sono parametri valore mentre c è variabile}\nbegin\n\ta := a * a;\t{modifica locale}\n\twriteln('local a = ', a);\n\tb := b * b;\t{modifica locale}\n\twriteln('local b = ', b);\n\tc := a + b;\t{modifica globale}\n\twriteln('local c = ', c);\nend;\nvar a, b, c: integer;\nbegin\n\ta := 10;\n\tb := 5;\n\tc := 0;\n\tfoo(a, b, c);\n\twriteln('global a = ', a);\n\twriteln('global b = ', b);\n\twriteln('global c = ', c);\n\t{\n\tdopo questa chiamata abbiamo:\n\tc = 125\n\ta = 10\n\tb = 5\n\ti valori di a e b sono invariati mentre quello di c è stato\n\tmodificato\n\t}\nend.\n",
+        "source": "program parametri;\nprocedure foo(a,b: integer; var c: integer);\n{a e b sono parametri valore mentre c \u00e8 variabile}\nbegin\n\ta := a * a;\t{modifica locale}\n\twriteln('local a = ', a);\n\tb := b * b;\t{modifica locale}\n\twriteln('local b = ', b);\n\tc := a + b;\t{modifica globale}\n\twriteln('local c = ', c);\nend;\nvar a, b, c: integer;\nbegin\n\ta := 10;\n\tb := 5;\n\tc := 0;\n\tfoo(a, b, c);\n\twriteln('global a = ', a);\n\twriteln('global b = ', b);\n\twriteln('global c = ', c);\n\t{\n\tdopo questa chiamata abbiamo:\n\tc = 125\n\ta = 10\n\tb = 5\n\ti valori di a e b sono invariati mentre quello di c \u00e8 stato\n\tmodificato\n\t}\nend.\n",
         "output": "local a = 100\nlocal b = 25\nlocal c = 125\nglobal a = 10\nglobal b = 5\nglobal c = 125\n",
         "portable": true
     },
     {
         "name": "tutorial_subroutine",
-        "source": "program subroutine_test;\n\nfunction somma(a, b: integer): integer;\nbegin\n\tsomma := a + b;\nend;\n\nprocedure stampa_somma(a, b: integer);\nbegin\n\twriteln(a, ' + ', b, ' = ', a + b);\nend;\n\nfunction sqr(a: integer): integer;\nbegin\n\tsqr := a * a;\nend;\n\nprocedure foo(a,b: integer; var c: integer);\n{a e b sono parametri valore mentre c è variabile}\nbegin\n\ta := a * a;\t{modifica locale}\n\tb := b * b;\t{modifica locale}\n\tc := a + b;\t{modifica globale}\nend;\n\nvar a, b, n: integer;\nbegin\n\twriteln('inserisci due numeri:');\n\treadln(a, b);\n\tn := somma(a, b);\n\twriteln(a, ' + ', b, ' = ', a + b);\n\twriteln(a, ' + ', b, ' = ', somma(a, b));\n\tstampa_somma(a, b);\n\tfoo(a, b, n);\n\twriteln(a, ' ', b,' ', n);\nend.\n",
+        "source": "program subroutine_test;\n\nfunction somma(a, b: integer): integer;\nbegin\n\tsomma := a + b;\nend;\n\nprocedure stampa_somma(a, b: integer);\nbegin\n\twriteln(a, ' + ', b, ' = ', a + b);\nend;\n\nfunction sqr(a: integer): integer;\nbegin\n\tsqr := a * a;\nend;\n\nprocedure foo(a,b: integer; var c: integer);\n{a e b sono parametri valore mentre c \u00e8 variabile}\nbegin\n\ta := a * a;\t{modifica locale}\n\tb := b * b;\t{modifica locale}\n\tc := a + b;\t{modifica globale}\nend;\n\nvar a, b, n: integer;\nbegin\n\twriteln('inserisci due numeri:');\n\treadln(a, b);\n\tn := somma(a, b);\n\twriteln(a, ' + ', b, ' = ', a + b);\n\twriteln(a, ' + ', b, ' = ', somma(a, b));\n\tstampa_somma(a, b);\n\tfoo(a, b, n);\n\twriteln(a, ' ', b,' ', n);\nend.\n",
         "input": "2 3\n",
         "output": "inserisci due numeri:\n2 + 3 = 5\n2 + 3 = 5\n2 + 3 = 5\n2 3 13\n",
         "portable": true
@@ -6162,7 +6162,7 @@
     },
     {
         "name": "character_string_unicode",
-        "source": "program p; var c:char; s:string; begin c:='😀'; s:='😀x'; writeln(c<s,s>c,c='😀',chr(233)<'😀') end.",
+        "source": "program p; var c:char; s:string; begin c:='\ud83d\ude00'; s:='\ud83d\ude00x'; writeln(c<s,s>c,c='\ud83d\ude00',chr(233)<'\ud83d\ude00') end.",
         "output": "TRUETRUETRUETRUE\n"
     },
     {
@@ -6205,8 +6205,8 @@
     },
     {
         "name": "format_scalar_types",
-        "source": "program p; begin writeln('[',12:5,']',-123:2,'[',true:6,']','é😀':4,'[',chr(128512):3,']') end.",
-        "output": "[   12]-123[  TRUE]  é😀[  😀]\n"
+        "source": "program p; begin writeln('[',12:5,']',-123:2,'[',true:6,']','\u00e9\ud83d\ude00':4,'[',chr(128512):3,']') end.",
+        "output": "[   12]-123[  TRUE]  \u00e9\ud83d\ude00[  \ud83d\ude00]\n"
     },
     {
         "name": "format_ascii_types",
@@ -6435,14 +6435,14 @@
     },
     {
         "name": "matrix_record_copy",
-        "source": "program p; type RecordValue=record m:array[1..2,1..2] of string[4] end; var r,c:RecordValue; begin r.m[1,2]:='é'; c:=r; r.m[1,2]:='x'; writeln(c.m[1][2]) end.",
-        "output": "é\n",
+        "source": "program p; type RecordValue=record m:array[1..2,1..2] of string[4] end; var r,c:RecordValue; begin r.m[1,2]:='\u00e9'; c:=r; r.m[1,2]:='x'; writeln(c.m[1][2]) end.",
+        "output": "\u00e9\n",
         "portable": true
     },
     {
         "name": "matrix_string_comma",
-        "source": "program p; var s:array[1..2] of string[8]; begin s[1]:='ab'; s[1,2]:='é'; writeln(s[1,2],s[1]) end.",
-        "output": "éaé\n"
+        "source": "program p; var s:array[1..2] of string[8]; begin s[1]:='ab'; s[1,2]:='\u00e9'; writeln(s[1,2],s[1]) end.",
+        "output": "\u00e9a\u00e9\n"
     },
     {
         "name": "matrix_index_once",
@@ -6539,7 +6539,7 @@
     {
         "name": "numeric_character_unicode",
         "source": "program p; begin writeln(#128512,#233,ord(#1114111)) end.",
-        "output": "😀é1114111\n"
+        "output": "\ud83d\ude00\u00e91114111\n"
     },
     {
         "name": "numeric_character_constant",
@@ -6625,7 +6625,7 @@
     {
         "name": "subrange_unicode",
         "source": "program p; type Faces=#128512..#128515; var value:Faces; begin value:=#128513; writeln(value,ord(value),value>=#128512) end.",
-        "output": "😁128513TRUE\n"
+        "output": "\ud83d\ude01128513TRUE\n"
     },
     {
         "name": "subrange_inline",
@@ -7035,7 +7035,7 @@
     },
     {
         "name": "ordinal_character_unicode_array",
-        "source": "program p; var a:array[#128512..#128514] of integer; begin a[#128513]:=7; writeln(a['😁']) end.",
+        "source": "program p; var a:array[#128512..#128514] of integer; begin a[#128513]:=7; writeln(a['\ud83d\ude01']) end.",
         "output": "7\n"
     },
     {
@@ -7335,7 +7335,7 @@
     },
     {
         "name": "set_unicode_domain",
-        "source": "program p; type Faces=set of #128512..#128514; var a:Faces; begin a:=[#128512,#128514]; writeln('😀' in a,'😁' in a,'😂' in a,a=[#128512,#128514]) end.",
+        "source": "program p; type Faces=set of #128512..#128514; var a:Faces; begin a:=[#128512,#128514]; writeln('\ud83d\ude00' in a,'\ud83d\ude01' in a,'\ud83d\ude02' in a,a=[#128512,#128514]) end.",
         "output": "TRUEFALSETRUETRUE\n"
     },
     {
@@ -9205,5 +9205,262 @@
         "name": "file_opaque_names",
         "source": "program p; var f:text; s:string[16]; begin assign(f,'../PC/path'); rewrite(f); write(f,'virtual'); close(f); reset(f); readln(f,s); writeln(s) end.",
         "output": "virtual\n"
+    },
+    {
+        "name": "crt_unit_only",
+        "source": "program p; uses crt; begin writeln(1) end.",
+        "output": "1\n",
+        "input": ""
+    },
+    {
+        "name": "crt_case_insensitive",
+        "source": "program p; uSeS CrT; var crt:integer; begin crt:=2; writeln(crt,ord(ReAdKeY())) end.",
+        "output": "265\n",
+        "input": "A"
+    },
+    {
+        "name": "crt_controls",
+        "source": "program p; uses crt; begin writeln(ord(readkey),ord(readkey()),ord(readkey)) end.",
+        "output": "651327\n",
+        "input": "A\n\u001b"
+    },
+    {
+        "name": "crt_all_controls",
+        "source": "program p; uses crt; begin writeln(ord(readkey),',',ord(readkey),',',ord(readkey),',',ord(readkey),',',ord(readkey)) end.",
+        "output": "0,8,9,127,13\n",
+        "input": "\u0000\b\t\u007f\r"
+    },
+    {
+        "name": "crt_crlf_single_key",
+        "source": "program p; uses crt; begin writeln(ord(readkey),ord(readkey)) end.",
+        "output": "1365\n",
+        "input": "\r\nA"
+    },
+    {
+        "name": "crt_unicode",
+        "source": "program p; uses crt; begin writeln(readkey,readkey,readkey) end.",
+        "output": "\u00e9\ud83d\ude00\ufeff\n",
+        "input": "\u00e9\ud83d\ude00\ufeff"
+    },
+    {
+        "name": "crt_line_remainder",
+        "source": "program p; uses crt; var n:integer; begin read(n); writeln(n,ord(readkey),readkey,ord(readkey)) end.",
+        "output": "1232x13\n",
+        "input": "12 x\n"
+    },
+    {
+        "name": "crt_line_then_key",
+        "source": "program p; uses crt; var n:integer; begin readln(n); writeln(n,readkey) end.",
+        "output": "12z\n",
+        "input": "12 discarded\nz"
+    },
+    {
+        "name": "crt_key_then_line",
+        "source": "program p; uses crt; var s:string[8]; begin write(readkey); readln(s); writeln(s) end.",
+        "output": "abc\n",
+        "input": "abc\n"
+    },
+    {
+        "name": "crt_key_then_number",
+        "source": "program p; uses crt; var n:integer; begin write(readkey); readln(n); writeln(n) end.",
+        "output": "x42\n",
+        "input": "x42\n"
+    },
+    {
+        "name": "crt_buffered_newline",
+        "source": "program p; uses crt; var s:string[8]; begin write(readkey); read(s); writeln(s,ord(readkey)) end.",
+        "output": "abc13\n",
+        "input": "abc\n"
+    },
+    {
+        "name": "crt_recursive_keys",
+        "source": "program p; uses crt; procedure t(n:integer); var c:char; begin c:=readkey; if n>0 then t(n-1); write(c) end; begin t(2) end.",
+        "output": "cba",
+        "input": "abc"
+    },
+    {
+        "name": "crt_character_result",
+        "source": "program p; uses crt; function take:char; begin take:=readkey end; begin writeln(take(),take()) end.",
+        "output": "ab\n",
+        "input": "ab"
+    },
+    {
+        "name": "crt_constant_rejected",
+        "source": "program p; uses crt; const c=readkey; begin end.",
+        "error": "E_CONST"
+    },
+    {
+        "name": "crt_missing_unit",
+        "source": "program p; begin writeln(readkey) end.",
+        "error": "E_UNIT"
+    },
+    {
+        "name": "crt_unknown_unit",
+        "source": "program p; uses sysutils; begin end.",
+        "error": "E_UNIT"
+    },
+    {
+        "name": "crt_unknown_second_unit",
+        "source": "program p; uses crt,sysutils; begin end.",
+        "error": "E_UNIT"
+    },
+    {
+        "name": "crt_duplicate_unit",
+        "source": "program p; uses crt,CRT; begin end.",
+        "error": "E_DUPLICATE"
+    },
+    {
+        "name": "crt_arguments_rejected",
+        "source": "program p; uses crt; begin writeln(readkey(1)) end.",
+        "error": "E_ARGUMENT"
+    },
+    {
+        "name": "crt_unsupported_library",
+        "source": "program p; uses crt; begin clrscr end.",
+        "error": "E_UNKNOWN"
+    },
+    {
+        "name": "crt_address_rejected",
+        "source": "program p; uses crt; var q:^char; begin q:=@readkey end.",
+        "error": "E_LVALUE"
+    },
+    {
+        "name": "crt_wrong_type",
+        "source": "program p; uses crt; var n:integer; begin n:=readkey end.",
+        "error": "E_TYPE"
+    },
+    {
+        "name": "crt_eof",
+        "source": "program p; uses crt; begin writeln(readkey) end.",
+        "output": "",
+        "input": "",
+        "runtime": "R_INPUT_EOF"
+    },
+    {
+        "name": "crt_eof_after_value",
+        "source": "program p; uses crt; begin write(readkey); writeln(readkey) end.",
+        "output": "a",
+        "input": "a",
+        "runtime": "R_INPUT_EOF"
+    },
+    {
+        "name": "crt_heap_destination",
+        "source": "program p; uses crt; var q:^char; begin new(q); q^:=readkey; writeln(q^); dispose(q) end.",
+        "output": "\ud83d\ude00\n",
+        "input": "\ud83d\ude00"
+    },
+    {
+        "name": "crt_character_view",
+        "source": "program p; uses crt; var s:string[8]; q:^char; begin s:='ab'; q:=@s[2]; q^:=readkey; writeln(s) end.",
+        "output": "a\ud83d\ude00\n",
+        "input": "\ud83d\ude00"
+    },
+    {
+        "name": "crt_character_capacity",
+        "source": "program p; uses crt; var s:string[2]; q:^char; begin s:='ab'; q:=@s[2]; q^:=readkey end.",
+        "output": "",
+        "input": "\ud83d\ude00",
+        "runtime": "R_STRING_CAPACITY"
+    },
+    {
+        "name": "crt_counter_guard",
+        "source": "program p; uses crt; var n:integer; q:^integer; begin q:=@n; for n:=1 to 2 do q^:=ord(readkey) end.",
+        "output": "",
+        "input": "",
+        "runtime": "R_FOR_CONTROL"
+    },
+    {
+        "name": "crt_subrange_guard",
+        "source": "program p; uses crt; var c:'a'..'c'; begin c:=readkey end.",
+        "output": "",
+        "input": "z",
+        "runtime": "R_RANGE"
+    },
+    {
+        "name": "crt_formatted",
+        "source": "program p; uses crt; begin writeln(readkey:3,readkey:2) end.",
+        "output": "  \u00e9 \ud83d\ude00\n",
+        "input": "\u00e9\ud83d\ude00"
+    },
+    {
+        "name": "crt_typed_file_value",
+        "source": "program p; uses crt; var f:file of char; c:char; begin assign(f,'x'); rewrite(f); write(f,readkey,readkey); close(f); reset(f); read(f,c); write(c); read(f,c); writeln(c) end.",
+        "output": "ab\n",
+        "input": "ab"
+    },
+    {
+        "name": "crt_file_cursor_isolated",
+        "source": "program p; uses crt; var f:text; s:string[8]; begin assign(f,'x'); rewrite(f); writeln(f,'file'); close(f); reset(f); write(readkey); readln(f,s); writeln(s); writeln(readkey) end.",
+        "output": "afile\nb\n",
+        "input": "ab"
+    },
+    {
+        "name": "tutorial_textfiles",
+        "source": "program prova_text;\nuses crt;\nvar\n\tt: text;\n\tc: char;\nbegin\n\t(*creazione e apertura in scrittura*)\n\tassign(t,'testo.txt');\n\trewrite(t);\n\t(*fase di scrittura testo*)\n\twriteln('inserire un testo (premere esc per terminare)');\n\twriteln;\n\tc:= readkey;\n\t(* #27 e #13 corrispondono a esc ed invio*)\n\twhile (c <> #27) do begin\n\t\tif ( c = #13) then begin\n\t\t\twriteln(t);\n\t\t\twriteln;\n\t\tend\n\t\telse begin\n\t\t\twrite(t,c);\n\t\t\twrite(c);\n\t\tend;\n\t\tc := readkey;\n\tend;\n\tclose(t);\n\t(*apertura in lettura*)\n\treset(t);\n\t(*lettura del testo*)\n\twriteln;\n\twriteln('il testo inserito \u00e8 il seguente :');\n\twriteln;\n\twhile (not eof(t)) do begin\n\t\tif (eoln(t)) then begin\n\t\t\treadln(t);\n\t\t\twriteln;\n\t\tend\n\t\telse begin\n\t\t\tread(t,c);\n\t\t\twrite(c);\n\t\tend;\n\tend;\n\tclose(t);\nend.\n",
+        "input": "ciao\n\u00e9\ud83d\ude00\u001b",
+        "output": "inserire un testo (premere esc per terminare)\n\nciao\n\u00e9\ud83d\ude00\nil testo inserito \u00e8 il seguente :\n\nciao\n\u00e9\ud83d\ude00"
+    },
+    {
+        "name": "crt_live_controls",
+        "source": "program p; uses crt; var i:integer; begin write('Keys: '); for i:=1 to 7 do writeln(ord(readkey)) end.",
+        "input": "a\r\u001b\b\t\u007f\ud83d\ude00",
+        "output": "Keys: 97\n13\n27\n8\n9\n127\n128512\n"
+    },
+    {
+        "name": "crt_live_chunk",
+        "source": "program p; uses crt; var i:integer; begin for i:=1 to 9 do writeln(ord(readkey)) end.",
+        "input": "<img>\u00e9\ud83d\ude00\n\u001b",
+        "output": "60\n105\n109\n103\n62\n233\n128512\n13\n27\n"
+    },
+    {
+        "name": "crt_live_complete_line",
+        "source": "program p; uses crt; var n:integer; begin writeln(ord(readkey)); readln(n); writeln(n); writeln(ord(readkey)) end.",
+        "input": "x42\nZ",
+        "output": "120\n42\n90\n"
+    },
+    {
+        "name": "crt_live_prefix",
+        "source": "program p; uses crt; var s:string; begin writeln(ord(readkey)); readln(s); writeln(s); writeln(ord(readkey)) end.",
+        "input": "abcD\n\u001b",
+        "output": "97\nbcD\n27\n"
+    },
+    {
+        "name": "crt_live_prefix_eof",
+        "source": "program p; uses crt; var s:string; begin writeln(ord(readkey)); readln(s); writeln(s) end.",
+        "input": "abc",
+        "output": "97\nbc\n"
+    },
+    {
+        "name": "crt_live_eof",
+        "source": "program p; uses crt; begin write('Key: '); writeln(ord(readkey)) end.",
+        "input": "",
+        "output": "Key: ",
+        "runtime": "R_INPUT_EOF",
+        "runtimeLine": 1,
+        "runtimeColumn": 56
+    },
+    {
+        "name": "crt_live_composition",
+        "source": "program p; uses crt; var i:integer; begin for i:=1 to 3 do writeln(ord(readkey)) end.",
+        "input": "\u00e9\ud83d\ude00\u001b",
+        "output": "233\n128512\n27\n"
+    },
+    {
+        "name": "crt_live_borrowed_character",
+        "source": "program p; uses crt; type R=record s:string[8] end; PRef=^R; var v:PRef; procedure accept(var c:char); begin c:=readkey end; begin new(v); v^.s:='abc'; accept(v^.s[2]); writeln(v^.s); dispose(v) end.",
+        "input": "\u00e9",
+        "output": "a\u00e9c\n"
+    },
+    {
+        "name": "crt_live_variant_with",
+        "source": "program p; uses crt; type R=record case boolean of true:(c:char); false:(n:integer) end; var v:R; begin v.n:=7; with v do c:=readkey; writeln(v.c) end.",
+        "input": "Z",
+        "output": "Z\n"
+    },
+    {
+        "name": "crt_live_file_group",
+        "source": "program p; uses crt; var f:text; s:string; begin assign(f,'result'); rewrite(f); write(f,readkey,readkey); close(f); reset(f); readln(f,s); writeln(s); close(f) end.",
+        "input": "xy",
+        "output": "xy\n"
     }
 ]

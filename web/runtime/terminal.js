@@ -26,6 +26,7 @@ function createPas2WasmTerminal(view, history, editor, submit) {
     const committed = document.createTextNode('');
     history.replaceChildren(committed);
     let active = false, composing = false, compositionEnter = false;
+    let inputKind = 'line', prefilled = false, compositionCommit = null;
     /* A selection is editable only when both endpoints belong to the tail. */
     function inside(selection) {
         return selection && selection.rangeCount && editor.contains(selection.anchorNode) &&
@@ -50,14 +51,34 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         if (follow || force) view.scrollTop = view.scrollHeight;
     }
     /* Toggle only the editing root; a disabled tail has no active caret/tab stop. */
-    function waiting(value) {
-        active = value; composing = compositionEnter = false;
+    function waiting(value, kind = 'line', prefix, end = false) {
+        if (!value && (inputKind === 'key' || (prefilled && end))) editor.replaceChildren();
+        if (value) {
+            inputKind = kind;
+            prefilled = kind === 'line' && typeof prefix === 'string' && prefix.length > 0;
+            if (prefilled) editor.textContent = prefix;
+        }
+        // A new worker request can arrive before an IME's final Enter event.
+        // Keep that guard until keyup/new keydown, including across suspension.
+        active = value; composing = false;
         editor.contentEditable = value ? 'plaintext-only' : 'false';
         editor.setAttribute('aria-disabled', String(!value));
+        editor.setAttribute('aria-label',inputKind === 'key' ? 'Console key input' : 'Console input line');
         editor.tabIndex = value ? 0 : -1;
         view.tabIndex = value ? -1 : 0;
-        if (value) { focus(); view.scrollTop = view.scrollHeight; }
+        if (value) {
+            focus();
+            if (prefilled) window.getSelection().collapse(editor,editor.childNodes.length);
+            view.scrollTop = view.scrollHeight;
+        }
         else if (document.activeElement === editor) editor.blur();
+    }
+    /* Raw chunks never enter transcript history. The runtime owns typeahead and
+     * returns buffered keys before it sends another human-input request. */
+    function keys(text) {
+        if (!active || composing || !text) return;
+        editor.replaceChildren();
+        submit(text);
     }
     /* Freeze once after the session accepts the line; output arrives in later tasks. */
     function enter() {
@@ -87,7 +108,18 @@ function createPas2WasmTerminal(view, history, editor, submit) {
             if (event.key === 'Enter' || event.keyCode === 229) compositionEnter = true;
             return;
         }
-        compositionEnter = false;
+        compositionEnter = false; compositionCommit = null;
+        if (inputKind === 'key') {
+            const controls = {Enter:'\r',Escape:'\u001b',Backspace:'\b',Tab:'\t',Delete:'\u007f'};
+            if (event.key === 'Tab' && event.shiftKey) return; // Keep a way to leave the console by keyboard.
+            if (controls[event.key]) {
+                event.preventDefault();
+                if (!event.ctrlKey && !event.metaKey && !event.altKey) keys(controls[event.key]);
+            } else if (['Home','End','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) {
+                event.preventDefault();
+            }
+            return;
+        }
         if (event.key === 'Enter') { event.preventDefault(); enter(); }
         else if (event.key === 'Home' || event.key === 'End') {
             event.preventDefault(); focus();
@@ -102,7 +134,20 @@ function createPas2WasmTerminal(view, history, editor, submit) {
                    ((event.key === 'Delete' || event.key === 'ArrowRight') && edge(true))) event.preventDefault();
     });
     editor.addEventListener('beforeinput', event => {
+        // Some engines deliver the final committed insertion after compositionend.
+        if (compositionCommit !== null && !event.isComposing && event.data === compositionCommit &&
+            ['insertText','insertFromComposition'].includes(event.inputType)) {
+            event.preventDefault(); compositionCommit = null; return;
+        }
         if (!active) { event.preventDefault(); return; }
+        if (inputKind === 'key') {
+            if (composing || event.isComposing) return; // Native preedit owns its preview.
+            event.preventDefault();
+            if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') {
+                if (!compositionEnter) keys('\r');
+            } else if (typeof event.data === 'string' && event.data.length) keys(event.data);
+            return;
+        }
         if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') {
             event.preventDefault();
             if (!composing && !event.isComposing && !compositionEnter) enter();
@@ -110,8 +155,18 @@ function createPas2WasmTerminal(view, history, editor, submit) {
             event.preventDefault(); focus();
         }
     });
-    editor.addEventListener('compositionstart', () => { composing = true; });
-    editor.addEventListener('compositionend', () => { composing = false; normalizeEmpty(); });
+    editor.addEventListener('compositionstart', () => {
+        composing = true; compositionEnter = false; compositionCommit = null;
+    });
+    editor.addEventListener('compositionend', event => {
+        composing = false;
+        if (inputKind === 'key') {
+            const text = typeof event.data === 'string' ? event.data : editor.textContent;
+            compositionCommit = text || null;
+            editor.replaceChildren();
+            keys(text);
+        } else normalizeEmpty();
+    });
     /* Some IMEs end composition before delivering the same Enter's beforeinput. */
     editor.addEventListener('keyup', event => {
         if (event.key === 'Enter' || event.keyCode === 229) compositionEnter = false;
@@ -120,7 +175,10 @@ function createPas2WasmTerminal(view, history, editor, submit) {
     editor.addEventListener('paste', event => {
         event.preventDefault();
         if (!active) return;
-        const text = event.clipboardData.getData('text/plain').replace(/\r\n|[\r\n]/g, ' ');
+        compositionCommit = null;
+        const plain = event.clipboardData.getData('text/plain');
+        if (inputKind === 'key') {keys(plain.replace(/\r\n|\n/g,'\r'));return;}
+        const text = plain.replace(/\r\n|[\r\n]/g, ' ');
         const selected = range(), node = document.createTextNode(text);
         selected.deleteContents(); selected.insertNode(node); selected.setStartAfter(node); selected.collapse(true);
         const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(selected);
@@ -137,6 +195,6 @@ function createPas2WasmTerminal(view, history, editor, submit) {
     waiting(false);
     return {
         append, waiting,
-        clear() { committed.data = ''; editor.replaceChildren(); waiting(false); view.scrollTop = 0; }
+        clear() { committed.data = ''; editor.replaceChildren(); compositionEnter = false; compositionCommit = null; prefilled = false; waiting(false); view.scrollTop = 0; }
     };
 }

@@ -242,6 +242,15 @@ Finishing invalidates handles without mutating Pascal memory retained for diagno
 The language reference defines file failure codes; they are thrown directly, without
 adding numeric `fail` mappings or changing the `pas2wasm_v1` namespace.
 
+### Raw-key service (index 53)
+
+`key_i32: (line: i32, column: i32) -> i32` consumes one Unicode scalar from the shared
+console cursor. Batch calls are synchronous; live calls may suspend only for missing
+input. Buffered LF/CRLF delimiters become Enter 13. A module using CRT `readkey` emits
+its own private `$p2w_readkey` wrapper, validating 0..1114111 excluding surrogates and
+reporting generated failure 13 / `R_CHARACTER` at the call. The unit alone emits no
+helper. Production exports remain `run` and `memory`; no precompiled CRT is linked.
+
 ## Runtime diagnostics
 
 Locations use 1-based UTF-8 byte columns. The `fail` import must throw and never return.
@@ -568,11 +577,25 @@ failure-code mappings. Program exports remain exactly run/memory.
 ## Host input provider
 
 `createPas2WasmRuntime(input, emit, limits, requestLine?)` retains its synchronous
-three-argument batch API. An optional provider returns a Promise of one line without
-CR/LF, or null for confirmed EOF. Only operations fetching a missing line may return
-Promises; buffered operations remain synchronous. Parsing, storage, limits and cursor
-ownership are shared between modes. Program output never includes host-side input echo.
-JSPI wrapping is a host responsibility.
+three-argument batch API. An optional provider is called as
+`requestLine(line, column, kind = 'line', prefix = '')`. Existing two-argument providers
+remain compatible for line-only programs.
+
+| Request kind | Provider response |
+| --- | --- |
+| `line` | Promise of one string without CR/LF (empty allowed), or null for EOF. `prefix` contains already accepted raw typeahead; return the complete edited line. Null preserves that original prefix as an unterminated final line. |
+| `key` | Promise of a nonempty string chunk, or null for EOF. Normalize CRLF/LF to CR; consume scalars in order without echo or an extra delimiter. |
+
+Only operations fetching missing input may return Promises; buffered operations stay
+synchronous. Complete queued CR-delimited lines can satisfy later line reads; otherwise
+the raw suffix becomes a line prefix. Charge normalized chunks once and credit prefix
+bytes once when charging a completed line plus LF. Empty/invalid key chunks use
+`R_INPUT_INVALID`; invalid Unicode uses `R_ENCODING`. EOF remains `R_INPUT_EOF`.
+Parsing, storage, limits and cursor ownership are shared between modes. Program output
+never includes host-side input echo. JSPI wrapping is a host responsibility. Virtual
+file cursors never request a provider or consume pending console keys. `finish()` clears
+all files, buffered input and provider access; the narrower `file_finish` import clears
+only files. Each run owns fresh state.
 
 The reference implementation is [web/runtime/host.js](../web/runtime/host.js). Call
 `attach(instance)` before `instance.exports.run()`; `emit(text)` receives program
@@ -583,17 +606,19 @@ partial-assignment semantics.
 ## Worker protocol and sessions
 
 Batch callers keep synchronous imports and call `instance.exports.run()` directly.
-Interactive workers wrap input imports (legacy and stream helpers) with
+Interactive workers wrap input imports (legacy, stream, variant string and `key_i32` helpers) with
 `WebAssembly.Suspending` and await `WebAssembly.promising(instance.exports.run)()`. No
 module transformation or additional Wasm exports are needed. Workers detect both APIs; unsupported live mode yields `E_JSPI`, with batch mode available.
 
 The worker accepts `{type:'run',id,binary,input,interactive,limits?}` once per worker.
 It emits capabilities (`jspi`), running, output (`text`), input-request
-(`requestId,line,column`), done, or error (`diagnostic`) with the same run id. An
+(`requestId,line,column,kind,prefix`), done, or error (`diagnostic`) with the same run id. An
 input-request accepts only a matching `{type:'input',id,requestId,text}` or
 `{type:'end-input',id,requestId}`; EOF resolves the provider with null permanently. Each
-line contains no CR/LF; submission contributes UTF-8 bytes plus one LF to the input
-allowance. Empty lines are valid. Stale/duplicate messages are ignored. A probe message
+line contains no CR/LF; its submission contributes new UTF-8 bytes plus LF, crediting
+an accepted prefix once. Key replies contain a nonempty normalized chunk and contribute
+only its bytes. Missing `kind` defaults to `line`; `prefix` defaults to empty. Empty
+lines remain valid. Stale/duplicate messages are ignored. A probe message
 returns capabilities without running a program.
 
 The shared session owns cancellation, worker URLs, run/request identities and a
@@ -602,12 +627,12 @@ delivery/running, never replenishing the budget. UI input echo is text-only and 
 separately from program output. Console/session helpers are embedded with the
 runtime/worker in exported HTML. The [product contract](spec.md#console-behavior) and
 [language reference](supported-language.md#example-playground-console) define console
-editing and UI behavior; these add no Wasm imports/exports or messages.
+editing and UI behavior.
 
 ## ABI compatibility
 
 Existing import names/signatures and numeric failure mappings remain available. String,
-character, real, stream, address and file helpers extend the v1 import set; newly emitted modules need
+character, real, stream, address, file and key helpers extend the v1 import set; newly emitted modules need
 a matching host that implements their imports. Older v1 modules run with that extended
 host, and old self-contained exports retain their embedded runtime. New exports embed
 the matching repository implementation. Console input is a host capability, not a new

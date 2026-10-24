@@ -493,6 +493,16 @@ int main(void)
         assert(strcmp(diagnostic.code, "E_TYPE") == 0);
         program_destroy(&program);
     }
+    const char *crt_source = "program p; uses CrT; var c:char; begin c:=readkey() end.";
+    assert(frontend_parse(&program, crt_source, strlen(crt_source), &diagnostic));
+    assert(program.uses_crt && program.has_readkey);
+    assert(program.body->body->expression->kind == EX_READKEY);
+    assert(program.body->body->expression->type == TYPE_CHARACTER);
+    program_destroy(&program);
+    const char *unused_crt = "program p; uses crt; begin end.";
+    assert(frontend_parse(&program, unused_crt, strlen(unused_crt), &diagnostic));
+    assert(program.uses_crt && !program.has_readkey);
+    program_destroy(&program);
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));
     assert(!frontend_parse(&program, invalid, strlen(invalid), &diagnostic));

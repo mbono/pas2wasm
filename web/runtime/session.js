@@ -54,7 +54,7 @@ function createPas2WasmSession(events, budget = 5000) {
                     finish('Failed', {code:'R_TIMEOUT', message:'Execution exceeded 5 seconds of active time.'});
                     return;
                 }
-                request = data; events.state('Waiting for input'); events.waiting?.(true);
+                request = data; events.state('Waiting for input'); events.waiting?.(true,data);
             } else if (data.type === 'done') finish('Completed');
             else if (data.type === 'error') finish('Failed', data.diagnostic);
         };
@@ -63,23 +63,29 @@ function createPas2WasmSession(events, budget = 5000) {
         };
         worker.postMessage({type:'run', id, binary, input, interactive});
     }
-    /* Submit only the currently requested line, with a bounded input echo. */
+    /* Key chunks are accepted once without echo/delimiters. A later line may
+     * contain an already charged raw suffix; credit those bytes, never its new LF. */
     function submit(text = null) {
         if (!request || !worker) return false;
+        const at = request, key = at.kind === 'key';
         if (text !== null) {
-            inputBytes += new TextEncoder().encode(text).length + 1;
-            if (inputBytes > 1048576 || /[\r\n]/.test(text)) {
-                const at = request;
-                finish('Failed', {code:inputBytes > 1048576 ? 'R_INPUT_LIMIT' : 'R_INPUT_INVALID',
-                    message:inputBytes > 1048576 ? 'Program input exceeds 1 MiB.' : 'Submit one input line.',
-                    line:at.line, column:at.column});
-                return false;
+            if (typeof text !== 'string' || (key ? !text.length : /[\r\n]/.test(text))) {
+                finish('Failed', {code:'R_INPUT_INVALID',message:key ? 'Submit a nonempty key chunk.' : 'Submit one input line.',
+                    line:at.line,column:at.column}); return false;
+            }
+            if (key) text = text.replace(/\r\n|\n/g,'\r');
+            const encoder = new TextEncoder();
+            const credit = !key && typeof at.prefix === 'string' ? encoder.encode(at.prefix).length : 0;
+            inputBytes += Math.max(0,encoder.encode(text).length-credit) + (key ? 0 : 1);
+            if (inputBytes > 1048576) {
+                finish('Failed', {code:'R_INPUT_LIMIT',message:'Program input exceeds 1 MiB.',
+                    line:at.line,column:at.column}); return false;
             }
         }
         worker.postMessage({type:text === null ? 'end-input' : 'input', id:generation,
-            requestId:request.requestId, text});
+            requestId:at.requestId, text});
         request = null;
-        events.waiting?.(false);
+        events.waiting?.(false,{...at,end:text === null});
         // Charge delivery/resumption time too, so a lost worker cannot wait forever.
         resume(); events.state('Running…');
         return true;
@@ -96,8 +102,8 @@ function createPas2WasmConsole(events) {
     const eof = get('console-eof'), note = get('io-note');
     const terminal = createPas2WasmTerminal(get('terminal'), output, input, text => session.submit(text));
     /* Reflect a pending input request and focus its single-line editor. */
-    function waiting(value) {
-        terminal.waiting(value); eof.disabled = !value;
+    function waiting(value, request = {}) {
+        terminal.waiting(value,request.kind || 'line',request.prefix,request.end); eof.disabled = !value;
     }
     const session = createPas2WasmSession({
         state(text) { if (!['Running…','Waiting for input'].includes(text)) waiting(false); events.state(text); },

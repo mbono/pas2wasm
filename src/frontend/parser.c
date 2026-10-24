@@ -23,6 +23,8 @@ typedef enum {
     TK_CHR,
     TK_ORD,
     TK_COPY,
+    TK_READKEY,
+    TK_USES,
     TK_CARET,
     TK_ADDRESS,
     TK_FILE,
@@ -193,7 +195,7 @@ static const Keyword keywords[] = {{"program", TK_PROGRAM},
                                    {"not", TK_NOT},
                                    {"const", TK_CONST},
                                    {"type", TK_TYPE},
-                                   {"uses", TK_UNSUPPORTED},
+                                   {"uses", TK_USES},
                                    {"array", TK_ARRAY},
                                    {"set", TK_SET},
                                    {"in", TK_IN},
@@ -208,6 +210,7 @@ static const Keyword keywords[] = {{"program", TK_PROGRAM},
                                    {"chr", TK_CHR},
                                    {"ord", TK_ORD},
                                    {"copy", TK_COPY},
+                                   {"readkey", TK_READKEY},
                                    {"nil", TK_NIL},
                                    {"new", TK_NEW},
                                    {"dispose", TK_DISPOSE},
@@ -1164,6 +1167,23 @@ static Expr *factor(Parser *p)
         if (e->depth >= 128) {
             fail_at(p, "E_LIMIT", "File query path is too deep.", t.line, t.column);
         }
+    } else if (t.kind == TK_READKEY) {
+        if (!p->program->uses_crt) {
+            fail_at(p, "E_UNIT", "readkey requires uses crt.", t.line, t.column);
+        }
+        if (p->constant_expression) {
+            fail_at(p, "E_CONST", "readkey is not a constant expression.", t.line, t.column);
+        }
+        next(p);
+        if (p->token.kind == TK_LPAREN) {
+            next(p);
+            if (p->token.kind != TK_RPAREN) {
+                fail_at(p, "E_ARGUMENT", "readkey takes no arguments.", t.line, t.column);
+            }
+            next(p);
+        }
+        e = expression_node(p, EX_READKEY, TYPE_CHARACTER, t, NULL, NULL);
+        p->program->has_readkey = 1;
     } else if (t.kind == TK_CHARACTER_LITERAL) {
         e = expression_node(p, EX_INTEGER, TYPE_CHARACTER, t, NULL, NULL);
         e->integer = (int32_t)t.number;
@@ -3262,6 +3282,26 @@ static void parse_program(Parser *p)
     expect(p, TK_PROGRAM, "Expected 'program'.");
     expect(p, TK_NAME, "Expected a program name.");
     expect(p, TK_SEMICOLON, "Expected ';' after program name.");
+    if (p->token.kind == TK_USES) {
+        next(p);
+        for (;;) {
+            Token unit = p->token;
+            if (unit.kind != TK_NAME || !same_name(unit.text, unit.length, "crt")) {
+                fail_at(p, "E_UNIT", "Only the built-in crt subset is supported.", unit.line,
+                        unit.column);
+            }
+            if (p->program->uses_crt) {
+                fail_at(p, "E_DUPLICATE", "Duplicate crt unit.", unit.line, unit.column);
+            }
+            p->program->uses_crt = 1;
+            next(p);
+            if (p->token.kind != TK_COMMA) {
+                break;
+            }
+            next(p);
+        }
+        expect(p, TK_SEMICOLON, "Expected ';' after uses clause.");
+    }
     declarations(p);
     if (p->token.kind != TK_BEGIN) {
         fail(p, "E_UNSUPPORTED", "Expected the main 'begin' block; this construct is unsupported.");
