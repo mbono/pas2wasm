@@ -10,6 +10,7 @@ import argparse
 import interactive
 import terminal
 import keyboard
+import tutorials
 import base64
 import functools
 import http.server
@@ -429,6 +430,12 @@ def verify_browser(kind, base_url, cases, directory):
                         'pointerresults':'pointer_returned_destinations', 'pointerreuse':'pointer_repeated_reuse',
                         'pointercaptures':'pointer_captured_heap_reference'
                     }.items()}
+        # The random tutorials use a fixed host seed in the worker parity suite.
+        # Exercise the remaining original sources through UI/export controls too.
+        originals = tutorials.verify(cases)
+        existing_sources = {case['source'] for case in examples.values()}
+        examples.update({case['name']:case for case in originals
+                         if case['source'] not in existing_sources and 'randomSeed' not in case})
         for example in examples.values():
             assert run_ui(browser, example['source'], example.get('input',''), wat=True) == {
                 'output':example['output'], 'diagnostics':''}
@@ -619,6 +626,8 @@ def main():
     parser.add_argument('--browser',choices=['chromium','firefox','both'],default='both')
     args = parser.parse_args()
     cases = json.loads(Path(__file__).with_name('cases.json').read_text(encoding='utf-8'))
+    originals = tutorials.verify(cases)
+    print(f'{len(originals)} unchanged tutorial source hashes verified.',flush=True)
     handler = functools.partial(QuietHandler, directory='build')
     server = http.server.ThreadingHTTPServer(('127.0.0.1',0),handler)
     thread = threading.Thread(target=server.serve_forever,daemon=True)

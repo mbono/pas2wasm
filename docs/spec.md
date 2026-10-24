@@ -147,9 +147,12 @@ per-milestone contracts.
 
 ## Tutorial compatibility gates
 
-Implement these increments separately and accept each through the full gate above.
-The tutorial corpus is `mbono/pascal_tutorial` commit `a287978828a2d3a9af18aac2203c9aeb2b3d9d13`;
-add unchanged source text only for examples resolved by the current increment.
+The 16 tutorial increments are implemented separately under the full acceptance gate.
+The complete corpus is `mbono/pascal_tutorial` commit
+`a287978828a2d3a9af18aac2203c9aeb2b3d9d13`: all 23 unchanged source files are pinned
+by Git blob identity in [the test manifest](../test/tutorials.json), with shared input
+and expected output. Their resolved contracts follow; deferred capabilities remain
+in [Future scope](#future-scope-and-design-gates).
 
 | Increment | Resolved contract and acceptance |
 | --- | --- |
@@ -161,11 +164,11 @@ add unchanged source text only for examples resolved by the current increment.
 | Random integers | Reserve `randomize` and `random`; accept `randomize`/`randomize()` and `random(integer_bound)` for bounds 1..2147483647. Evaluate bounds once and return 0..bound-1 using per-runtime xorshift32 state with rejection sampling; invalid bounds report located `R_RANDOM_RANGE`. Initial seed is 1; randomize selects a nonzero seed with built-in Math.random. An optional host `limits.randomSeed` (u32, zero normalized to 1) fixes initial/reseed state for reproducible tests. Never evaluate randomness as a constant. Append two synchronous imports, preserve fresh runs and offline behavior, and make no cryptographic claim. Accept unchanged `vettori.pas` using a fixed test seed, plus range, independence, reset, evaluation, and UI/live/offline checks. |
 | Multidimensional array syntax | Parse `array[l1..h1,l2..h2,...] of T` as nested nominal array constructors and `m[i,j,...]` as consecutive existing index selectors. Permit mixed bracket/comma selectors and ordinary subarray copies/references; every dimension keeps its checked bounds, source-order single evaluation, partial initialization, and alias/borrow rules. Nested array/string selectors retain their ordinary meaning. Attribute bounds failures to the relevant opening bracket or comma. Count each dimension toward existing depth/layout limits; reject reversed/noninteger/nonconstant bounds, excess indexes, malformed lists, and oversized layouts. Accept unchanged seeded `vettori_multi.pas`, matrix value/reference/heap interactions, both hosts, WAT and browsers/offline. No new runtime ABI or backend representation. |
 
-## Remaining tutorial compatibility gates
+## Additional tutorial compatibility contracts
 
-These increments complete requirements 8–16 from the tutorial review. Resolve and
-accept each independently; add each remaining original tutorial source only when its
-dependencies are implemented. Preserve the full acceptance gate and separate commits.
+Requirements 8–16 cover the character, type, storage and I/O increments below. Each
+retains its independently resolved contract and full acceptance gate; current language
+and ABI details remain in their owning references.
 
 | Increment | Resolved contract and acceptance |
 | --- | --- |
@@ -274,7 +277,7 @@ contents, including JSPI hosts; console waits keep their existing behavior. No e
 dependency or Pascal host capability is introduced. Passing examples include the
 unchanged `files.pas`, `var` forwarding, typed aggregate/character snapshots and text
 line roundtrips; reject `f:=g`, file-valued results, wrong components/modes, missing files
-and exhausted limits. The unchanged `textfiles.pas` also requires requirement 16.
+and exhausted limits. The unchanged `textfiles.pas` combines this capability with requirement 16.
 Accept through both hosts/WAT/sanitizers/actual browsers and relevant live/offline
 exports, including atomic failures, ownership, cleanup, cancellation and fresh reruns;
 update the language, ABI, architecture, dependency and contributor references before

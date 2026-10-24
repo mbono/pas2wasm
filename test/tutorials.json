@@ -1,0 +1,121 @@
+{
+  "repository": "https://github.com/mbono/pascal_tutorial",
+  "revision": "a287978828a2d3a9af18aac2203c9aeb2b3d9d13",
+  "examples": [
+    {
+      "file": "bool.pas",
+      "blob": "0298ac5d1edc3a098d413ccbd9cc10f34eafd83b",
+      "case": "tutorial_bool"
+    },
+    {
+      "file": "enum_demo.pas",
+      "blob": "c08aaf6332c9f0910189dcc6d542bf0f137f2d95",
+      "case": "tutorial_enum_demo"
+    },
+    {
+      "file": "files.pas",
+      "blob": "8fcb33923d67ad6331acaf21a328d8ad43b315ff",
+      "case": "tutorial_files"
+    },
+    {
+      "file": "formatted_io.pas",
+      "blob": "f8e8ca48687495a74896a30b494b8846e1a68149",
+      "case": "tutorial_formatted_io"
+    },
+    {
+      "file": "hello.pas",
+      "blob": "7641b4512948831bc517c3219a7244ae7e74c275",
+      "case": "tutorial_hello"
+    },
+    {
+      "file": "if_else.pas",
+      "blob": "3f1cfbac0d957e3ed84afeb63b2786950fb893d5",
+      "case": "tutorial_if_else"
+    },
+    {
+      "file": "io.pas",
+      "blob": "48cd981df1f845f66227a3fff8e4d57bef982bf7",
+      "case": "tutorial_io"
+    },
+    {
+      "file": "numeri.pas",
+      "blob": "a38730820a28664bf5358c935d24246ecdf8bbbd",
+      "case": "tutorial_numeri"
+    },
+    {
+      "file": "parametri.pas",
+      "blob": "42529c3b851b6dfad624e95ad76b5ea2fd173c16",
+      "case": "tutorial_parametri"
+    },
+    {
+      "file": "pointer_demo.pas",
+      "blob": "67af1becdb3757c2580ed74132bb02cb0e906790",
+      "case": "tutorial_pointer_demo"
+    },
+    {
+      "file": "pointer_demo2.pas",
+      "blob": "c474bffe3719ed8ab909c6888be3d726923a6f22",
+      "case": "tutorial_pointer_demo2_unchanged"
+    },
+    {
+      "file": "prova_for.pas",
+      "blob": "a81884263137db3cd7784056ca00df5fc6f56c54",
+      "case": "tutorial_prova_for"
+    },
+    {
+      "file": "rec.pas",
+      "blob": "520f2d46bdc33878e5930c21ed42a83d48bca060",
+      "case": "tutorial_rec"
+    },
+    {
+      "file": "record_demo.pas",
+      "blob": "97daf721bc21ff7e094c8b68ae1dac9baa98bc80",
+      "case": "tutorial_record_demo"
+    },
+    {
+      "file": "set_demo.pas",
+      "blob": "8915b89d3a14b4e690c43777dae9e29950fbeb47",
+      "case": "tutorial_set_demo"
+    },
+    {
+      "file": "simple_menu.pas",
+      "blob": "6d315013e8995b21413ec50662f2f10fa47d2367",
+      "case": "tutorial_simple_menu"
+    },
+    {
+      "file": "stringhe.pas",
+      "blob": "51ed65463d84a64791fb89c3eb0a6200a898b99e",
+      "case": "tutorial_stringhe"
+    },
+    {
+      "file": "subrange.pas",
+      "blob": "2a4ae8b0e6388cf7c768cdb14701a3bfdf3a2cd2",
+      "case": "tutorial_subrange"
+    },
+    {
+      "file": "subroutine.pas",
+      "blob": "4b9762b3a9ad395dfde23e4632b731679e74d1ac",
+      "case": "tutorial_subroutine"
+    },
+    {
+      "file": "tabellina.pas",
+      "blob": "f8bd5599fab813757475768bfad6422162717e33",
+      "case": "tutorial_tabellina"
+    },
+    {
+      "file": "textfiles.pas",
+      "blob": "b1efb359e3d9251027ec9031c173b19ec6afdd01",
+      "case": "tutorial_textfiles"
+    },
+    {
+      "file": "vettori.pas",
+      "blob": "17dacc43f9b6e4d44fd6af275f2b3d7b9f179068",
+      "case": "tutorial_vettori"
+    },
+    {
+      "file": "vettori_multi.pas",
+      "blob": "721c72d65bf719f21d12970f64ed9eff1e373c97",
+      "case": "tutorial_vettori_multi"
+    }
+  ]
+}

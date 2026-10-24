@@ -40,6 +40,10 @@ toolchains/SDK components are installed, ordinary builds work offline.
 
 Add descriptively named positive/negative and boundary records to `test/cases.json`.
 `test/cases.js` exposes the same JSON to Node; Python reads it directly without Node.
+`test/tutorials.json` pins all 23 original examples from `mbono/pascal_tutorial` at
+revision `a287978828a2d3a9af18aac2203c9aeb2b3d9d13`. The Node/Python tutorial checks
+verify Git blob hashes against shared source records before the ordinary host/WAT/browser
+execution checks. Preserve original bytes; put additional variations in separate cases.
 Preserve existing input strings, expected program output, and located diagnostics rather
 than rewriting batch cases into live scripts. Live scripts belong in
 `test/interactive.json`; `test/interactive.py` covers workers, waits, EOF/limits,

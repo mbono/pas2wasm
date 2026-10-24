@@ -189,5 +189,27 @@
         "keys": "y"
       }
     ]
+  },
+  {
+    "name": "tutorial_textfiles",
+    "sourceCase": "tutorial_textfiles",
+    "input": "ciao\n\u00e9\ud83d\ude00\u001b",
+    "output": "inserire un testo (premere esc per terminare)\n\nciao\n\u00e9\ud83d\ude00\nil testo inserito \u00e8 il seguente :\n\nciao\n\u00e9\ud83d\ude00",
+    "transcript": "inserire un testo (premere esc per terminare)\n\nciao\n\u00e9\ud83d\ude00\nil testo inserito \u00e8 il seguente :\n\nciao\n\u00e9\ud83d\ude00",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "ciao\r"
+      },
+      {
+        "kind": "key",
+        "text": "\u00e9\ud83d\ude00"
+      },
+      {
+        "kind": "key",
+        "text": "\u001b",
+        "keys": "\ue00c"
+      }
+    ]
   }
 ]

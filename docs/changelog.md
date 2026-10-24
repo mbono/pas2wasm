@@ -4,6 +4,9 @@
 
 ### Added
 
+- Complete 23-file tutorial compatibility corpus pinned to original Git blob hashes,
+  with shared expected input/output and native/Wasm/browser verification.
+
 - Built-in partial `uses crt;` with directly emitted `readkey` helpers, checked Unicode
   scalars, synchronous batch input and live JSPI keys without automatic echo.
 - Shared key/line typeahead with bounded paste/IME chunks, preserved editable prefixes,

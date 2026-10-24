@@ -11,7 +11,12 @@ import terminal
 
 def fixtures():
     """Load key chunks, expected requests, and equivalent closed input."""
-    return json.loads(Path(__file__).with_suffix('.json').read_text())
+    cases = json.loads(Path(__file__).with_suffix('.json').read_text())
+    shared = json.loads(Path(__file__).with_name('cases.json').read_text())
+    for case in cases:
+        if 'sourceCase' in case:
+            case['source'] = next(c['source'] for c in shared if c['name']==case['sourceCase'])
+    return cases
 
 
 def verify_workers(browser, compile_native):

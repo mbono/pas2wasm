@@ -9,6 +9,7 @@ const path = require('node:path');
 const os = require('node:os');
 const {spawnSync} = require('node:child_process');
 const cases = require('./cases.js');
+const tutorialCases = require('./tutorials.js')(cases);
 const nativeExecutable = process.env.P2W_NATIVE || './build/pas2wasm';
 const createCompiler = require('../web/compiler.js');
 const {createPas2WasmRuntime} = require('../web/runtime/host.js');
@@ -237,7 +238,7 @@ async function main() {
         const memoryHost = createPas2WasmRuntime('', () => {});
         memoryHost.attach({exports:{memory:new WebAssembly.Memory({initial:1})}});
         assert.throws(()=>memoryHost.imports.write_utf8(65536,1),{code:'R_MEMORY'});
-        console.log(`${cases.length} acceptance cases passed; ${roundtrips} WAT roundtrips; ${comparisons} Free Pascal comparisons.`);
+        console.log(`${cases.length} acceptance cases passed; ${roundtrips} WAT roundtrips; ${comparisons} Free Pascal comparisons; ${tutorialCases.length} unchanged tutorial sources.`);
     } finally { fs.rmSync(directory, {recursive:true, force:true}); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

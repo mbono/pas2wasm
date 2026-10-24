@@ -9462,5 +9462,47 @@
         "source": "program p; uses crt; var f:text; s:string; begin assign(f,'result'); rewrite(f); write(f,readkey,readkey); close(f); reset(f); readln(f,s); writeln(s); close(f) end.",
         "input": "xy",
         "output": "xy\n"
+    },
+    {
+        "name": "tutorial_bool",
+        "source": "program bool;\nvar a,b,c: boolean;\nbegin\n\ta := (12 < 15); \t{T}\n\ta := true;\t\t{T}\n\ta := false;\t\t{F}\n\tb := (12 < 10);\t\t{F}\n\tc := a and b;\t\t{T and F = F}\n\tc := a or b;\t\t{T or F = T}\n\tc := not(a and b);\t{a and b = F; not(false) = T}\n\tc := ('a' < 'b');\t{T}\n\tc := ('hello' < 'world'); {T}\n\tc := ('h' < 'world');\nend.\n",
+        "output": "",
+        "portable": true
+    },
+    {
+        "name": "tutorial_hello",
+        "source": "{hello_world.pas: write the string \"hello, world\"}\nprogram hello;\nbegin\n\twriteln('hello, world');\nend.\n",
+        "output": "hello, world\n",
+        "portable": true
+    },
+    {
+        "name": "tutorial_numeri",
+        "source": "program numeri;\nvar a, b, c, d: integer;\n\tr: real;\nbegin\n\ta := 12;\n\twriteln('a = ', a);\n\tb := 23;\n\twriteln('b = ', b);\n\tc := -25;\n\twriteln('c = ', c);\n\td := a + c; \t\t{d = 12 -25 = -13}\n\twriteln('d = ', d);\n\td := b - c; \t\t{d = 23 - (-25) = 48}\n\twriteln('d = ', d);\n\td := b div 2; \t\t{23 div 2 = 11 divisione intera}\n\twriteln('d = ', d);\n\td := b mod 2; \t\t{1 \u00e8 il resto di prima}\n\twriteln('d = ', d);\n\tr := b / 2; \t\t{r = 23 / 2 =11.5 divisione reale}\n\twriteln('r = ', r);\nend.\n",
+        "output": "a = 12\nb = 23\nc = -25\nd = -13\nd = 48\nd = 11\nd = 1\nr = 11.5\n"
+    },
+    {
+        "name": "tutorial_pointer_demo",
+        "source": "program pointer_demo;\n\ntype\n\tlist = ^cell;\n\tcell = record\n\t\tvalue: integer;\n\t\tnext: list;\n\tend;\n\nvar\n\tl1, l2: list;\nbegin\n\tnew(l1);\n\tl1^.value := 10;\n\tl1^.next := NIL;\n\twriteln('l1^.value = ', l1^.value);\n\n\tnew(l2);\n\tl2^.value := 20;\n\tl2^.next := NIL;\n\n\tl1^.next := l2;\n\twriteln('l1^.next^.value = ', l1^.next^.value);\n\n\tdispose(l1);\n\tdispose(l2);\nend.\n",
+        "output": "l1^.value = 10\nl1^.next^.value = 20\n",
+        "portable": true
+    },
+    {
+        "name": "tutorial_prova_for",
+        "source": "program provafor;\nvar i: integer;\nbegin\n\tfor i := 1 to 10 do\n\t\twriteln(i);\n\twriteln;\n\tfor i := 10 downto 1 do\n\t\twriteln(i);\nend.\n",
+        "output": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n\n10\n9\n8\n7\n6\n5\n4\n3\n2\n1\n",
+        "portable": true
+    },
+    {
+        "name": "tutorial_simple_menu",
+        "source": "program simple_menu;\nvar scelta: integer;\nbegin\n\twriteln(' menu pricipale : ');\n\twriteln;\n\twriteln('1. opzione a');\n\twriteln('2. opzione b');\n\twriteln('3. opzione c');\n\twriteln;\n\twrite('Cosa scegli? (1..3): ');\n\treadln(scelta);\n\tcase (scelta) of\n\t1:\n\t\twriteln('hai scelto l''opzione a !!');\n\t2:\n\t\twriteln('hai scelto l''opzione b !!');\n\t3:\n\t\twriteln('hai scelto l''opzione c !!')\n\telse\n\t\twriteln ('errore : la scelta effettuata non \u00e8 corretta !!!!');\n\tend;\nend.\n",
+        "input": "2\n",
+        "output": " menu pricipale : \n\n1. opzione a\n2. opzione b\n3. opzione c\n\nCosa scegli? (1..3): hai scelto l'opzione b !!\n",
+        "portable": true
+    },
+    {
+        "name": "tutorial_stringhe",
+        "source": "program stringhe;\nvar s1,s2,s3: string;\nbegin\n\ts1 := 'rossi';\n\ts2 := ''; {stringa vuota}\n\ts3 := 'carlo';\n\ts2 := s3 + ' ' + s1; {s2='carlo rossi'}\n\twriteln(s2);\nend.\n",
+        "output": "carlo rossi\n",
+        "portable": true
     }
 ]
