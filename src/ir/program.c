@@ -32,6 +32,13 @@ ValueType type_value(ValueType type)
     return type && type->kind == TYPE_KIND_SUBRANGE ? type_canonical(type->element) : type;
 }
 
+int type_ordinal(ValueType type)
+{
+    type = type_value(type);
+    return type && (type == TYPE_INTEGER || type == TYPE_BOOLEAN || type == TYPE_CHARACTER ||
+                    type->kind == TYPE_KIND_ENUM);
+}
+
 void *program_allocate(Program *program, size_t size, Diagnostic *diagnostic)
 {
     const char *code = "E_LIMIT", *message = "Program is too complex.";

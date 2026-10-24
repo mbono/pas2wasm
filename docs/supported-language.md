@@ -131,27 +131,44 @@ ordinary expression values.
 | `real` | Finite binary64 numbers. | `1.5`, `1e2`, `1.5E-2` |
 | `char` | One Unicode scalar, excluding surrogate values. | `chr(128512)` |
 | `string[N]` | At most N UTF-8 bytes; bare `string` means 255 bytes. | `string[20]` |
-| Fixed array | Constant integer bounds and one element type. | `array[-2..2] of integer` |
+| Fixed array | Constant ordinal bounds or an ordinal type domain, and one element type. | `array[-2..2] of integer` |
 | Record | Named fields with declared types. | `record x, y: integer end` |
 | Typed pointer | Reference to a declared pointee type, or `nil`. | `^Node` |
-| Subrange | Integer or character values constrained by constant inclusive bounds. | `0..9`, `'a'..'z'`, `#65..#90` |
+| Enumeration | Distinct ordered member values, numbered from zero. | `(Mon, Tue, Wed)` |
+| Subrange | Integer, character, or enum values constrained by constant inclusive bounds. | `0..9`, `'a'..'z'`, `#65..#90` |
 
 ### Subrange storage
 
 Named and inline subranges retain their declared identity, while expressions use their
-integer or character base type. Bounds are constant expressions of matching base types;
-quoted one-scalar constants count as character bounds. Reversed bounds use `E_RANGE`,
+integer, character, or enum base type. Bounds are constant expressions of matching base
+types; quoted one-scalar constants count as character bounds. Reversed bounds use `E_RANGE`,
 incompatible endpoints use `E_TYPE`, and nonconstant endpoints are rejected. All signed
 32-bit integer endpoints and valid Unicode character endpoints are supported.
 
-Assignments, value arguments, function results/`exit`, input, and integer `inc` check
+Assignments, value arguments, function results/`exit`, supported input, and integer/enum
+`inc` check
 the destination range before committing (`R_RANGE`). Arithmetic intermediates use the
-ordinary base type and can exceed the storage range until assigned. Integer subranges
-can control `for` loops; both bounds are checked against the declared range. Aliases
+ordinary base type and can exceed the storage range until assigned. Integer and enum
+subranges can control `for` loops; both bounds are checked against the declared range. Aliases
 share storage identity; separately declared ranges do not. `var` parameters require
 exact declared storage types, so passing a range to an unrestricted integer reference
 is rejected. Subranges work in arrays, record fields, heap values, captures, and routine
 signatures using existing initialization/lifetime rules.
+
+### Enumerations
+
+`type Day = (Mon, Tue, Wed);` declares a distinct ordered type. Members are ordinary
+lexical constants of that type, numbered 0, 1, 2 in declaration order; `ord(Tue)` is 1.
+All six comparisons and their constant forms are supported. Aliases share identity;
+separate constructors are incompatible even if they have the same number of members.
+Members share the ordinary declaration namespace, cannot duplicate existing names in
+that scope, and count toward the 4,096-symbol budget. One-member types are valid.
+
+Enum values work in variables, fields, arrays, heap objects, parameters, results,
+captures, and enum subranges (`Mon..Tue`). `for` and `inc` follow declaration order;
+incrementing the final member reports `R_RANGE`. Output prints the member's original
+source spelling (`writeln(Tue:5)` prints two spaces then `Tue`). Enum input, arithmetic,
+integer casts, and implicit conversion to integers/strings are unsupported.
 
 ### Operators and evaluation
 
@@ -216,7 +233,7 @@ selection; FPC's default real formatting intentionally differs.
 | Conditional | `if ready then run else wait` | Select using a Boolean condition. |
 | Pre-test loop | `while n > 0 do n := n - 1` | Test before each iteration. |
 | Post-test loop | `repeat n := n - 1 until n = 0` | Run at least once; stop when the condition is true. |
-| Counted loop | `for i := 1 to 3 do writeln(i)` | Inclusive integer bounds; `downto` counts downward. |
+| Counted loop | `for i := 1 to 3 do writeln(i)` | Inclusive integer or enum bounds; `downto` counts downward. |
 | Selection | `case n of 1: writeln('one') end` | Execute one matching arm, without fall-through. |
 | Loop exit | `break` | Leave the nearest enclosing loop. |
 | Next iteration | `continue` | Continue the nearest enclosing loop. |
@@ -235,7 +252,8 @@ without requiring a `begin/end` wrapper. Its condition must be Boolean.
 ### Counted loops
 
 `for i := start to finish do statement` counts upward by 1; `downto` counts downward by
-1. The control variable and bounds must be integers. Bounds are inclusive and evaluated
+1. The control variable and bounds must have the same integer or enum base type. Bounds
+are inclusive and evaluated
 once, start then finish, before assigning the control variable. A range facing away from
 its final bound has no iterations. Reaching an integer endpoint does not overflow. The
 body cannot assign the control variable, read into it, or reuse it in a nested `for`
@@ -263,14 +281,14 @@ end
 
 | Rule | Details |
 | --- | --- |
-| Selector | An integer or Boolean expression, evaluated once, even for empty arms. |
+| Selector | An integer, Boolean, or enum expression, evaluated once, even for empty arms. |
 | Labels | Matching literals or named scalar constants; signed integers are allowed. At least one labeled arm is required. |
-| Integer ranges | Inclusive `low..high`; mix ranges and single labels, such as `low..high, 9`. Boolean ranges are rejected. |
+| Ranges | Inclusive integer or matching enum `low..high`; mix ranges and single labels. Boolean ranges are rejected. |
 | Matching | Execute one arm without fall-through. With no match, run the optional `else` list or do nothing. |
 | Multiple statements | Wrap an arm in `begin/end`; the fallback list needs no wrapper. |
 | Semicolons | A trailing semicolon before case `else`/`end` is accepted. An unmatched inner `if` takes its nearest `else`; separate a case fallback with a semicolon. |
 | Transfers | `break`/`continue` still target enclosing loops; `exit` leaves the routine. |
-| Invalid labels | Duplicate labels or overlapping ranges use `E_DUPLICATE`; type mismatches or signs on Boolean constants use `E_TYPE`; reversed ranges use `E_CASE_RANGE`. |
+| Invalid labels | Duplicate labels or overlapping ranges use `E_DUPLICATE`; type mismatches or signs on Boolean/enum constants use `E_TYPE`; reversed ranges use `E_CASE_RANGE`. |
 | Name/value checks | Signed zero spellings are duplicates; variables/calls use `E_CONST`, unknown names use `E_UNKNOWN`. |
 | Limit | 1,024 labels/ranges per selection (`E_LIMIT`); each range counts as one, including at integer extremes. |
 
@@ -393,7 +411,8 @@ active counters retain runtime alias protection.
 
 | Feature | Declaration or use | Notes |
 | --- | --- | --- |
-| Fixed array | `type Row = array[-2..2] of integer;` | Bounds are integer constant expressions. |
+| Fixed array | `type Row = array[-2..2] of integer;` | Bounds have the same ordinal base type. |
+| Ordinal domain | `array[Day] of integer`, `array[boolean] of char` | Use a named subrange/enum or another ordinal type domain. |
 | Nested array | `type Matrix = array[1..3] of Row;` | Select with `m[i][j]`. |
 | Multiple dimensions | `type Matrix = array[1..3, -2..2] of integer;` | Shorthand nested constructors; select with `m[i,j]` or mixed brackets. |
 | Record | `type Pair = record x, y: integer; ready: boolean end;` | Select with `p.x`. |
@@ -403,9 +422,14 @@ active counters retain runtime alias protection.
 
 ### Fixed arrays
 
-Bounds are checked integer constant expressions; negative/nonzero lower bounds are
-supported. Declare global/local values and access them with `a[i]` or nested `m[i][j]`.
-Indexes are integers and checked at runtime (`R_BOUNDS`); reversed bounds fail with
+Bounds are checked constant expressions of one matching ordinal type: integer,
+character, Boolean, or a particular enumeration. Negative/nonzero lower bounds are
+supported. A dimension can instead name an ordinal type, such as `array[Day]`,
+`array[SmallIntegerRange]`, or `array[boolean]`; inline enum domains are also accepted.
+An unrestricted integer/character domain still obeys the normal storage budget.
+Declare global/local values and access them with `a[i]` or nested `m[i][j]`.
+Indexes must match the domain's base type (quoted single-scalar constants work for
+character indexes) and are checked at runtime (`R_BOUNDS`); reversed bounds fail with
 `E_ARRAY_RANGE`, wrong/nonconstant bounds with `E_TYPE`/`E_CONST`, and oversized storage
 with `E_LAYOUT`, including unused named types. Comma-separated dimensions construct
 nested arrays; comma-separated indexes expand to consecutive selectors. Mixed forms
@@ -501,7 +525,8 @@ need indexing. Chars widen to strings for value assignment, `+`, and comparisons
 strings in either operand order, including empty strings. Mixed comparisons use the
 same Unicode lexical order as string/string comparisons; integers/Booleans remain
 distinct. Char/char comparisons are ordinal, with all six relations; char is not a
-numeric arithmetic type, index, counted control, or case selector. Invalid chr values
+numeric arithmetic type, counted control, or case selector. Characters can index arrays
+with a character domain. Invalid chr values
 fail with `R_CHARACTER` (or `E_CHARACTER` in constants).
 
 `s[1]` selects the first Unicode scalar. `s[2]:='😀'` replaces one scalar and checks
@@ -590,10 +615,10 @@ Fresh runs never share state. Free Pascal sequences are not a compatibility guar
 
 ## Checked increment
 
-`inc(destination)` adds one to initialized writable integer storage, including fields,
+`inc(destination)` adds one to initialized writable integer or enum storage, including fields,
 array elements, references, and heap pointees. The destination path is evaluated once.
-Overflow reports `R_OVERFLOW`; uninitialized values report `R_UNINITIALIZED`. Constants,
-noninteger destinations, extra arguments, and writes to active counted controls are
+Integer overflow reports `R_OVERFLOW`; enum/subrange bounds report `R_RANGE`, and
+uninitialized values report `R_UNINITIALIZED`. Constants, incompatible destinations, extra arguments, and writes to active counted controls are
 rejected with the usual storage/type/control diagnostics. Hidden control aliases remain
 checked at runtime. `inc` is reserved; no step argument is supported.
 
@@ -611,8 +636,9 @@ checked at runtime. `inc` is reserved; no step argument is supported.
 | `readln(a, b)` | Read left-to-right within the current line, then discard its remainder and delimiter once. |
 | `readln;` | Discard the remaining current line. |
 
-Output accepts integer, real, Boolean, character, and string expressions. Booleans print
-as `TRUE`/`FALSE`. Arrays, records, and pointers cannot be printed as whole values.
+Output accepts integer, real, Boolean, character, enum, and string expressions. Booleans
+print as `TRUE`/`FALSE`; enums print their declared member spelling. Arrays, records, and
+pointers cannot be printed as whole values.
 Empty I/O parentheses are unsupported.
 
 Output fields accept `value:width`; real fields also accept `value:width:precision`.
@@ -788,12 +814,14 @@ parameters  = "(" [parameter_group {";" parameter_group}] ")" ;
 parameter_group = ["var"] declaration_group ;
 declaration_group = identifier {"," identifier} ":" type ;
 call        = identifier ["(" [expression {"," expression}] ")"] ;
-type        = "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier | subrange
+type        = "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier | subrange | enumeration
             | "array" "[" dimension {"," dimension} "]" "of" type
             | "record" declaration_group {";" declaration_group} [";"] "end" ;
 lvalue      = identifier {selector} | call selector {selector} ;
 storage     = factor ; (* must resolve to writable storage *)
-dimension   = expression ".." expression ;
+dimension   = expression ".." expression | ordinal_type ;
+ordinal_type = identifier | "integer" | "boolean" | "char" | enumeration ;
+enumeration = "(" identifier {"," identifier} ")" ;
 subrange    = expression ".." expression ;
 selector    = "[" expression {"," expression} "]" | "." identifier | "^" ;
 compound    = "begin" statement {";" statement} "end" ;

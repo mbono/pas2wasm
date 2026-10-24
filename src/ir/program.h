@@ -22,6 +22,7 @@ typedef struct Expr Expr;
 typedef struct Lvalue Lvalue;
 typedef struct Type Type;
 typedef struct Field Field;
+typedef struct EnumMember EnumMember;
 
 /* Logical type descriptors contain no target layout or instruction information.
  * Scalar aliases reuse canonical identity; builtins are static. */
@@ -35,6 +36,7 @@ typedef enum {
     TYPE_KIND_PENDING,
     TYPE_KIND_ALIAS,
     TYPE_KIND_SUBRANGE,
+    TYPE_KIND_ENUM,
     TYPE_KIND_STRING,
     TYPE_KIND_ARRAY,
     TYPE_KIND_RECORD
@@ -44,12 +46,21 @@ typedef const Type *ValueType;
 struct Type {
     TypeKind kind;
     ValueType element;
+    ValueType index_type; /* Array ordinal domain, independent of its element type. */
     int32_t lower, upper;
     Field *fields;
+    EnumMember *members;
     size_t capacity; /* String byte capacity, independent of target representation. */
     Type *next;      /* Canonical string/pointer interning chains. */
     Type *all_next;  /* All constructed types, including anonymous pointees. */
     unsigned line, column;
+};
+/* Ordered enumeration names preserve source spelling for text output. Arena-owned;
+ * their ordinal is the zero-based position in this list. */
+struct EnumMember {
+    const char *name;
+    size_t length;
+    EnumMember *next;
 };
 /* Ordered record members; offsets and concrete alignment belong to the backend. */
 struct Field {
@@ -95,6 +106,7 @@ typedef enum {
     EX_REAL,
     EX_RANDOM,
     EX_RANGE_CHECK,
+    EX_ENUM_TEXT, /* Output-only conversion to the declared member spelling. */
     EX_TO_REAL,
     EX_TRUNCATE,
     EX_ROUND,
@@ -214,8 +226,9 @@ typedef struct {
     size_t length;
 } Symbol;
 /* Lexically scoped routine with identity fixed at its first header. Signature types
- * are independent of body parameter names/storage. Parameters precede locals in
- * the flat symbol array once defined. calls is a frontend reachability bitset;
+ * are independent of body parameter names/storage. parameter_symbols maps ordinal
+ * argument positions to declarations, including inline type constants between groups.
+ * calls is a frontend reachability bitset;
  * writes is a bounded global-slot bitset, including globals declared later in scope;
  * direct effects are extended with reachable callees after parsing.
  * Names, signature, body, and writes belong to the arena. */
@@ -225,6 +238,7 @@ struct Routine {
     size_t symbol_head; /* All declarations in this routine, including constants/types. */
     int is_function, defined;
     ValueType *parameter_types;
+    size_t *parameter_symbols;
     unsigned char *parameter_modes; /* Nonzero for shared writable var parameters. */
     ValueType return_type;
     size_t result_symbol;
@@ -280,6 +294,8 @@ int character_valid(int32_t scalar);
 ValueType type_canonical(ValueType type);
 /* Subrange values use their base scalar; storage retains the constrained descriptor. */
 ValueType type_value(ValueType type);
+/* True for the scalar domains accepted as array indexes and ordinal constants. */
+int type_ordinal(ValueType type);
 /* Decode the first scalar of nonempty validated UTF-8; return its byte width. */
 size_t text_decode(const char *text, int32_t *scalar);
 /* Encode a valid scalar into at most four bytes; return its byte width. */

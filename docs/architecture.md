@@ -75,6 +75,14 @@ used by concatenation, reusing lexical comparison and its alias-safe snapshots.
 Decimal numeric character literals are validated as Unicode scalars by the lexer and
 become ordinary typed character constants; runtime layouts and imports remain shared.
 
+Enumeration constructors own nominal identities and ordered member names. Member
+constants occupy ordinary lexical declarations without runtime storage. Arrays retain
+a separate ordinal index domain, so enum/character/Boolean domains share checked array
+lowering while mixed-domain indexes fail in the frontend. Enum output converts to
+immutable string values via one backend-owned name table per type; no target offsets
+are stored in the IR. Explicit parameter-symbol maps preserve formal positions when
+inline enum members introduce constants between parameter groups.
+
 Subrange storage retains a nominal descriptor with base type and constant bounds.
 Expression types expose the base scalar, and explicit range-check nodes retain the
 destination constraint for narrowing. References compare declared lvalue types rather

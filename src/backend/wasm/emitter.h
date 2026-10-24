@@ -13,13 +13,14 @@
  * next_local/local_count track active bound locals and their allocation high-water mark. */
 typedef struct {
     Buffer code, data, text;
-    int emit_wat, heap;
+    int emit_wat, heap, enum_data_overflow;
     unsigned indent;
     unsigned depth;
     const struct Loop *loop;
     const Program *program;
     const Routine *routine;
     WasmLayout layout;
+    struct EnumTable *enum_tables; /* Backend-owned member-name tables, one per enum type. */
     size_t frame_local, left_local, right_local, wide_local, real_local;
     size_t next_local, local_count;
 } Wasm;

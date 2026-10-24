@@ -179,7 +179,7 @@ The reference host maps generated numeric codes as follows:
 | 16 | `R_DISPOSE` | invalid release |
 | 17 | `R_LIFETIME` | live borrow |
 | 18 | `R_POINTER` | malformed internal pointer |
-| 19 | `R_RANGE` | value outside a declared subrange |
+| 19 | `R_RANGE` | value outside a declared subrange or enum domain |
 
 Host input errors use `R_INPUT_EOF`, `R_INPUT_INVALID`, `R_INPUT_RANGE`, or
 `R_ENCODING`. Input/output budgets use `R_INPUT_LIMIT`/`R_OUTPUT_LIMIT`; the session
@@ -197,11 +197,18 @@ structure only. Compound layout uses a 16-byte root followed by aligned children
 counts, strides, and sums are bounded by 64 MiB. Invalid, recursive by-value, or
 oversized layouts fail compilation with `E_LAYOUT`.
 
-Integer and character subranges use the same 16-byte cells and base-scalar Wasm
+Integer, character, and enum subranges use the same 16-byte cells and base-scalar Wasm
 signatures. The frontend retains constraints on storage and inserts explicit checks
 for narrowing writes/calls/results; input and increment lowering also check before
 committing. Var bindings preserve exact declared range identity. No new import is
 needed; failure 19 reports the narrowing operation's location.
+
+Enum payloads are zero-based i32 ordinals in 16-byte scalar cells. Their nominal
+identity and the array index domain are frontend metadata. Array address arithmetic
+uses the checked ordinal and declared lower bound; all domain kinds retain existing
+nested layouts. Enum output looks up immutable string objects in a backend-emitted
+member-name table shared by every output site for that enum. Tables/names count toward
+the existing literal-data region; no runtime import or public export is added.
 
 Comma-separated array dimensions use these same nested objects and child headers;
 index-list syntax introduces no flattened matrix representation or new host imports.

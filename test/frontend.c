@@ -366,12 +366,30 @@ int main(void)
     const char *range_program = "program p; type Small=1..3; var value:Small; begin value:=2 end.";
     assert(frontend_parse(&program, range_program, strlen(range_program), &diagnostic));
     ValueType constrained_type = program.symbols[0].type;
-    assert(constrained_type->kind == TYPE_KIND_SUBRANGE && type_value(constrained_type) == TYPE_INTEGER);
+    assert(constrained_type->kind == TYPE_KIND_SUBRANGE &&
+           type_value(constrained_type) == TYPE_INTEGER);
     assert(constrained_type->lower == 1 && constrained_type->upper == 3);
     Expr *narrowed = program.body->body->expression;
     assert(narrowed->kind == EX_RANGE_CHECK && narrowed->type == TYPE_INTEGER);
     assert(narrowed->constraint == constrained_type && narrowed->left->integer == 2);
     assert(program.body->body->target->type == constrained_type);
+    program_destroy(&program);
+    const char *enumeration = "program p; type Day=(Mon,Tue); Alias=Day; "
+                              "var a:array[Alias] of integer; "
+                              "procedure demo(n:integer; d:(First,Last); tail:real); "
+                              "begin writeln(d,n,tail) end; begin a[Mon]:=1 end.";
+    assert(frontend_parse(&program, enumeration, strlen(enumeration), &diagnostic));
+    ValueType day = program.symbols[0].type;
+    assert(day->kind == TYPE_KIND_ENUM && day->lower == 0 && day->upper == 1);
+    assert(strcmp(day->members->name, "Mon") == 0);
+    assert(program.symbols[3].type == day);
+    assert(program.symbols[4].type->index_type == day);
+    routine = program.routines;
+    assert(routine->parameter_count == 3);
+    assert(routine->parameter_symbols[0] == 5 && routine->parameter_symbols[1] == 6);
+    assert(routine->parameter_symbols[2] == 9);
+    assert(routine->parameter_types[1]->kind == TYPE_KIND_ENUM);
+    assert(routine->parameter_types[2] == TYPE_REAL);
     program_destroy(&program);
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));

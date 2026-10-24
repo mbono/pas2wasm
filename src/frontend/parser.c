@@ -447,8 +447,8 @@ static void next(Parser *p)
         t.kind = TK_CHARACTER_LITERAL;
         advance(p);
         if (peek(p, 0) < '0' || peek(p, 0) > '9') {
-            fail_at(p, "E_CHARACTER", "Expected a decimal character code after '#'.",
-                    t.line, t.column);
+            fail_at(p, "E_CHARACTER", "Expected a decimal character code after '#'.", t.line,
+                    t.column);
         }
         while (peek(p, 0) >= '0' && peek(p, 0) <= '9') {
             t.number = t.number * 10 + (peek(p, 0) - '0');
@@ -825,8 +825,8 @@ static Lvalue *index_selector(Parser *p, Lvalue *base, Token at)
     value->kind = base->type->kind == TYPE_KIND_STRING ? LV_CHARACTER : LV_INDEX;
     value->type =
         value->kind == LV_CHARACTER ? TYPE_CHARACTER : type_canonical(base->type->element);
-    value->index = expression(p);
-    require_type(p, value->index, TYPE_INTEGER, at);
+    value->index = coerce(p, expression(p),
+                          value->kind == LV_CHARACTER ? TYPE_INTEGER : base->type->index_type, at);
     value->depth = 1 + (base->depth > value->index->depth ? base->depth : value->index->depth);
     if (value->depth >= 128) {
         fail_at(p, "E_LIMIT", "Combined expression/selector path is too deep.", at.line, at.column);
@@ -960,7 +960,10 @@ static Expr *factor(Parser *p)
     } else if (t.kind == TK_CHR || t.kind == TK_ORD) {
         next(p);
         expect(p, TK_LPAREN, "Character conversions require parentheses.");
-        Expr *value = coerce(p, expression(p), t.kind == TK_CHR ? TYPE_INTEGER : TYPE_CHARACTER, t);
+        Expr *value = expression(p);
+        if (t.kind != TK_ORD || value->type->kind != TYPE_KIND_ENUM) {
+            value = coerce(p, value, t.kind == TK_CHR ? TYPE_INTEGER : TYPE_CHARACTER, t);
+        }
         expect(p, TK_RPAREN, "Expected ')' after character conversion.");
         e = expression_node(p, t.kind == TK_CHR ? EX_CHARACTER : EX_ORDINAL,
                             t.kind == TK_CHR ? TYPE_CHARACTER : TYPE_INTEGER, t, value, NULL);
@@ -1202,7 +1205,8 @@ static Expr *expression(Parser *p)
                     right = coerce(p, right, string_type(p, 4, op), op);
                 }
             }
-        } else if (left->type != TYPE_BOOLEAN || right->type != TYPE_BOOLEAN) {
+        } else if (!(left->type == right->type &&
+                     (left->type == TYPE_BOOLEAN || left->type->kind == TYPE_KIND_ENUM))) {
             fail_at(p, "E_TYPE", "Invalid comparison operand types.", op.line, op.column);
         }
         ExprKind kind = op.kind == TK_EQUAL     ? EX_EQUAL
@@ -1373,8 +1377,8 @@ static CaseLabel *case_label(Parser *p, ValueType selector)
     label->column = at.column;
     label->value = label->high = case_endpoint(p, selector);
     if (p->token.kind == TK_RANGE) {
-        if (selector != TYPE_INTEGER) {
-            fail(p, "E_TYPE", "Case ranges require integer endpoints.");
+        if (selector != TYPE_INTEGER && selector->kind != TYPE_KIND_ENUM) {
+            fail(p, "E_TYPE", "Case ranges require integer or enumeration endpoints.");
         }
         next(p);
         label->high = case_endpoint(p, selector);
@@ -1391,7 +1395,8 @@ static void case_statement(Parser *p, Stmt *s)
 {
     next(p);
     s->expression = expression(p);
-    if (s->expression->type != TYPE_INTEGER && s->expression->type != TYPE_BOOLEAN) {
+    if (s->expression->type != TYPE_INTEGER && s->expression->type != TYPE_BOOLEAN &&
+        s->expression->type->kind != TYPE_KIND_ENUM) {
         fail(p, "E_TYPE", "Case requires a scalar selector.");
     }
     expect(p, TK_OF, "Expected 'of' after case selector.");
@@ -1492,15 +1497,16 @@ static Stmt *statement(Parser *p)
         if (s->symbol == SIZE_MAX) {
             fail_at(p, "E_UNKNOWN", "Variable is not declared.", control.line, control.column);
         }
-        if (type_value(p->program->symbols[s->symbol].type) != TYPE_INTEGER) {
-            fail_at(p, "E_TYPE", "For control variable must be integer.", control.line,
-                    control.column);
+        ValueType control_type = type_value(p->program->symbols[s->symbol].type);
+        if (control_type != TYPE_INTEGER && control_type->kind != TYPE_KIND_ENUM) {
+            fail_at(p, "E_TYPE", "For control variable must be integer or enumeration.",
+                    control.line, control.column);
         }
         require_writable(p, s->symbol, control);
         record_write(p, s->symbol);
         expect(p, TK_ASSIGN, "Expected ':=' after for control variable.");
         s->expression = expression(p);
-        require_type(p, s->expression, TYPE_INTEGER, t);
+        require_type(p, s->expression, control_type, t);
         s->expression = coerce(p, s->expression, p->program->symbols[s->symbol].type, t);
         s->descending = p->token.kind == TK_DOWNTO;
         if (p->token.kind != TK_TO && p->token.kind != TK_DOWNTO) {
@@ -1508,7 +1514,7 @@ static Stmt *statement(Parser *p)
         }
         next(p);
         s->limit = expression(p);
-        require_type(p, s->limit, TYPE_INTEGER, t);
+        require_type(p, s->limit, control_type, t);
         s->limit = coerce(p, s->limit, p->program->symbols[s->symbol].type, t);
         expect(p, TK_DO, "Expected 'do' after final bound.");
         ForControl active = {s->symbol, p->control};
@@ -1588,6 +1594,17 @@ static Stmt *statement(Parser *p)
             Expr **tail = &s->expression;
             for (;;) {
                 *tail = expression(p);
+                if ((*tail)->type->kind == TYPE_KIND_ENUM) {
+                    size_t capacity = 0;
+                    for (const EnumMember *member = (*tail)->type->members; member;
+                         member = member->next) {
+                        if (member->length > capacity) {
+                            capacity = member->length;
+                        }
+                    }
+                    *tail = expression_node(p, EX_ENUM_TEXT, string_type(p, capacity, t), t, *tail,
+                                            NULL);
+                }
                 if ((*tail)->type != TYPE_INTEGER && (*tail)->type != TYPE_BOOLEAN &&
                     (*tail)->type != TYPE_REAL && (*tail)->type != TYPE_CHARACTER &&
                     (*tail)->type->kind != TYPE_KIND_STRING) {
@@ -1628,8 +1645,9 @@ static Stmt *statement(Parser *p)
         expect(p, TK_LPAREN, "Expected '(' after inc.");
         s->target = storage_argument(p, t);
         s->symbol = s->target->symbol;
-        if (type_value(s->target->type) != TYPE_INTEGER) {
-            fail_at(p, "E_TYPE", "inc requires integer storage.", t.line, t.column);
+        ValueType increment_type = type_value(s->target->type);
+        if (increment_type != TYPE_INTEGER && increment_type->kind != TYPE_KIND_ENUM) {
+            fail_at(p, "E_TYPE", "inc requires integer or enumeration storage.", t.line, t.column);
         }
         expect(p, TK_RPAREN, "Expected ')' after inc destination.");
     } else if (t.kind == TK_NEW || t.kind == TK_DISPOSE) {
@@ -1799,9 +1817,8 @@ static int32_t subrange_endpoint(Parser *p, ValueType *base)
         *base = TYPE_CHARACTER;
         text_decode(value.text, &value.integer);
     }
-    if (*base != TYPE_INTEGER && *base != TYPE_CHARACTER) {
-        fail_at(p, "E_TYPE", "Subrange bounds require integer or character constants.",
-                at.line, at.column);
+    if (!type_ordinal(*base)) {
+        fail_at(p, "E_TYPE", "Bounds require ordinal constants.", at.line, at.column);
     }
     return value.integer;
 }
@@ -1816,8 +1833,8 @@ static int starts_subrange(Parser *p)
     }
     return kind == TK_NUMBER || kind == TK_REAL_NUMBER || kind == TK_STRING ||
            kind == TK_CHARACTER_LITERAL || kind == TK_PLUS || kind == TK_MINUS ||
-           kind == TK_LPAREN || kind == TK_CHR || kind == TK_ORD ||
-           kind == TK_TRUE || kind == TK_FALSE;
+           kind == TK_LPAREN || kind == TK_CHR || kind == TK_ORD || kind == TK_TRUE ||
+           kind == TK_FALSE;
 }
 
 /* Retain a distinct constrained storage type while expressions use its base type. */
@@ -1826,9 +1843,12 @@ static ValueType subrange_type(Parser *p)
     Token at = p->token;
     ValueType base, upper_base;
     int32_t lower = subrange_endpoint(p, &base);
+    if (base == TYPE_BOOLEAN) {
+        fail_at(p, "E_TYPE", "Boolean subrange types are not supported.", at.line, at.column);
+    }
     if (p->token.kind != TK_RANGE) {
-        fail_at(p, "E_TYPE", "Expected a type name or '..' after a subrange bound.",
-                at.line, at.column);
+        fail_at(p, "E_TYPE", "Expected a type name or '..' after a subrange bound.", at.line,
+                at.column);
     }
     next(p);
     Token upper_at = p->token;
@@ -1844,6 +1864,105 @@ static ValueType subrange_type(Parser *p)
     range->lower = lower;
     range->upper = upper;
     return range;
+}
+
+/* Distinguish enum constructors from parenthesized subrange endpoints. Looking
+ * ahead changes only lexer state, which is restored before the real parse. */
+static int starts_enumeration(Parser *p)
+{
+    if (p->token.kind != TK_LPAREN) {
+        return 0;
+    }
+    Token saved = p->token;
+    size_t offset = p->offset;
+    unsigned line = p->line, column = p->column;
+    next(p);
+    int enumeration = p->token.kind == TK_NAME;
+    if (enumeration) {
+        next(p);
+        if (p->token.kind == TK_RPAREN) {
+            next(p);
+            enumeration = p->token.kind != TK_RANGE;
+        } else {
+            enumeration = p->token.kind == TK_COMMA;
+        }
+    }
+    p->token = saved;
+    p->offset = offset;
+    p->line = line;
+    p->column = column;
+    return enumeration;
+}
+
+/* Enum member constants enter the current lexical namespace. Their type identity
+ * is the fresh descriptor, never an integer alias; names need no runtime slots. */
+static ValueType enumeration_type(Parser *p)
+{
+    Token at = p->token;
+    Type *type = new_type(p, TYPE_KIND_ENUM, at);
+    EnumMember **tail = &type->members;
+    next(p);
+    int32_t ordinal = 0;
+    for (;;) {
+        Token name = p->token;
+        expect(p, TK_NAME, "Expected an enumeration member name.");
+        declare(p, name, 0, SYMBOL_CONSTANT);
+        Symbol *symbol = &p->program->symbols[p->program->symbol_count - 1];
+        symbol->type = type;
+        symbol->value = ordinal++;
+        EnumMember *member = allocate(p, sizeof(*member));
+        char *spelling = allocate(p, name.length + 1);
+        memcpy(spelling, name.text, name.length);
+        member->name = spelling;
+        member->length = name.length;
+        *tail = member;
+        tail = &member->next;
+        if (p->token.kind != TK_COMMA) {
+            break;
+        }
+        next(p);
+    }
+    expect(p, TK_RPAREN, "Expected ')' after enumeration members.");
+    type->upper = ordinal - 1;
+    return type;
+}
+
+/* Retain the array's ordinal domain separately from its bounds. Named domains
+ * may be an enum, constrained range, or builtin ordinal; layout owns size limits. */
+static void array_domain(Parser *p, Type *array, Token at)
+{
+    Binding binding =
+        p->token.kind == TK_NAME ? find_binding(p, p->token) : (Binding){SIZE_MAX, NULL};
+    if (starts_enumeration(p) || p->token.kind == TK_INTEGER || p->token.kind == TK_BOOLEAN ||
+        p->token.kind == TK_CHARACTER ||
+        (binding.symbol != SIZE_MAX && p->program->symbols[binding.symbol].kind == SYMBOL_TYPE)) {
+        ValueType domain = declaration_type(p);
+        if (!type_ordinal(domain)) {
+            fail_at(p, "E_TYPE", "Array domain must be ordinal.", at.line, at.column);
+        }
+        array->index_type = type_value(domain);
+        if (domain->kind == TYPE_KIND_SUBRANGE || domain->kind == TYPE_KIND_ENUM) {
+            array->lower = domain->lower;
+            array->upper = domain->upper;
+        } else {
+            array->lower = domain == TYPE_INTEGER ? INT32_MIN : 0;
+            array->upper = domain == TYPE_INTEGER   ? INT32_MAX
+                           : domain == TYPE_BOOLEAN ? 1
+                                                    : 0x10ffff;
+        }
+    } else {
+        ValueType lower_type, upper_type;
+        array->lower = subrange_endpoint(p, &lower_type);
+        expect(p, TK_RANGE, "Expected '..' between array bounds.");
+        array->upper = subrange_endpoint(p, &upper_type);
+        if (lower_type != upper_type) {
+            fail_at(p, "E_TYPE", "Array bound types must match.", at.line, at.column);
+        }
+        array->index_type = lower_type;
+    }
+    if (array->upper < array->lower) {
+        fail_at(p, "E_ARRAY_RANGE", "Array bounds are reversed.", at.line, at.column);
+    }
 }
 
 /* Construct a record member namespace without exposing fields as scoped symbols. */
@@ -1901,6 +2020,9 @@ static ValueType record_type(Parser *p)
 static ValueType declaration_type(Parser *p)
 {
     ValueType type;
+    if (starts_enumeration(p)) {
+        return enumeration_type(p);
+    }
     if (starts_subrange(p)) {
         return subrange_type(p);
     }
@@ -1951,12 +2073,7 @@ static ValueType declaration_type(Parser *p)
         Type *dimension = array;
         unsigned dimensions = 1;
         for (;;) {
-            dimension->lower = array_bound(p);
-            expect(p, TK_RANGE, "Expected '..' between array bounds.");
-            dimension->upper = array_bound(p);
-            if (dimension->upper < dimension->lower) {
-                fail_at(p, "E_ARRAY_RANGE", "Array bounds are reversed.", at.line, at.column);
-            }
+            array_domain(p, dimension, at);
             if (p->token.kind != TK_COMMA) {
                 break;
             }
@@ -2095,8 +2212,9 @@ static void declaration_group(Parser *p, int by_reference)
         next(p);
     }
     expect(p, TK_COLON, "Expected ':' after variable names.");
+    size_t last = p->program->symbol_count;
     ValueType type = declaration_type(p);
-    for (size_t i = first; i < p->program->symbol_count; ++i) {
+    for (size_t i = first; i < last; ++i) {
         p->program->symbols[i].type = type;
         p->program->symbols[i].by_reference = by_reference;
     }
@@ -2240,9 +2358,15 @@ static Routine *routine_header(Parser *p, Token header, Token name, Routine *pre
     }
     routine->parameter_types = allocate(p, (routine->parameter_count + 1) * sizeof(ValueType));
     routine->parameter_modes = allocate(p, routine->parameter_count + 1);
-    for (size_t i = 0; i < routine->parameter_count; ++i) {
-        routine->parameter_types[i] = p->program->symbols[routine->first_symbol + i].type;
-        routine->parameter_modes[i] = p->program->symbols[routine->first_symbol + i].by_reference;
+    routine->parameter_symbols = allocate(p, (routine->parameter_count + 1) * sizeof(size_t));
+    for (size_t symbol = routine->first_symbol; symbol < p->program->symbol_count; ++symbol) {
+        const Symbol *parameter = &p->program->symbols[symbol];
+        if (parameter->kind == SYMBOL_VARIABLE) {
+            size_t i = parameter->slot;
+            routine->parameter_types[i] = parameter->type;
+            routine->parameter_modes[i] = parameter->by_reference;
+            routine->parameter_symbols[i] = symbol;
+        }
     }
     if (routine->is_function) {
         expect(p, TK_COLON, "Expected ':' before function return type.");
@@ -2271,6 +2395,7 @@ static Routine *match_forward(Parser *p, Routine *forward, Routine *body, Token 
                 name.line, name.column);
     }
     forward->first_symbol = body->first_symbol;
+    forward->parameter_symbols = body->parameter_symbols;
     forward->symbol_count = body->symbol_count;
     forward->symbol_head = body->symbol_head;
     forward->result_symbol = body->result_symbol;

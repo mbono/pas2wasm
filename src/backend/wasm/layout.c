@@ -29,9 +29,25 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
     }
     if (type->kind == TYPE_KIND_SUBRANGE) {
         ValueType base = type_value(type);
-        if ((base != TYPE_INTEGER && base != TYPE_CHARACTER) || type->lower > type->upper ||
+        if ((!base ||
+             (base != TYPE_INTEGER && base != TYPE_CHARACTER && base->kind != TYPE_KIND_ENUM)) ||
+            type->lower > type->upper ||
+            (base->kind == TYPE_KIND_ENUM && (type->lower < 0 || type->upper > base->upper)) ||
             (base == TYPE_CHARACTER &&
              (!character_valid(type->lower) || !character_valid(type->upper)))) {
+            return invalid(type, diagnostic);
+        }
+        *size = WASM_CELL_SIZE;
+        return 1;
+    }
+    if (type->kind == TYPE_KIND_ENUM) {
+        size_t count = 0;
+        for (const EnumMember *member = type->members; member; member = member->next) {
+            if (++count > P2W_SYMBOL_LIMIT || !member->name || !member->length) {
+                return invalid(type, diagnostic);
+            }
+        }
+        if (!count || type->lower != 0 || type->upper != (int32_t)count - 1) {
             return invalid(type, diagnostic);
         }
         *size = WASM_CELL_SIZE;
@@ -51,7 +67,7 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
         total += (type->capacity + 15) & ~(size_t)15;
     } else if (type->kind == TYPE_KIND_ARRAY) {
         size_t element;
-        if (type->upper < type->lower) {
+        if (type->upper < type->lower || (type->index_type && !type_ordinal(type->index_type))) {
             return invalid(type, diagnostic);
         }
         if (!object_size(type->element, &element, diagnostic, depth + 1)) {

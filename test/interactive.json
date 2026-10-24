@@ -155,5 +155,14 @@
     ],
     "output": "Bound: TRUE\n",
     "transcript": "Bound: 3\nTRUE\n"
+  },
+  {
+    "name": "enumeration_storage",
+    "source": "program p; type Day=(Mon,Tue,Wed); var d:Day; a:array[Day] of integer; begin d:=Tue; write(d,': '); readln(a[d]); inc(d); writeln(d,': ',a[Tue]) end.",
+    "lines": [
+      "7"
+    ],
+    "output": "Tue: Wed: 7\n",
+    "transcript": "Tue: 7\nWed: 7\n"
   }
 ]

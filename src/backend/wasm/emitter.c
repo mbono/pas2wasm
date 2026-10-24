@@ -6,6 +6,7 @@
 #include "emitter.h"
 #include "ir/number.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Absolute Wasm label depths for the nearest Pascal loop. Entries borrow their
@@ -15,6 +16,14 @@ typedef struct Loop {
     size_t control; /* Counted control to invalidate on routine exit; SIZE_MAX otherwise. */
     const struct Loop *outer;
 } Loop;
+
+/* Backend cache owns only target offsets. Logical names/types remain borrowed
+ * from Program; all cache entries are released after module emission. */
+typedef struct EnumTable {
+    ValueType type;
+    size_t address;
+    struct EnumTable *next;
+} EnumTable;
 
 static const Import imports[] = {{"write_utf8", "ii", 0},
                                  {"write_i32", "i", 0},
@@ -214,7 +223,7 @@ static void narrow(Wasm *w, const Expr *e)
  * Base-typed intermediate arithmetic remains independent of storage bounds. */
 static void check_range(Wasm *w, ValueType type, unsigned line, unsigned column)
 {
-    if (type->kind != TYPE_KIND_SUBRANGE) {
+    if (type->kind != TYPE_KIND_SUBRANGE && type->kind != TYPE_KIND_ENUM) {
         return;
     }
     indexed(w, 0x21, "local.set", w->left_local);
@@ -612,8 +621,8 @@ static void real_expression(Wasm *w, const Expr *e)
  * finish, so nested arithmetic cannot overwrite a live intermediate value. */
 static void emit_expression(Wasm *w, const Expr *e)
 {
-    if (e->kind == EX_TEXT || e->kind == EX_STRING_CONVERT || e->kind == EX_LENGTH ||
-        e->kind == EX_CHARACTER_STRING || e->kind == EX_SLICE ||
+    if (e->kind == EX_TEXT || e->kind == EX_ENUM_TEXT || e->kind == EX_STRING_CONVERT ||
+        e->kind == EX_LENGTH || e->kind == EX_CHARACTER_STRING || e->kind == EX_SLICE ||
         (e->kind != EX_CALL && e->left && e->left->type->kind == TYPE_KIND_STRING)) {
         string_expression(w, e);
         return;
@@ -1009,7 +1018,7 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
     w->next_local = saved;
 }
 
-/* Increment one captured integer cell, preserving path effects and heap leases.
+/* Increment one captured integer/enum cell, preserving path effects and heap leases.
  * Check the old value and overflow before committing any payload or root flag. */
 static void emit_increment(Wasm *w, const Stmt *s)
 {
@@ -1330,8 +1339,8 @@ static void emit_formatted(Wasm *w, const Expr *e)
 {
     size_t saved = w->next_local, pins = borrow_checkpoint(w);
     int kind = e->type == TYPE_INTEGER     ? 0
-               : e->type == TYPE_REAL     ? (e->precision ? 5 : 1)
-               : e->type == TYPE_BOOLEAN  ? 2
+               : e->type == TYPE_REAL      ? (e->precision ? 5 : 1)
+               : e->type == TYPE_BOOLEAN   ? 2
                : e->type == TYPE_CHARACTER ? 3
                                            : 4;
     constant(w, 0, kind);
@@ -1659,24 +1668,85 @@ static void character_view(Wasm *w, const Lvalue *value, size_t root)
     w->next_local = saved;
 }
 
+/* Append one immutable string object; return its aligned data address. */
+static size_t string_literal(Wasm *w, const char *text, size_t length)
+{
+    while (!w->data.failed && w->data.length % 16) {
+        buffer_byte(&w->data, 0);
+    }
+    size_t address = w->data.length;
+    for (unsigned i = 0; i < 16; ++i) {
+        unsigned byte = i < 8 ? (unsigned)(length >> ((i % 4) * 8)) & 255 : i == 8;
+        buffer_byte(&w->data, byte);
+    }
+    buffer_append(&w->data, text, length);
+    while (!w->data.failed && w->data.length % 16) {
+        buffer_byte(&w->data, 0);
+    }
+    return address;
+}
+
+/* Emit one bounded table of immutable member-name objects per logical enum.
+ * Preflight its complete size so repeated writes cannot multiply literal data. */
+static size_t enum_table(Wasm *w, ValueType type)
+{
+    for (const EnumTable *table = w->enum_tables; table; table = table->next) {
+        if (table->type == type) {
+            return table->address;
+        }
+    }
+    size_t size = ((size_t)(type->upper + 1) * 4 + 15) & ~(size_t)15;
+    for (const EnumMember *member = type->members; member; member = member->next) {
+        size += 16 + ((member->length + 15) & ~(size_t)15);
+    }
+    if (w->data.length > P2W_SOURCE_LIMIT || size + 15 > P2W_SOURCE_LIMIT - w->data.length) {
+        w->enum_data_overflow = 1;
+        return 0;
+    }
+    EnumTable *table = calloc(1, sizeof(*table));
+    if (!table) {
+        w->data.failed = 1;
+        return 0;
+    }
+    while (!w->data.failed && w->data.length % 16) {
+        buffer_byte(&w->data, 0);
+    }
+    table->address = w->data.length;
+    table->type = type;
+    table->next = w->enum_tables;
+    w->enum_tables = table;
+    for (size_t i = 0; i < (size_t)(type->upper + 1) * 4; ++i) {
+        buffer_byte(&w->data, 0);
+    }
+    size_t ordinal = 0;
+    for (const EnumMember *member = type->members; member; member = member->next, ++ordinal) {
+        size_t address = string_literal(w, member->name, member->length);
+        if (w->data.failed) {
+            return 0;
+        }
+        for (unsigned byte = 0; byte < 4; ++byte) {
+            w->data.data[table->address + ordinal * 4 + byte] =
+                (unsigned char)(address >> (byte * 8));
+        }
+    }
+    return table->address;
+}
+
 /* Strings use immutable value addresses. Literal data and checked frame leases
  * belong to the generated module, never to persistent JavaScript-side storage. */
 static void string_expression(Wasm *w, const Expr *e)
 {
     size_t saved = w->next_local;
     if (e->kind == EX_TEXT) {
-        while (w->data.length % 16) {
-            buffer_byte(&w->data, 0);
-        }
-        constant(w, 0, (int64_t)w->data.length);
-        for (unsigned i = 0; i < 16; ++i) {
-            unsigned byte = i < 8 ? (unsigned)(e->length >> ((i % 4) * 8)) & 255 : i == 8;
-            buffer_byte(&w->data, byte);
-        }
-        buffer_append(&w->data, e->text, e->length);
-        while (w->data.length % 16) {
-            buffer_byte(&w->data, 0);
-        }
+        constant(w, 0, (int64_t)string_literal(w, e->text, e->length));
+    } else if (e->kind == EX_ENUM_TEXT) {
+        size_t table = enum_table(w, e->left->type);
+        emit_expression(w, e->left);
+        constant(w, 0, 4);
+        op(w, 0x6c, "i32.mul");
+        constant(w, 0, (int64_t)table);
+        op(w, 0x6a, "i32.add");
+        memory_op(w, 0x28, "i32.load", 2, 0);
     } else if (e->kind == EX_CHARACTER_STRING) {
         size_t value = temporary(w), destination = temporary(w);
         emit_expression(w, e->left);
@@ -1819,7 +1889,7 @@ static void emit_function(Wasm *w, const Routine *routine, Buffer *bodies, Buffe
     size_t hidden_slot = routine && routine->parent ? 1 : 0;
     size_t parameter = hidden + hidden_slot;
     for (size_t i = 0; routine && i < routine->parameter_count; ++i) {
-        size_t symbol = routine->first_symbol + i;
+        size_t symbol = routine->parameter_symbols[i];
         if (routine->parameter_modes[i]) {
             binding_address(w, symbol);
             indexed(w, 0x20, "local.get", parameter++);
@@ -2018,7 +2088,12 @@ int wasm_emit(const Program *program, int emit_wat, CompileResult *result)
     }
     int success =
         !w.data.failed && !functions.failed && !result->binary.failed && !result->wat.failed;
-    int literals_fit = w.data.length <= P2W_SOURCE_LIMIT;
+    int literals_fit = !w.enum_data_overflow && w.data.length <= P2W_SOURCE_LIMIT;
+    while (w.enum_tables) {
+        EnumTable *next = w.enum_tables->next;
+        free(w.enum_tables);
+        w.enum_tables = next;
+    }
     buffer_free(&w.data);
     buffer_free(&functions);
     wasm_layout_destroy(&w.layout);

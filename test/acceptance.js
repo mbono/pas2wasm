@@ -32,7 +32,9 @@ async function verifySubrangeWrites(compile) {
         ['program p; var value:1..3; begin value:=2; readln(value) end.','4\n',2],
         ["program p; var value:'a'..'c'; begin value:='b'; readln(value) end.",'z\n',98],
         ['program p; var value:1..3; begin value:=3; inc(value) end.','',3],
-        ['program p; var value:1..3; begin value:=2; value:=4 end.','',2]
+        ['program p; var value:1..3; begin value:=2; value:=4 end.','',2],
+        ['program p; type T=(A,B); var value:T; begin value:=B; inc(value) end.','',1],
+        ['program p; type T=(A,B,C); var value:A..B; begin value:=B; value:=C end.','',1]
     ]) {
         const result = compile(source);
         assert(!result.diagnostic, JSON.stringify(result.diagnostic));
