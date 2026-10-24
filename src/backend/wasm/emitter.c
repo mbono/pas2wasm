@@ -372,11 +372,13 @@ static size_t type_size(Wasm *w, ValueType type)
 static int aggregate(ValueType type)
 {
     return type && (type->kind == TYPE_KIND_ARRAY || type->kind == TYPE_KIND_RECORD ||
-                    type->kind == TYPE_KIND_STRING);
+                    type->kind == TYPE_KIND_STRING || type->kind == TYPE_KIND_SET);
 }
 
 /* Index expressions and loads can contain each other. */
 static void emit_expression(Wasm *w, const Expr *e);
+/* Set values use private bitset objects and preserve operand snapshots. */
+static void set_expression(Wasm *w, const Expr *e);
 
 /* Character paths use caller-owned scalar-index descriptors rather than byte offsets. */
 static void character_view(Wasm *w, const Lvalue *value, size_t root);
@@ -621,6 +623,15 @@ static void real_expression(Wasm *w, const Expr *e)
  * finish, so nested arithmetic cannot overwrite a live intermediate value. */
 static void emit_expression(Wasm *w, const Expr *e)
 {
+    if (e->type->kind == TYPE_KIND_SET && e->kind != EX_LOAD && e->kind != EX_CALL) {
+        set_expression(w, e);
+        return;
+    }
+    if (e->kind == EX_MEMBER ||
+        (e->kind != EX_CALL && e->left && e->left->type->kind == TYPE_KIND_SET)) {
+        set_expression(w, e);
+        return;
+    }
     if (e->kind == EX_TEXT || e->kind == EX_ENUM_TEXT || e->kind == EX_STRING_CONVERT ||
         e->kind == EX_LENGTH || e->kind == EX_CHARACTER_STRING || e->kind == EX_SLICE ||
         (e->kind != EX_CALL && e->left && e->left->type->kind == TYPE_KIND_STRING)) {
@@ -692,7 +703,8 @@ static void emit_expression(Wasm *w, const Expr *e)
             w->next_local = saved;
             return;
         }
-        if (aggregate(e->type) && e->type->kind != TYPE_KIND_STRING) {
+        if (aggregate(e->type) && e->type->kind != TYPE_KIND_STRING &&
+            e->type->kind != TYPE_KIND_SET) {
             w->next_local = saved;
             return; /* Aggregate values are copy sources; no leaf is read here. */
         }
@@ -701,7 +713,7 @@ static void emit_expression(Wasm *w, const Expr *e)
         op(w, 0x45, "i32.eqz");
         check(w, 1, e->line, e->column);
         indexed(w, 0x20, "local.get", address);
-        if (e->type->kind == TYPE_KIND_STRING) {
+        if (e->type->kind == TYPE_KIND_STRING || e->type->kind == TYPE_KIND_SET) {
             w->next_local = saved;
             return;
         }
@@ -1228,6 +1240,230 @@ static void call_routine(Wasm *w, const Routine *routine, unsigned line, unsigne
     constant(w, 0, 1);
     op(w, 0x6b, "i32.sub");
     indexed(w, 0x24, "global.set", counter);
+}
+
+/* Bitset objects have the ordinary initialization header and 256 membership bits.
+ * Index locals below are already normalized to the declared lower ordinal. */
+enum { SET_BYTES = WASM_CELL_SIZE + P2W_SET_CAPACITY / 8 };
+
+/* Push the address of one membership byte, using a checked normalized index. */
+static void set_byte_address(Wasm *w, size_t object, size_t index)
+{
+    indexed(w, 0x20, "local.get", object);
+    constant(w, 0, WASM_CELL_SIZE);
+    op(w, 0x6a, "i32.add");
+    indexed(w, 0x20, "local.get", index);
+    constant(w, 0, 3);
+    op(w, 0x76, "i32.shr_u");
+    op(w, 0x6a, "i32.add");
+}
+
+/* Push the single-bit mask for a checked normalized ordinal. */
+static void set_mask(Wasm *w, size_t index)
+{
+    constant(w, 0, 1);
+    indexed(w, 0x20, "local.get", index);
+    constant(w, 0, 7);
+    op(w, 0x71, "i32.and");
+    op(w, 0x74, "i32.shl");
+}
+
+/* Read one membership bit as a Boolean; caller has checked its domain. */
+static void set_member(Wasm *w, size_t object, size_t index)
+{
+    set_byte_address(w, object, index);
+    memory_op(w, 0x2d, "i32.load8_u", 0, 0);
+    set_mask(w, index);
+    op(w, 0x71, "i32.and");
+    op(w, 0x45, "i32.eqz");
+    op(w, 0x45, "i32.eqz");
+}
+
+/* Include one validated ordinal in a private result object. */
+static void set_insert(Wasm *w, size_t object, size_t index)
+{
+    set_byte_address(w, object, index);
+    set_byte_address(w, object, index);
+    memory_op(w, 0x2d, "i32.load8_u", 0, 0);
+    set_mask(w, index);
+    op(w, 0x72, "i32.or");
+    memory_op(w, 0x3a, "i32.store8", 0, 0);
+}
+
+/* Reject an endpoint before normalizing it; signed comparisons avoid overflow at
+ * the integer domain extremes. This leaves the ordinal in its caller-owned local. */
+static void set_bound(Wasm *w, size_t value, ValueType type, const Expr *e)
+{
+    indexed(w, 0x20, "local.get", value);
+    constant(w, 0, type->lower);
+    op(w, 0x48, "i32.lt_s");
+    indexed(w, 0x20, "local.get", value);
+    constant(w, 0, type->upper);
+    op(w, 0x4a, "i32.gt_s");
+    op(w, 0x72, "i32.or");
+    check(w, 20, e->line, e->column);
+}
+
+/* Consume one set into an independent value before later operands can change
+ * aliases or dispose a heap source. The frame owns the snapshot's lifetime. */
+static size_t set_snapshot(Wasm *w, const Expr *e)
+{
+    size_t pins = borrow_checkpoint(w);
+    size_t snapshot = reserve_temporary(w, SET_BYTES, e->line, e->column);
+    emit_expression(w, e);
+    copy_value(w, snapshot, SET_BYTES);
+    release_borrows(w, pins);
+    return snapshot;
+}
+
+/* Lower constructors, conversions, algebra and membership with bounded loops.
+ * Every result is private until its complete value is committed by its consumer. */
+static void set_expression(Wasm *w, const Expr *e)
+{
+    size_t saved = w->next_local;
+    if (e->kind == EX_MEMBER) {
+        size_t index = temporary(w), result = temporary(w);
+        emit_expression(w, e->left);
+        indexed(w, 0x21, "local.set", index);
+        size_t source = set_snapshot(w, e->right);
+        constant(w, 0, 0);
+        indexed(w, 0x21, "local.set", result);
+        indexed(w, 0x20, "local.get", index);
+        constant(w, 0, e->right->type->lower);
+        op(w, 0x4e, "i32.ge_s");
+        indexed(w, 0x20, "local.get", index);
+        constant(w, 0, e->right->type->upper);
+        op(w, 0x4c, "i32.le_s");
+        op(w, 0x71, "i32.and");
+        open_control(w, 0x04, "if");
+        indexed(w, 0x20, "local.get", index);
+        constant(w, 0, e->right->type->lower);
+        op(w, 0x6b, "i32.sub");
+        indexed(w, 0x21, "local.set", index);
+        set_member(w, source, index);
+        indexed(w, 0x21, "local.set", result);
+        close_control(w);
+        indexed(w, 0x20, "local.get", result);
+        w->next_local = saved;
+        return;
+    }
+    size_t result = e->type->kind == TYPE_KIND_SET
+                        ? reserve_temporary(w, SET_BYTES, e->line, e->column)
+                        : SIZE_MAX;
+    if (e->kind == EX_SET_CONSTANT) {
+        for (unsigned word = 0; word < P2W_SET_CAPACITY / 32; ++word) {
+            uint32_t value = 0;
+            for (unsigned byte = 0; byte < 4; ++byte) {
+                value |= (uint32_t)e->set_bits->bits[word * 4 + byte] << (byte * 8);
+            }
+            indexed(w, 0x20, "local.get", result);
+            constant(w, 0, (int32_t)value);
+            memory_op(w, 0x36, "i32.store", 2, WASM_CELL_SIZE + word * 4);
+        }
+    } else if (e->kind == EX_SET_LITERAL) {
+        size_t low = temporary(w), high = temporary(w);
+        for (const SetItem *item = e->items; item; item = item->next) {
+            emit_expression(w, item->low);
+            indexed(w, 0x21, "local.set", low);
+            if (item->high) {
+                emit_expression(w, item->high);
+            } else {
+                indexed(w, 0x20, "local.get", low);
+            }
+            indexed(w, 0x21, "local.set", high);
+            set_bound(w, low, e->type, e);
+            set_bound(w, high, e->type, e);
+            indexed(w, 0x20, "local.get", low);
+            constant(w, 0, e->type->lower);
+            op(w, 0x6b, "i32.sub");
+            indexed(w, 0x21, "local.set", low);
+            indexed(w, 0x20, "local.get", high);
+            constant(w, 0, e->type->lower);
+            op(w, 0x6b, "i32.sub");
+            indexed(w, 0x21, "local.set", high);
+            open_control(w, 0x02, "block");
+            open_control(w, 0x03, "loop");
+            indexed(w, 0x20, "local.get", low);
+            indexed(w, 0x20, "local.get", high);
+            op(w, 0x4a, "i32.gt_s");
+            indexed(w, 0x0d, "br_if", 1);
+            set_insert(w, result, low);
+            indexed(w, 0x20, "local.get", low);
+            constant(w, 0, 1);
+            op(w, 0x6a, "i32.add");
+            indexed(w, 0x21, "local.set", low);
+            indexed(w, 0x0c, "br", 0);
+            close_control(w);
+            close_control(w);
+        }
+    } else if (e->kind == EX_SET_CONVERT) {
+        size_t source = set_snapshot(w, e->left), index = temporary(w), ordinal = temporary(w);
+        constant(w, 0, 0);
+        indexed(w, 0x21, "local.set", index);
+        open_control(w, 0x03, "loop");
+        set_member(w, source, index);
+        open_control(w, 0x04, "if");
+        indexed(w, 0x20, "local.get", index);
+        constant(w, 0, e->left->type->lower);
+        op(w, 0x6a, "i32.add");
+        indexed(w, 0x21, "local.set", ordinal);
+        set_bound(w, ordinal, e->type, e);
+        indexed(w, 0x20, "local.get", ordinal);
+        constant(w, 0, e->type->lower);
+        op(w, 0x6b, "i32.sub");
+        indexed(w, 0x21, "local.set", ordinal);
+        set_insert(w, result, ordinal);
+        close_control(w);
+        indexed(w, 0x20, "local.get", index);
+        constant(w, 0, 1);
+        op(w, 0x6a, "i32.add");
+        indexed(w, 0x22, "local.tee", index);
+        constant(w, 0, (int64_t)e->left->type->upper - e->left->type->lower + 1);
+        op(w, 0x49, "i32.lt_u");
+        indexed(w, 0x0d, "br_if", 0);
+        close_control(w);
+    } else {
+        size_t left = set_snapshot(w, e->left), right = set_snapshot(w, e->right);
+        if (result == SIZE_MAX) {
+            constant(w, 0, 1);
+        }
+        for (unsigned word = 0; word < P2W_SET_CAPACITY / 32; ++word) {
+            if (result != SIZE_MAX) {
+                indexed(w, 0x20, "local.get", result);
+            }
+            indexed(w, 0x20, "local.get", e->kind == EX_GEQUAL ? right : left);
+            memory_op(w, 0x28, "i32.load", 2, WASM_CELL_SIZE + word * 4);
+            indexed(w, 0x20, "local.get", e->kind == EX_GEQUAL ? left : right);
+            memory_op(w, 0x28, "i32.load", 2, WASM_CELL_SIZE + word * 4);
+            if (e->kind == EX_SUBTRACT || e->kind == EX_LEQUAL || e->kind == EX_GEQUAL) {
+                constant(w, 0, -1);
+                op(w, 0x73, "i32.xor");
+            }
+            op(w,
+               e->kind == EX_ADD                              ? 0x72
+               : e->kind == EX_EQUAL || e->kind == EX_UNEQUAL ? 0x73
+                                                              : 0x71,
+               e->kind == EX_ADD                              ? "i32.or"
+               : e->kind == EX_EQUAL || e->kind == EX_UNEQUAL ? "i32.xor"
+                                                              : "i32.and");
+            if (result != SIZE_MAX) {
+                memory_op(w, 0x36, "i32.store", 2, WASM_CELL_SIZE + word * 4);
+            } else {
+                op(w, 0x45, "i32.eqz");
+                op(w, 0x71, "i32.and");
+            }
+        }
+        if (e->kind == EX_UNEQUAL) {
+            op(w, 0x45, "i32.eqz");
+        }
+    }
+    if (result != SIZE_MAX) {
+        indexed(w, 0x20, "local.get", result);
+        constant(w, 0, 1);
+        memory_op(w, 0x3a, "i32.store8", 0, 8);
+        indexed(w, 0x20, "local.get", result);
+    }
+    w->next_local = saved;
 }
 
 /* Forward declaration permits counted-loop bodies to contain any statement. */

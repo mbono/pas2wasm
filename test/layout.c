@@ -39,6 +39,13 @@ int main(void)
     last.next = &first;
     assert(!wasm_type_size(&enumeration, &size, &diagnostic));
     last.next = NULL;
+    Type set = {.kind = TYPE_KIND_SET, .element = TYPE_INTEGER, .lower = -128, .upper = 127};
+    assert(wasm_type_size(&set, &size, &diagnostic) && size == 48);
+    set.upper = 128;
+    assert(!wasm_type_size(&set, &size, &diagnostic));
+    set.upper = 127;
+    set.element = TYPE_REAL;
+    assert(!wasm_type_size(&set, &size, &diagnostic));
     Type flags = {.kind = TYPE_KIND_ARRAY, .element = TYPE_BOOLEAN, .lower = -1, .upper = 1};
     Field array_field = {.name = "b", .type = &flags};
     Field integer_field = {.name = "a", .type = TYPE_INTEGER, .next = &array_field};

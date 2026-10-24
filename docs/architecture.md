@@ -83,6 +83,14 @@ immutable string values via one backend-owned name table per type; no target off
 are stored in the IR. Explicit parameter-symbol maps preserve formal positions when
 inline enum members introduce constants between parameter groups.
 
+Set storage identities are interned by ordinal base and inclusive bounds. Constructor
+expressions retain their base until a value context supplies bounds; explicit conversion
+nodes check changes between domains. The frontend folds logical membership bits, while
+the backend owns bitset object headers and byte addressing. Consumed operands are copied
+before later calls, releasing their heap borrows once the copy is complete. Constructors,
+conversion, and algebra build private bounded results, preserving atomic destination
+writes without new host services.
+
 Subrange storage retains a nominal descriptor with base type and constant bounds.
 Expression types expose the base scalar, and explicit range-check nodes retain the
 destination constraint for narrowing. References compare declared lvalue types rather

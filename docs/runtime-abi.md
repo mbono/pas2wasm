@@ -66,6 +66,7 @@ ABI namespace.
 | Variables per routine | 256, including parameters and implicit result |
 | Fields per record | 4,096 |
 | Singleton/range case labels | 1,024; intervals do not expand |
+| Set domain | At most 256 consecutive ordinals |
 | Decoded/folded compiler text | 8 MiB shared; each string value/capacity at most 1 MiB |
 | Pointer interning/forward resolution | 8,388,608 comparisons |
 | Real literal conversion | 768 significand digits; exponent magnitude 4,096 |
@@ -180,6 +181,7 @@ The reference host maps generated numeric codes as follows:
 | 17 | `R_LIFETIME` | live borrow |
 | 18 | `R_POINTER` | malformed internal pointer |
 | 19 | `R_RANGE` | value outside a declared subrange or enum domain |
+| 20 | `R_SET_RANGE` | set constructor member or narrowing outside its domain |
 
 Host input errors use `R_INPUT_EOF`, `R_INPUT_INVALID`, `R_INPUT_RANGE`, or
 `R_ENCODING`. Input/output budgets use `R_INPUT_LIMIT`/`R_OUTPUT_LIMIT`; the session
@@ -209,6 +211,15 @@ uses the checked ordinal and declared lower bound; all domain kinds retain exist
 nested layouts. Enum output looks up immutable string objects in a backend-emitted
 member-name table shared by every output site for that enum. Tables/names count toward
 the existing literal-data region; no runtime import or public export is added.
+
+Sets use 48-byte objects: the ordinary 16-byte initialization header followed by
+32 membership bytes. Bit zero represents the declared lower ordinal; all unused bits
+are zero. Values/results/arguments use aggregate copy addresses and checked frame
+snapshots. Reads require the set's initialization flag, and conversions construct an
+independent result before commit. Membership outside the domain returns false. Set
+operations are emitted directly into Wasm/WAT without additional host imports; failure
+20 identifies invalid constructor endpoints or narrowing. Logical constant membership
+bits do not contain target addresses or layout metadata.
 
 Comma-separated array dimensions use these same nested objects and child headers;
 index-list syntax introduces no flattened matrix representation or new host imports.

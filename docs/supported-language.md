@@ -135,6 +135,7 @@ ordinary expression values.
 | Record | Named fields with declared types. | `record x, y: integer end` |
 | Typed pointer | Reference to a declared pointee type, or `nil`. | `^Node` |
 | Enumeration | Distinct ordered member values, numbered from zero. | `(Mon, Tue, Wed)` |
+| Set | At most 256 consecutive ordinals from one base type. | `set of 0..255`, `set of Day` |
 | Subrange | Integer, character, or enum values constrained by constant inclusive bounds. | `0..9`, `'a'..'z'`, `#65..#90` |
 
 ### Subrange storage
@@ -146,10 +147,9 @@ incompatible endpoints use `E_TYPE`, and nonconstant endpoints are rejected. All
 32-bit integer endpoints and valid Unicode character endpoints are supported.
 
 Assignments, value arguments, function results/`exit`, supported input, and integer/enum
-`inc` check
-the destination range before committing (`R_RANGE`). Arithmetic intermediates use the
-ordinary base type and can exceed the storage range until assigned. Integer and enum
-subranges can control `for` loops; both bounds are checked against the declared range. Aliases
+`inc` check the destination range before committing (`R_RANGE`). Integer arithmetic
+uses the ordinary base type and can exceed the storage range until assigned. Integer
+and enum subranges can control `for` loops; both bounds are checked against the declared range. Aliases
 share storage identity; separately declared ranges do not. `var` parameters require
 exact declared storage types, so passing a range to an unrestricted integer reference
 is rejected. Subranges work in arrays, record fields, heap values, captures, and routine
@@ -169,6 +169,43 @@ captures, and enum subranges (`Mon..Tue`). `for` and `inc` follow declaration or
 incrementing the final member reports `R_RANGE`. Output prints the member's original
 source spelling (`writeln(Tue:5)` prints two spaces then `Tue`). Enum input, arithmetic,
 integer casts, and implicit conversion to integers/strings are unsupported.
+
+### Bounded sets
+
+`type Values = set of 0..255;` declares a bounded set. Its domain can be an integer,
+character, or enum subrange, an enum type, or Boolean. Domains contain 1..256
+consecutive ordinals (`E_SET_RANGE` otherwise); unrestricted `integer` and Unicode
+`char` are too large. Negative and supplementary-character domains are supported.
+
+| Form | Meaning |
+| --- | --- |
+| `[]`, `[1, 3, 5..8]` | Empty set, individual members, inclusive member ranges |
+| `a + b`, `a - b`, `a * b` | Union, difference, intersection |
+| `value in a` | Membership; an ordinal outside the domain returns false |
+| `a = b`, `a <> b` | Equal or unequal membership |
+| `a <= b`, `a >= b` | Subset or superset, including equality |
+
+Constructors acquire bounds from assignments, parameters, results, or a typed set
+operand. Without that context, integer/character constructors use 0..255, enum
+constructors use their full enum domain, and Boolean constructors use false..true.
+An untyped empty constructor adopts its context, defaulting to the integer domain.
+Named constants containing only empty constructors retain that context flexibility.
+Constants support constructors and all set operations. Repeated members are harmless;
+a reversed range is empty after both endpoints pass domain validation.
+
+Set operands must share their ordinal base (including enum identity). Binary typed
+operands use the enclosing domain, which must still fit 256 ordinals. Value assignment,
+parameters, and results can change bounds within the same base: widening preserves
+members, and narrowing checks every present member. `var` arguments require identical
+base/bounds; aliases and independent declarations with those exact bounds share storage
+identity. A failed constructor/conversion reports `R_SET_RANGE` before changing its
+destination; invalid constant constructors report `E_SET_RANGE`.
+
+Sets initialize atomically and copy independently, including in arrays, records,
+captures, references, and heap storage. Reading/copying an uninitialized set reports
+`R_UNINITIALIZED`. Evaluate values and endpoints once left-to-right; consumed set
+values are snapshotted before later operands can mutate aliases or release heap sources.
+Sets do not support strict ordering, numeric operations/conversions, or whole-value I/O.
 
 ### Operators and evaluation
 
@@ -747,6 +784,7 @@ retain their scope semantics.
 | Variables per routine | 256, including parameters and the implicit function result |
 | Simultaneous routine calls | 64; excess uses `R_CALL_DEPTH` |
 | Labels/ranges per `case` | 1,024; a range counts as one |
+| Set domain | At most 256 consecutive ordinals |
 | String capacity / constant value | At most 1 MiB |
 | Compiler constant-text budget | 8 MiB |
 | Real literals | At most 768 digits; exponent magnitude at most 4,096 |
@@ -761,6 +799,7 @@ retain their scope semantics.
 | `R_RESULT` | Complete a function without setting its result. |
 | `R_BOUNDS` | Invalid array index, string position, or slice bounds. |
 | `R_MEMORY` | Exhaust available storage or a memory sub-budget. |
+| `E_SET_RANGE`, `R_SET_RANGE` | Set domain, constructor member, or narrowing exceeds the permitted domain. |
 | `R_INPUT_INVALID`, `R_INPUT_RANGE`, `R_INPUT_EOF` | Malformed, out-of-range, or exhausted input. |
 | `R_STRING_CAPACITY`, `R_ENCODING` | Exceed UTF-8 string capacity or supply invalid Unicode. |
 | `E_FOR_CONTROL`, `R_FOR_CONTROL` | Modify or alias an active counted-loop control illegally. |
@@ -788,7 +827,8 @@ resolution also have bounded complexity. Exceeding a compiler work budget uses
 | Terminal protocols | ANSI terminal commands and raw keypress input |
 
 Reserved built-ins include `trunc`, `round`, `length`, `char`, `chr`, `ord`, `copy`,
-`nil`, `new`, `dispose`, `inc`, `random`, and `randomize`; `record` is also reserved.
+`nil`, `new`, `dispose`, `inc`, `random`, and `randomize`; `record`, `set`, and `in`
+are also reserved.
 Rename earlier identifiers that use these names.
 
 ## Formal grammar
@@ -814,7 +854,7 @@ parameters  = "(" [parameter_group {";" parameter_group}] ")" ;
 parameter_group = ["var"] declaration_group ;
 declaration_group = identifier {"," identifier} ":" type ;
 call        = identifier ["(" [expression {"," expression}] ")"] ;
-type        = "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier | subrange | enumeration
+type        = "set" "of" type | "^" type | "integer" | "boolean" | "real" | "char" | "string" ["[" expression "]"] | identifier | subrange | enumeration
             | "array" "[" dimension {"," dimension} "]" "of" type
             | "record" declaration_group {";" declaration_group} [";"] "end" ;
 lvalue      = identifier {selector} | call selector {selector} ;
@@ -823,6 +863,8 @@ dimension   = expression ".." expression | ordinal_type ;
 ordinal_type = identifier | "integer" | "boolean" | "char" | enumeration ;
 enumeration = "(" identifier {"," identifier} ")" ;
 subrange    = expression ".." expression ;
+set_constructor = "[" [set_item {"," set_item}] "]" ;
+set_item    = expression [".." expression] ;
 selector    = "[" expression {"," expression} "]" | "." identifier | "^" ;
 compound    = "begin" statement {";" statement} "end" ;
 statement   = assignment | compound | conditional | loop | repeat_loop | for_loop
@@ -849,12 +891,12 @@ expression  = simple [relation simple] ;
 simple      = ["+" | "-"] term {("+" | "-" | "or") term} ;
 term        = factor {("*" | "/" | "div" | "mod" | "and") factor} ;
 factor      = primary {selector} ;
-primary     = integer_literal | real_literal | text_literal | character_literal | "true" | "false" | "nil" | call | identifier
+primary     = set_constructor | integer_literal | real_literal | text_literal | character_literal | "true" | "false" | "nil" | call | identifier
             | ("real" | "trunc" | "round" | "length" | "chr" | "ord") "(" expression ")"
             | "copy" "(" expression "," expression "," expression ")"
             | "random" "(" expression ")"
             | "(" expression ")" | "not" factor ;
-relation    = "=" | "<>" | "<" | "<=" | ">" | ">=" ;
+relation    = "=" | "<>" | "<" | "<=" | ">" | ">=" | "in" ;
 character_literal = "#" ASCII_digit {ASCII_digit} ;
 identifier  = (ASCII_letter | "_") {ASCII_letter | ASCII_digit | "_"} ;
 ```

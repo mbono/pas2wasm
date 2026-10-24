@@ -157,6 +157,32 @@ static int evaluate(Program *program, const Expr *e, ScalarValue *value, Diagnos
         value->length = e->length;
         return 1;
     }
+    if (e->kind == EX_SET_CONSTANT) {
+        value->set_bits = *e->set_bits;
+        return 1;
+    }
+    if (e->kind == EX_SET_LITERAL) {
+        for (const SetItem *item = e->items; item; item = item->next) {
+            ScalarValue low, high;
+            if (!evaluate(program, item->low, &low, diagnostic, depth + 1)) {
+                return 0;
+            }
+            high = low;
+            if (item->high && !evaluate(program, item->high, &high, diagnostic, depth + 1)) {
+                return 0;
+            }
+            if (low.integer < e->type->lower || low.integer > e->type->upper ||
+                high.integer < e->type->lower || high.integer > e->type->upper) {
+                return failure(e, diagnostic, "E_SET_RANGE",
+                               "Constant set member is outside its domain.");
+            }
+            for (int64_t ordinal = low.integer; ordinal <= high.integer; ++ordinal) {
+                unsigned bit = (unsigned)(ordinal - e->type->lower);
+                value->set_bits.bits[bit / 8] |= (unsigned char)(1u << (bit % 8));
+            }
+        }
+        return 1;
+    }
     if (e->kind == EX_LOAD && e->lvalue->kind == LV_CHARACTER &&
         e->lvalue->base->kind == LV_TEMPORARY) {
         ScalarValue source, index;
@@ -182,6 +208,46 @@ static int evaluate(Program *program, const Expr *e, ScalarValue *value, Diagnos
     }
     if (e->right && !evaluate(program, e->right, &right, diagnostic, depth + 1)) {
         return 0;
+    }
+    if (e->kind == EX_MEMBER) {
+        int64_t bit = (int64_t)left.integer - e->right->type->lower;
+        value->integer = bit >= 0 &&
+                         bit <= (int64_t)e->right->type->upper - e->right->type->lower &&
+                         (right.set_bits.bits[bit / 8] & (1u << (bit % 8))) != 0;
+        return 1;
+    }
+    if (e->kind == EX_SET_CONVERT) {
+        ValueType source = e->left->type;
+        for (int64_t ordinal = source->lower; ordinal <= source->upper; ++ordinal) {
+            unsigned bit = (unsigned)(ordinal - source->lower);
+            if (!(left.set_bits.bits[bit / 8] & (1u << (bit % 8)))) {
+                continue;
+            }
+            if (ordinal < e->type->lower || ordinal > e->type->upper) {
+                return failure(e, diagnostic, "E_SET_RANGE",
+                               "Constant set member is outside its domain.");
+            }
+            bit = (unsigned)(ordinal - e->type->lower);
+            value->set_bits.bits[bit / 8] |= (unsigned char)(1u << (bit % 8));
+        }
+        return 1;
+    }
+    if (e->left->type->kind == TYPE_KIND_SET) {
+        int equal = 1, subset = 1, superset = 1;
+        for (size_t i = 0; i < sizeof(value->set_bits.bits); ++i) {
+            unsigned a = left.set_bits.bits[i], b = right.set_bits.bits[i];
+            equal &= a == b;
+            subset &= (a & ~b) == 0;
+            superset &= (b & ~a) == 0;
+            value->set_bits.bits[i] = (unsigned char)(e->kind == EX_ADD        ? a | b
+                                                      : e->kind == EX_SUBTRACT ? a & ~b
+                                                                               : a & b);
+        }
+        value->integer = e->kind == EX_EQUAL     ? equal
+                         : e->kind == EX_UNEQUAL ? !equal
+                         : e->kind == EX_LEQUAL  ? subset
+                                                 : superset;
+        return 1;
     }
     if (e->kind == EX_RANGE_CHECK) {
         if (left.integer < e->constraint->lower || left.integer > e->constraint->upper) {

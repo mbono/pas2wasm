@@ -15,6 +15,7 @@
 #define P2W_WRITE_WORDS (P2W_SYMBOL_LIMIT / 64)
 #define P2W_STRING_LIMIT (1024u * 1024u)
 #define P2W_CONSTANT_TEXT_LIMIT (8u * 1024u * 1024u)
+#define P2W_SET_CAPACITY 256
 
 typedef struct Routine Routine;
 typedef struct CaseArm CaseArm;
@@ -23,6 +24,11 @@ typedef struct Lvalue Lvalue;
 typedef struct Type Type;
 typedef struct Field Field;
 typedef struct EnumMember EnumMember;
+typedef struct SetItem SetItem;
+/* Logical membership bits, relative to a set's lower ordinal; unused bits are zero. */
+typedef struct {
+    unsigned char bits[P2W_SET_CAPACITY / 8];
+} SetBits;
 
 /* Logical type descriptors contain no target layout or instruction information.
  * Scalar aliases reuse canonical identity; builtins are static. */
@@ -37,6 +43,8 @@ typedef enum {
     TYPE_KIND_ALIAS,
     TYPE_KIND_SUBRANGE,
     TYPE_KIND_ENUM,
+    TYPE_KIND_SET,
+    TYPE_KIND_SET_LITERAL, /* Context-dependent constructor; never a storage type. */
     TYPE_KIND_STRING,
     TYPE_KIND_ARRAY,
     TYPE_KIND_RECORD
@@ -107,6 +115,10 @@ typedef enum {
     EX_RANDOM,
     EX_RANGE_CHECK,
     EX_ENUM_TEXT, /* Output-only conversion to the declared member spelling. */
+    EX_SET_LITERAL,
+    EX_SET_CONSTANT,
+    EX_SET_CONVERT,
+    EX_MEMBER,
     EX_TO_REAL,
     EX_TRUNCATE,
     EX_ROUND,
@@ -151,9 +163,17 @@ struct Expr {
     Routine *routine;
     const char *text;
     size_t length;
+    SetItem *items;
+    const SetBits *set_bits;
     struct Expr *left, *right, *next;
     /* Output-list roots optionally own integer formatting expressions; NULL elsewhere. */
     struct Expr *width, *precision;
+};
+/* One constructor member or inclusive interval. Bounds are evaluated once in
+ * source order; NULL high denotes a singleton. Arena-owned like its expressions. */
+struct SetItem {
+    Expr *low, *high;
+    SetItem *next;
 };
 /* Supported statements, including an explicit empty statement. */
 typedef enum {
@@ -224,6 +244,7 @@ typedef struct {
     int by_reference; /* Formal var binding; logical type remains the actual value type. */
     const char *text; /* Folded string bytes borrowed from the arena. */
     size_t length;
+    const SetBits *set_bits;
 } Symbol;
 /* Lexically scoped routine with identity fixed at its first header. Signature types
  * are independent of body parameter names/storage. parameter_symbols maps ordinal
@@ -261,6 +282,7 @@ typedef struct {
     Allocation *allocations;
     size_t node_count, text_bytes;
     Type *string_types;
+    Type *set_types;
     Type *pointer_types, *types;
     Symbol *symbols;
     size_t symbol_count, symbol_capacity;
@@ -279,6 +301,7 @@ typedef struct {
     uint64_t real_bits;
     const char *text;
     size_t length;
+    SetBits set_bits;
 } ScalarValue;
 /* Allocate bounded zeroed arena storage; NULL sets a diagnostic, without unwinding. */
 void *program_allocate(Program *program, size_t size, Diagnostic *diagnostic);

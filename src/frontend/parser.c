@@ -45,6 +45,7 @@ typedef enum {
     TK_TRUNCATE,
     TK_ROUND,
     TK_ARRAY,
+    TK_SET,
     TK_RECORD,
     TK_TRUE,
     TK_FALSE,
@@ -82,6 +83,7 @@ typedef enum {
     TK_LEQUAL,
     TK_GREATER,
     TK_GEQUAL,
+    TK_IN,
     TK_ASSIGN,
     TK_COLON,
     TK_SEMICOLON,
@@ -174,6 +176,8 @@ static const Keyword keywords[] = {{"program", TK_PROGRAM},
                                    {"type", TK_TYPE},
                                    {"uses", TK_UNSUPPORTED},
                                    {"array", TK_ARRAY},
+                                   {"set", TK_SET},
+                                   {"in", TK_IN},
                                    {"record", TK_RECORD},
                                    {"real", TK_REAL},
                                    {"trunc", TK_TRUNCATE},
@@ -698,11 +702,16 @@ static void require_type(Parser *p, Expr *e, ValueType type, Token at)
 
 /* Canonical string descriptors are also needed by character widening. */
 static ValueType string_type(Parser *p, size_t capacity, Token at);
+/* Bind constructors or convert compatible set domains without changing var identity. */
+static Expr *set_coerce(Parser *p, Expr *value, ValueType expected, Token at);
 
 /* Apply specified numeric/string widening and one-scalar constant char contexts. */
 static Expr *coerce(Parser *p, Expr *value, ValueType expected, Token at)
 {
     expected = type_canonical(expected);
+    if (expected->kind == TYPE_KIND_SET) {
+        return set_coerce(p, value, expected, at);
+    }
     if (expected->kind == TYPE_KIND_SUBRANGE) {
         value = coerce(p, value, type_value(expected), at);
         Expr *checked = expression_node(p, EX_RANGE_CHECK, expected, at, value, NULL);
@@ -732,6 +741,107 @@ static Expr *coerce(Parser *p, Expr *value, ValueType expected, Token at)
     }
     require_type(p, value, expected, at);
     return value;
+}
+
+/* Constructors have an ordinal base but acquire bounds from their value context.
+ * These transient descriptors never describe declared storage. */
+static ValueType set_constructor_type(Parser *p, ValueType base)
+{
+    Type *type = allocate(p, sizeof(*type));
+    type->kind = TYPE_KIND_SET_LITERAL;
+    type->element = base;
+    return type;
+}
+
+/* Intern exact storage identity by ordinal base and inclusive domain. */
+static ValueType set_type(Parser *p, ValueType base, int32_t lower, int32_t upper, Token at)
+{
+    if (!type_ordinal(base)) {
+        fail_at(p, "E_TYPE", "Set domain must be ordinal.", at.line, at.column);
+    }
+    if (lower > upper || (int64_t)upper - lower >= P2W_SET_CAPACITY) {
+        fail_at(p, "E_SET_RANGE", "A set domain must contain 1..256 ordinals.", at.line, at.column);
+    }
+    for (Type *type = p->program->set_types; type; type = type->next) {
+        if (type->element == base && type->lower == lower && type->upper == upper) {
+            return type;
+        }
+    }
+    Type *type = new_type(p, TYPE_KIND_SET, at);
+    type->element = base;
+    type->lower = lower;
+    type->upper = upper;
+    type->next = p->program->set_types;
+    p->program->set_types = type;
+    return type;
+}
+
+/* True for concrete set values and context-dependent constructor expressions. */
+static int is_set(ValueType type)
+{
+    return type->kind == TYPE_KIND_SET || type->kind == TYPE_KIND_SET_LITERAL;
+}
+
+/* Context flows through constructor-only algebra. Typed values instead retain
+ * their original domain and get an explicit checked conversion node. */
+static Expr *set_coerce(Parser *p, Expr *value, ValueType expected, Token at)
+{
+    if (!is_set(value->type) ||
+        (value->type->element && value->type->element != expected->element)) {
+        fail_at(p, "E_TYPE", "Set ordinal base types must match.", at.line, at.column);
+    }
+    if (value->type == expected) {
+        return value;
+    }
+    if (value->type->kind == TYPE_KIND_SET_LITERAL) {
+        if (value->kind != EX_SET_LITERAL) {
+            value->left = set_coerce(p, value->left, expected, at);
+            value->right = set_coerce(p, value->right, expected, at);
+        }
+        value->type = expected;
+        return value;
+    }
+    return expression_node(p, EX_SET_CONVERT, expected, at, value, NULL);
+}
+
+/* Resolve a constructor outside a typed context, including empty-set membership. */
+static ValueType default_set_type(Parser *p, ValueType type, ValueType hint, Token at)
+{
+    ValueType base = type->element ? type->element : hint ? hint : TYPE_INTEGER;
+    return set_type(p, base, 0,
+                    base->kind == TYPE_KIND_ENUM ? base->upper
+                    : base == TYPE_BOOLEAN       ? 1
+                                                 : 255,
+                    at);
+}
+
+/* Select one domain for binary algebra; two constructors remain context-dependent
+ * until assignment/call/comparison. Concrete domains expand only within the set limit. */
+static ValueType set_pair(Parser *p, Expr **left, Expr **right, int resolve, Token at)
+{
+    if (!is_set((*left)->type) || !is_set((*right)->type)) {
+        fail_at(p, "E_TYPE", "Set operators require two sets.", at.line, at.column);
+    }
+    ValueType a = (*left)->type, b = (*right)->type;
+    if (a->element && b->element && a->element != b->element) {
+        fail_at(p, "E_TYPE", "Set ordinal base types must match.", at.line, at.column);
+    }
+    ValueType type;
+    if (a->kind == TYPE_KIND_SET && b->kind == TYPE_KIND_SET) {
+        type = set_type(p, a->element, a->lower < b->lower ? a->lower : b->lower,
+                        a->upper > b->upper ? a->upper : b->upper, at);
+    } else if (a->kind == TYPE_KIND_SET || b->kind == TYPE_KIND_SET) {
+        type = a->kind == TYPE_KIND_SET ? a : b;
+    } else {
+        type = set_constructor_type(p, a->element ? a->element : b->element);
+        if (!resolve) {
+            return type;
+        }
+        type = default_set_type(p, type, NULL, at);
+    }
+    *left = set_coerce(p, *left, type, at);
+    *right = set_coerce(p, *right, type, at);
+    return type;
 }
 
 /* Intern capacity identities so independently written string[N] var types agree. */
@@ -938,6 +1048,47 @@ static Expr *factor(Parser *p)
         e->text = decoded;
         e->length = length;
         next(p);
+    } else if (t.kind == TK_LBRACKET) {
+        next(p);
+        e = expression_node(p, EX_SET_LITERAL, set_constructor_type(p, NULL), t, NULL, NULL);
+        SetItem **tail = &e->items;
+        ValueType base = NULL;
+        if (p->token.kind != TK_RBRACKET) {
+            for (;;) {
+                SetItem *item = allocate(p, sizeof(*item));
+                *tail = item;
+                tail = &item->next;
+                item->low = expression(p);
+                if (item->low->type->kind == TYPE_KIND_STRING) {
+                    item->low = coerce(p, item->low, TYPE_CHARACTER, t);
+                }
+                if (!type_ordinal(item->low->type) || (base && base != item->low->type)) {
+                    fail_at(p, "E_TYPE", "Set members require one ordinal base type.", t.line,
+                            t.column);
+                }
+                base = item->low->type;
+                if (p->token.kind == TK_RANGE) {
+                    next(p);
+                    item->high = coerce(p, expression(p), base, t);
+                }
+                unsigned depth = item->low->depth;
+                if (item->high && item->high->depth > depth) {
+                    depth = item->high->depth;
+                }
+                if (depth + 1 >= 128) {
+                    fail_at(p, "E_LIMIT", "Set constructor is too deep.", t.line, t.column);
+                }
+                if (depth + 1 > e->depth) {
+                    e->depth = depth + 1;
+                }
+                if (p->token.kind != TK_COMMA) {
+                    break;
+                }
+                next(p);
+            }
+        }
+        e->type = set_constructor_type(p, base);
+        expect(p, TK_RBRACKET, "Expected ']' after set members.");
     } else if (t.kind == TK_RANDOM) {
         if (p->constant_expression) {
             fail(p, "E_CONST", "Random values are not constant expressions.");
@@ -1016,15 +1167,18 @@ static Expr *factor(Parser *p)
         if (symbol != SIZE_MAX && p->program->symbols[symbol].kind == SYMBOL_CONSTANT) {
             const Symbol *constant = &p->program->symbols[symbol];
             e = expression_node(p,
-                                constant->type == TYPE_NIL                 ? EX_NIL
-                                : constant->type == TYPE_REAL              ? EX_REAL
-                                : constant->type->kind == TYPE_KIND_STRING ? EX_TEXT
-                                                                           : EX_INTEGER,
+                                constant->type->kind == TYPE_KIND_SET_LITERAL ? EX_SET_LITERAL
+                                : constant->type->kind == TYPE_KIND_SET       ? EX_SET_CONSTANT
+                                : constant->type == TYPE_NIL                  ? EX_NIL
+                                : constant->type == TYPE_REAL                 ? EX_REAL
+                                : constant->type->kind == TYPE_KIND_STRING    ? EX_TEXT
+                                                                              : EX_INTEGER,
                                 constant->type, t, NULL, NULL);
             e->integer = constant->value;
             e->real_bits = constant->real_bits;
             e->text = constant->text;
             e->length = constant->length;
+            e->set_bits = constant->set_bits;
             next(p);
         } else {
             if (symbol != SIZE_MAX && p->program->symbols[symbol].kind == SYMBOL_TYPE) {
@@ -1103,6 +1257,9 @@ static Expr *term_tail(Parser *p, Expr *left)
             require_type(p, left, type, op);
             require_type(p, right, type, op);
             kind = op.kind == TK_AND ? EX_AND : op.kind == TK_DIV ? EX_DIVIDE : EX_MODULO;
+        } else if (op.kind == TK_STAR && (is_set(left->type) || is_set(right->type))) {
+            type = set_pair(p, &left, &right, 0, op);
+            kind = EX_MULTIPLY;
         } else {
             numeric_pair(p, &left, &right, op.kind == TK_SLASH, op);
             type = left->type;
@@ -1160,6 +1317,8 @@ static Expr *simple(Parser *p)
             }
             size_t capacity = left->type->capacity + right->type->capacity;
             type = string_type(p, capacity > P2W_STRING_LIMIT ? P2W_STRING_LIMIT : capacity, op);
+        } else if (is_set(left->type) || is_set(right->type)) {
+            type = set_pair(p, &left, &right, 0, op);
         } else {
             numeric_pair(p, &left, &right, 0, op);
             type = left->type;
@@ -1178,12 +1337,29 @@ static Expr *expression(Parser *p)
 {
     Expr *left = simple(p);
     Token op = p->token;
-    if (op.kind >= TK_EQUAL && op.kind <= TK_GEQUAL) {
+    if (op.kind >= TK_EQUAL && op.kind <= TK_IN) {
         next(p);
         Expr *right = simple(p);
         int numeric = (left->type == TYPE_INTEGER || left->type == TYPE_REAL) &&
                       (right->type == TYPE_INTEGER || right->type == TYPE_REAL);
-        if (numeric) {
+        if (op.kind == TK_IN) {
+            if (!is_set(right->type)) {
+                fail_at(p, "E_TYPE", "Membership requires a set on the right.", op.line, op.column);
+            }
+            if (left->type->kind == TYPE_KIND_STRING) {
+                left = coerce(p, left, TYPE_CHARACTER, op);
+            }
+            if (right->type->kind == TYPE_KIND_SET_LITERAL) {
+                right = set_coerce(p, right, default_set_type(p, right->type, left->type, op), op);
+            }
+            require_type(p, left, right->type->element, op);
+        } else if (is_set(left->type) || is_set(right->type)) {
+            if (op.kind == TK_LESS || op.kind == TK_GREATER) {
+                fail_at(p, "E_TYPE", "Sets support equality and inclusive subset tests.", op.line,
+                        op.column);
+            }
+            set_pair(p, &left, &right, 1, op);
+        } else if (numeric) {
             numeric_pair(p, &left, &right, 0, op);
         } else if ((left->type->kind == TYPE_KIND_POINTER || left->type == TYPE_NIL) &&
                    (right->type->kind == TYPE_KIND_POINTER || right->type == TYPE_NIL) &&
@@ -1209,14 +1385,15 @@ static Expr *expression(Parser *p)
                      (left->type == TYPE_BOOLEAN || left->type->kind == TYPE_KIND_ENUM))) {
             fail_at(p, "E_TYPE", "Invalid comparison operand types.", op.line, op.column);
         }
-        ExprKind kind = op.kind == TK_EQUAL     ? EX_EQUAL
+        ExprKind kind = op.kind == TK_IN        ? EX_MEMBER
+                        : op.kind == TK_EQUAL   ? EX_EQUAL
                         : op.kind == TK_UNEQUAL ? EX_UNEQUAL
                         : op.kind == TK_LESS    ? EX_LESS
                         : op.kind == TK_LEQUAL  ? EX_LEQUAL
                         : op.kind == TK_GREATER ? EX_GREATER
                                                 : EX_GEQUAL;
         left = expression_node(p, kind, TYPE_BOOLEAN, op, left, right);
-        if (p->token.kind >= TK_EQUAL && p->token.kind <= TK_GEQUAL) {
+        if (p->token.kind >= TK_EQUAL && p->token.kind <= TK_IN) {
             fail(p, "E_SYNTAX", "Chained comparisons are not supported.");
         }
     }
@@ -1766,17 +1943,28 @@ static void constants(Parser *p)
         p->constant_expression = 1;
         Expr *value = expression(p);
         p->constant_expression = 0;
+        /* A constant containing no member expressions remains polymorphic, so
+         * named [] values can initialize enum/character sets as well as integers. */
+        int empty_set = value->type->kind == TYPE_KIND_SET_LITERAL && !value->type->element;
+        if (value->type->kind == TYPE_KIND_SET_LITERAL) {
+            value = set_coerce(p, value, default_set_type(p, value->type, NULL, name), name);
+        }
         ScalarValue scalar;
         if (!frontend_evaluate(p->program, value, &scalar, p->diagnostic)) {
             longjmp(p->failure, 1);
         }
         declare(p, name, 0, SYMBOL_CONSTANT);
         Symbol *constant = &p->program->symbols[p->program->symbol_count - 1];
-        constant->type = value->type;
+        constant->type = empty_set ? set_constructor_type(p, NULL) : value->type;
         constant->value = scalar.integer;
         constant->real_bits = scalar.real_bits;
         constant->text = scalar.text;
         constant->length = scalar.length;
+        if (value->type->kind == TYPE_KIND_SET) {
+            SetBits *bits = allocate(p, sizeof(*bits));
+            *bits = scalar.set_bits;
+            constant->set_bits = bits;
+        }
         expect(p, TK_SEMICOLON, "Expected ';' after constant declaration.");
     } while (p->token.kind == TK_NAME);
 }
@@ -2064,6 +2252,27 @@ static ValueType declaration_type(Parser *p)
     if (p->token.kind == TK_RECORD) {
         return record_type(p);
     }
+    if (p->token.kind == TK_SET) {
+        Token at = p->token;
+        next(p);
+        expect(p, TK_OF, "Expected 'of' after set.");
+        enter(p);
+        ValueType domain = declaration_type(p);
+        --p->depth;
+        if (!type_ordinal(domain)) {
+            fail_at(p, "E_TYPE", "Set domain must be ordinal.", at.line, at.column);
+        }
+        ValueType base = type_value(domain);
+        int32_t low = domain->kind == TYPE_KIND_SUBRANGE ? domain->lower
+                      : base == TYPE_INTEGER             ? INT32_MIN
+                                                         : 0;
+        int32_t high = domain->kind == TYPE_KIND_SUBRANGE || domain->kind == TYPE_KIND_ENUM
+                           ? domain->upper
+                       : base == TYPE_INTEGER   ? INT32_MAX
+                       : base == TYPE_CHARACTER ? 0x10ffff
+                                                : 1;
+        return set_type(p, base, low, high, at);
+    }
     if (p->token.kind == TK_ARRAY) {
         enter(p);
         Token at = p->token;
@@ -2272,6 +2481,10 @@ static void validate_expression_calls(Parser *p, const Expr *e, const ForControl
         validate_lvalue_calls(p, e->lvalue, control);
         validate_expression_calls(p, e->left, control);
         validate_expression_calls(p, e->right, control);
+        for (const SetItem *item = e->items; item; item = item->next) {
+            validate_expression_calls(p, item->low, control);
+            validate_expression_calls(p, item->high, control);
+        }
         validate_expression_calls(p, e->width, control);
         validate_expression_calls(p, e->precision, control);
     }

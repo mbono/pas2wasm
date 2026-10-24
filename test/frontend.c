@@ -391,6 +391,17 @@ int main(void)
     assert(routine->parameter_types[1]->kind == TYPE_KIND_ENUM);
     assert(routine->parameter_types[2] == TYPE_REAL);
     program_destroy(&program);
+    const char *sets = "program p; const c=[1,2]-[2]; type S=set of -2..2; "
+                       "var a:S; begin a:=c; writeln(1 in a) end.";
+    assert(frontend_parse(&program, sets, strlen(sets), &diagnostic));
+    assert(program.symbols[0].type->kind == TYPE_KIND_SET);
+    assert(program.symbols[0].set_bits->bits[0] == 2);
+    assert(program.symbols[2].type->lower == -2 && program.symbols[2].type->upper == 2);
+    Expr *converted = program.body->body->expression;
+    assert(converted->kind == EX_SET_CONVERT && converted->type == program.symbols[2].type);
+    assert(converted->left->kind == EX_SET_CONSTANT);
+    assert(program.body->body->next->expression->kind == EX_MEMBER);
+    program_destroy(&program);
     const char *invalid = "program error;\r\nbegin\r\n  writeln(unknown)\r\nend.";
     memset(&diagnostic, 0, sizeof(diagnostic));
     assert(!frontend_parse(&program, invalid, strlen(invalid), &diagnostic));

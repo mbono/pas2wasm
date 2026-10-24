@@ -442,7 +442,8 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
                 16: ['R_DISPOSE', 'Cannot dispose an invalid, nil, or released pointer.'],
                 17: ['R_LIFETIME', 'Cannot dispose an allocation while it is borrowed.'],
                 18: ['R_POINTER', 'Invalid internal pointer or allocation bounds.'],
-                19: ['R_RANGE', 'Value is outside its declared subrange.']
+                19: ['R_RANGE', 'Value is outside its declared subrange.'],
+                20: ['R_SET_RANGE', 'Set member is outside its declared domain.']
             };
             const entry = errors[code] || ['R_FAILURE', 'Unknown program runtime failure.'];
             fail(entry[0], entry[1], line, column);

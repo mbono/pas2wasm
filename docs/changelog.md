@@ -8,6 +8,13 @@
   increment/loops, subranges, case ranges, and formatted member-name output.
 - Ordinal array domains for integers, characters, Booleans, and enumerations,
   including named/inline domains and the unchanged tutorial `enum_demo` source.
+- Bounded ordinal sets with constructors/constants, union/difference/intersection,
+  membership, subset/equality tests, checked domain conversion, and independent values.
+  Includes the unchanged tutorial `set_demo` source.
+
+### Compatibility changes
+
+- `set` and `in` are now reserved. Rename declarations previously using those names.
 
 ## [0.4.0] - 2026-10-23
 

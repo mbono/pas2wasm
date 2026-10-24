@@ -53,6 +53,14 @@ static int object_size(ValueType type, size_t *size, Diagnostic *diagnostic, uns
         *size = WASM_CELL_SIZE;
         return 1;
     }
+    if (type->kind == TYPE_KIND_SET) {
+        if (!type_ordinal(type->element) || type->lower > type->upper ||
+            (int64_t)type->upper - type->lower >= P2W_SET_CAPACITY) {
+            return invalid(type, diagnostic);
+        }
+        *size = WASM_CELL_SIZE + P2W_SET_CAPACITY / 8;
+        return 1;
+    }
     if (type->kind == TYPE_KIND_INTEGER || type->kind == TYPE_KIND_BOOLEAN ||
         type->kind == TYPE_KIND_REAL || type->kind == TYPE_KIND_CHARACTER ||
         type->kind == TYPE_KIND_POINTER) {

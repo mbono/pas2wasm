@@ -48,6 +48,24 @@ async function verifySubrangeWrites(compile) {
     }
 }
 
+/* Failed constructors/conversions must leave both payload and initialization of an
+ * already initialized set unchanged, including when partial temporary work succeeded. */
+async function verifySetWrites(compile) {
+    for (const tail of ['value:=[2,9]', 'wide:=[2,9]; value:=wide']) {
+        const result = compile('program p; type Small=set of 1..3; WideSet=set of 0..10; ' +
+            'var value:Small; wide:WideSet; begin value:=[1,3]; '+tail+' end.');
+        assert(!result.diagnostic, JSON.stringify(result.diagnostic));
+        const host = createPas2WasmRuntime('', () => {});
+        const {instance} = await WebAssembly.instantiate(result.binary, {pas2wasm_v1:host.imports});
+        host.attach(instance);
+        assert.throws(() => instance.exports.run(), error => error.code === 'R_SET_RANGE');
+        const bytes = new Uint8Array(instance.exports.memory.buffer, 262144, 48);
+        assert.equal(bytes[8], 1);
+        assert.equal(bytes[16], 5, 'Failed set write changed existing members');
+        assert(bytes.slice(17).every(byte => byte === 0));
+    }
+}
+
 /* Run a development tool with bounded runtime and useful failure output. */
 function tool(command, args, options = {}) {
     const result = spawnSync(command, args, {encoding: 'utf8', timeout: 15000, ...options});
@@ -101,6 +119,7 @@ async function main() {
     await require('./io.js')();
     const compile = await createCompiler(require('../build/pas2wasm.js'));
     await verifySubrangeWrites(compile);
+    await verifySetWrites(compile);
     const version = fs.readFileSync(path.join(__dirname, '../VERSION'), 'utf8').trim();
     assert.equal(compile.version, version, 'Wasm compiler embeds VERSION');
     assert.equal(tool(nativeExecutable, ['--version']).stdout, `Pas2Wasm ${version}\n`);
