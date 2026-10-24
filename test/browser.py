@@ -257,7 +257,10 @@ def verify_reference_epoch(browser, cases, directory):
     for name, code, size, input_text, limit in [
         ('address_variant_atomic_identity_budget','R_MEMORY',48,'',1),
         ('address_variant_atomic_range','R_RANGE',48,'',65536),
-        ('address_variant_atomic_input','R_STRING_CAPACITY',64,'abc\n',65536)
+        ('address_variant_atomic_input','R_STRING_CAPACITY',64,'abc\n',65536),
+        ('address_variant_character_atomic_write','R_UNINITIALIZED',64,'',65536),
+        ('address_variant_character_atomic_input','R_UNINITIALIZED',64,'😀\n',65536),
+        ('address_variant_character_atomic_ancestor','R_UNINITIALIZED',80,'',65536)
     ]:
         fixture = next(test for test in cases if test['name']==name)
         artifact = native_result(fixture['source'],directory,name)

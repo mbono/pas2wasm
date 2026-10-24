@@ -73,7 +73,8 @@ static const Import imports[] = {{"write_utf8", "ii", 0},
                                  {"address_view", "iiiiii", 0},
                                  {"frame_enter", "iiiii", 0},
                                  {"frame_leave", "iiii", 0},
-                                 {"variant_bind", "iiiii", 0x7e}};
+                                 {"variant_bind", "iiiii", 0x7e},
+                                 {"variant_char_store", "iiiii", 0}};
 enum {
     IMPORT_COUNT = sizeof(imports) / sizeof(*imports),
     RUN_TYPE = IMPORT_COUNT,
@@ -1049,12 +1050,15 @@ static void emit_assignment(Wasm *w, const Lvalue *target, const Expr *source, u
             check_range(w, target->type, line, column);
         }
         indexed(w, 0x21, "local.set", value);
-        variant_access(w, &path, -1, line, column);
-        indexed(w, 0x20, "local.get", destination);
-        indexed(w, 0x20, "local.get", value);
-        constant(w, 0, line);
-        constant(w, 0, column);
-        indexed(w, 0x10, "call", 17);
+        if (path.count) {
+            variant_store_character(w, &path, destination, value, line, column);
+        } else {
+            indexed(w, 0x20, "local.get", destination);
+            indexed(w, 0x20, "local.get", value);
+            constant(w, 0, line);
+            constant(w, 0, column);
+            indexed(w, 0x10, "call", 17);
+        }
     } else if (target->type->kind == TYPE_KIND_STRING) {
         if (source) {
             emit_expression(w, source);

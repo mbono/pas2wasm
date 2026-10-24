@@ -28,6 +28,11 @@
 - `with` is now reserved. Rename declarations previously using that name.
 - `set` and `in` are now reserved. Rename declarations previously using those names.
 
+### Fixed
+
+- Preserve variant storage when a write/input through a saved string-character
+  pointer cannot retain an initialized string owner after activation.
+
 ## [0.4.0] - 2026-10-23
 
 ### Added

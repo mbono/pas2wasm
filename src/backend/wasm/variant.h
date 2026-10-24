@@ -26,6 +26,7 @@ enum {
     FRAME_LEAVE_IMPORT,
     VARIANT_BIND_IMPORT
 };
+enum { VARIANT_CHAR_STORE_IMPORT = 38 };
 /* Backend identities and requests remain opaque to the frontend and Pascal code. */
 size_t variant_identity(Wasm *w, ValueType type);
 size_t variant_request(Wasm *w, const VariantPath *path, unsigned line, unsigned column);
@@ -40,6 +41,9 @@ void variant_copy(Wasm *w, const VariantPath *path, size_t destination, size_t s
 /* Read/validate a string before activating destination views; preserves JSPI waits. */
 void variant_read_string(Wasm *w, const VariantPath *path, size_t destination, size_t capacity,
                          int input_line, unsigned line, unsigned column);
+/* Preflight character cells/views and activation together before committing either. */
+void variant_store_character(Wasm *w, const VariantPath *path, size_t destination, size_t value,
+                             unsigned line, unsigned column);
 /* True when a value copy can overwrite variant headers (pointer edges are excluded). */
 int variant_value(ValueType type);
 /* Release backend-only immutable schema/type-identity caches after module generation. */

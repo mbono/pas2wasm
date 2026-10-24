@@ -617,6 +617,36 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         }
         return (BigInt(head) << 32n) | BigInt(base + claims.length * 16);
     }
+    /* Preflight variable-width replacement against the virtual activation plan.
+     * A cleared string header cannot be read from the incompatible arm's old bytes. */
+    function prepareCharacterStore(target, value, operations, line, column) {
+        const text = character(value, line, column);
+        if (target < 0) {
+            const view = characterView(target, line, column);
+            if (operations.some(operation => !operation.tag && view.source + 8 >= operation.pointer &&
+                view.source + 8 < operation.pointer + operation.length))
+                fail('R_UNINITIALIZED', 'String character view would lose its initialized owner.', line, column);
+            const characters = stringCharacters(view.source, view.index, line, column);
+            characters[view.index - 1] = text;
+            const capacity = word(view.source + 4, line, column);
+            const value = encoder.encode(characters.join(''));
+            bytes(view.source,16 + capacity,line,column);
+            if (value.length > capacity)
+                fail('R_STRING_CAPACITY', 'String exceeds its UTF-8 byte capacity.', line, column);
+            return {source:view.source, capacity, bytes:value};
+        }
+        bytes(target,16,line,column);
+        return {target, value};
+    }
+    /* All ranges, scalar values and capacity are already validated; activation may
+     * now clear other fields before this synchronous, infallible payload commit. */
+    function commitCharacterStore(plan) {
+        if (plan.bytes) storeString(plan.source,plan.capacity,plan.bytes);
+        else {
+            const view = new DataView(memory.buffer,plan.target,16);
+            view.setInt32(0,plan.value,true); view.setUint8(8,1);
+        }
+    }
     /* ABI record: name/signature pairs are documented in docs/runtime-abi.md. */
     const imports = {
         address_of:addressOf,
@@ -743,18 +773,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         },
         /* Variable-width replacement preflights the complete new string before writing. */
         char_store(target, value, line, column) {
-            const text = character(value, line, column);
-            if (target < 0) {
-                const view = characterView(target, line, column);
-                const characters = stringCharacters(view.source, view.index, line, column);
-                characters[view.index - 1] = text;
-                const capacity = new DataView(memory.buffer, view.source, 16).getUint32(4, true);
-                storeString(view.source, capacity, encoder.encode(characters.join('')), line, column);
-            } else {
-                bytes(target, 16, line, column);
-                const data = new DataView(memory.buffer, target, 16);
-                data.setInt32(0, value, true); data.setUint8(8, 1);
-            }
+            commitCharacterStore(prepareCharacterStore(target,value,[],line,column));
         },
         /* Character output preserves exactly one scalar, including NUL and BOM. */
         write_char(value, line, column) { write(character(value, line, column)); },
@@ -785,6 +804,14 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             const request = variantRequest(pointer, line, column);
             const operations = variantPlan(request, writable !== 0, line, column);
             if (writable) applyVariantPlan(operations);
+        },
+        variant_char_store(target, value, pointer, line, column) {
+            const request = variantRequest(pointer,line,column);
+            if (target >= 0) variantControls(request,target,16,line,column);
+            const operations = variantPlan(request,true,line,column);
+            const character = prepareCharacterStore(target,value,operations,line,column);
+            applyVariantPlan(operations);
+            commitCharacterStore(character);
         },
         variant_copy(destination, source, size, capacity, pointer, line, column) {
             variantCopy(destination, source, size, capacity, pointer, line, column);

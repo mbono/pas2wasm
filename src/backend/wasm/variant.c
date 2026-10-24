@@ -279,6 +279,21 @@ void variant_read_string(Wasm *w, const VariantPath *path, size_t destination, s
     w->next_local = saved;
 }
 
+void variant_store_character(Wasm *w, const VariantPath *path, size_t destination, size_t value,
+                             unsigned line, unsigned column)
+{
+    size_t saved = w->next_local, top = request_top(w);
+    size_t object = variant_request(w, path, line, column);
+    indexed(w, 0x20, "local.get", destination);
+    indexed(w, 0x20, "local.get", value);
+    indexed(w, 0x20, "local.get", object);
+    constant(w, 0, line);
+    constant(w, 0, column);
+    indexed(w, 0x10, "call", VARIANT_CHAR_STORE_IMPORT);
+    release_request(w, top);
+    w->next_local = saved;
+}
+
 int variant_value(ValueType type)
 {
     type = type_canonical(type);

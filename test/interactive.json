@@ -247,5 +247,15 @@
     "output": "",
     "runtime": "R_DANGLING",
     "transcript": ""
+  },
+  {
+    "name": "address_variant_character_invalidated",
+    "source": "program p; type R=record case boolean of true:(s:string[8]);false:(n:integer) end; var v:R; q:^char; begin v.s:='ab'; q:=@v.s[2]; v.n:=7; writeln('ready'); readln(q^) end.",
+    "lines": [
+      "\ud83d\ude00"
+    ],
+    "output": "ready\n",
+    "transcript": "ready\n\ud83d\ude00\n",
+    "runtime": "R_UNINITIALIZED"
   }
 ]

@@ -735,7 +735,10 @@ Canonical compatible views choose a stable representative arm when reactivated.
 
 Character pointers retain the string object and scalar index. They recheck bounds
 against the current string, so shortening it may cause `R_BOUNDS`; changing UTF-8 widths
-does not change the logical location. Address identities are bounded to 65,536 live
+does not change the logical location. A write through a saved character view cannot
+reconstruct a string cleared by incompatible variant activation: it uses
+`R_UNINITIALIZED` and leaves the currently active storage unchanged. Address identities
+are bounded to 65,536 live
 entries. Retired frame identities and stale heap identities can be reclaimed, without
 reusing their IDs. Identity/frame-epoch exhaustion uses `R_MEMORY`.
 

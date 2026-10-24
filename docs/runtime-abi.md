@@ -170,7 +170,7 @@ Only `variant_read_string` may suspend under JSPI. Synchronous batch hosts need 
 Requests and schemas use the private layouts below; legacy import signatures remain
 unchanged, and older modules continue to work with the updated runtime.
 
-### Address and binding services (indices 33–37)
+### Address and binding services (indices 33–38)
 
 All parameters are i32. These synchronous services expose only checked coordinates in
 the attached program memory; they require no JSPI or external dependency.
@@ -182,6 +182,7 @@ the attached program memory; they require no JSPI or external dependency.
 | `frame_enter` | `(base,size,epoch,line,column) -> ()` | Register an activation's unique nonzero u32 epoch and storage range. |
 | `frame_leave` | `(base,epoch,line,column) -> ()` | Retire this activation and its owned identities; forwarded caller references survive. |
 | `variant_bind` | `(request,base,end,line,column) -> i64` | Expand claims and preflight capacity/activation before linking kind-1 leases at base; return lease head in the high u32 and new frame top in the low u32. |
+| `variant_char_store` | `(target,value,request,line,column) -> ()` | Preflight character cells/views, capacity, bounds and planned clears before activating/writing. |
 
 `limits.references` optionally lowers the default 65,536 live identity budget; accept
 integer values 1..65,536, otherwise `R_MEMORY`. A fresh attachment clears all address,

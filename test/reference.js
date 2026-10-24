@@ -24,7 +24,10 @@ module.exports = async function verifyReference(compile, tool, directory) {
     for (const [name,code,size,input,limit] of [
         ['address_variant_atomic_identity_budget','R_MEMORY',48,'',1],
         ['address_variant_atomic_range','R_RANGE',48,'',65536],
-        ['address_variant_atomic_input','R_STRING_CAPACITY',64,'abc\n',65536]
+        ['address_variant_atomic_input','R_STRING_CAPACITY',64,'abc\n',65536],
+        ['address_variant_character_atomic_write','R_UNINITIALIZED',64,'',65536],
+        ['address_variant_character_atomic_input','R_UNINITIALIZED',64,'😀\n',65536],
+        ['address_variant_character_atomic_ancestor','R_UNINITIALIZED',80,'',65536]
     ]) {
         const fixture = require('./cases.js').find(test=>test.name === name);
         const artifact = compile(fixture.source);

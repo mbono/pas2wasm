@@ -242,6 +242,8 @@ without permanent leases. Dereferencing borrows any heap owner and carries dynam
 claims into existing read/binding/atomic-commit services; a pointer cannot bypass a
 subrange, counted-control, initialization, or variant check. Binding preflights expanded
 lease capacity before activation and reuses the request buffer after snapshotting it.
+Character stores also preflight against the activation plan: a cleared owner header
+cannot supply a character value, and a rejected write/input must preserve the old arm.
 This keeps frontend/IR independent of Wasm layout and avoids a second allocator or
 unbounded host ownership. Standalone exports embed the same self-contained runtime.
 
