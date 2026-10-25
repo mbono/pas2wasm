@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.5.0] - 2026-10-25
+
 ### Added
 
 - Host-supplied UTF-8 input files and generated text-file downloads in the playground
