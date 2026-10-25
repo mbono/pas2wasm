@@ -20,6 +20,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     // Files own bounded snapshots; bindings own names, modes/cursors and checked lifetimes.
     const virtualFiles = new Map(), fileBindings = new Map();
     let fileSequence = 0, fileBytes = 0, openFiles = 0;
+    let fileResults = [], fileLoadAllowed = false;
 
     let memory = null, position = 0, offset = 0, outputBytes = 0;
     let closed = !requestLine, inputBytes = encoder.encode(input).length;
@@ -29,7 +30,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     let terminated = lines.map((_, i) => i < lines.length - 1 || input.endsWith('\n'));
     /* Throw a diagnostic-bearing error; callers must render its fields as text. */
     function fail(code, message, line = 0, column = 0) {
-        finishFiles();
+        finishFiles(); fileResults = []; fileLoadAllowed = false;
         const error = new Error(message);
         error.code = code; error.line = line; error.column = column;
         throw error;
@@ -714,10 +715,54 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         for (const binding of fileBindings.values()) dropFileBinding(binding);
         virtualFiles.clear(); fileBytes = 0; openFiles = 0;
     }
+    /* Successful main completion transfers bounded text snapshots out of the live
+     * filesystem. Unchanged inputs and internal typed snapshots are not results. */
+    function completeFiles() {
+        fileResults = [];
+        for (const [name, file] of virtualFiles)
+            if (file.kind && file.generated)
+                fileResults.push({name, data:file.data.slice(0, file.length)});
+        fileLoadAllowed = false; finishFiles();
+    }
+    /* Seed one fresh attachment atomically. Preflight all metadata before copying
+     * at most 1 MiB, then validate the owned bytes without changing their encoding. */
+    function loadFiles(files) {
+        if (!fileLoadAllowed)
+            fail('R_FILE_STATE', 'Input files require a fresh attachment before execution.');
+        if (!Array.isArray(files)) fail('R_FILE_TYPE', 'Input files must be a list.');
+        if (files.length > 32) fail('R_FILE_LIMIT', 'Input files exceed the 32-file limit.');
+        const names = new Set(); let total = 0;
+        for (const file of files) {
+            const name = file?.name;
+            if (typeof name !== 'string' || !name || name.length > 255 || name.includes('\0'))
+                fail('R_FILE_NAME', 'Input filenames require 1..255 UTF-8 bytes without NUL.');
+            for (const scalar of name) {
+                const value = scalar.codePointAt(0);
+                if (value >= 0xd800 && value <= 0xdfff)
+                    fail('R_FILE_NAME', 'Input filename contains invalid Unicode.');
+            }
+            if (encoder.encode(name).length > 255 || names.has(name))
+                fail('R_FILE_NAME', 'Input filename is too long or duplicated.');
+            names.add(name);
+            if (!(file.data instanceof Uint8Array))
+                fail('R_FILE_TYPE', 'Input file contents require a Uint8Array.');
+            total += file.data.byteLength;
+            if (total > 1048576) fail('R_FILE_LIMIT', 'Input files exceed 1 MiB.');
+        }
+        const prepared = files.map(file => ({name:file.name, data:new Uint8Array(file.data)}));
+        for (const file of prepared) {
+            try { decoder.decode(file.data); }
+            catch { fail('R_ENCODING', 'Input text file is not valid UTF-8.'); }
+        }
+        for (const file of prepared)
+            virtualFiles.set(file.name, {kind:1,type:0,size:0,data:file.data,length:file.data.length,
+                readers:new Set(),writer:0,text:null,generated:false});
+        fileBytes = total; fileLoadAllowed = false;
+    }
     /* Abandoning a worker/embedding releases accepted typeahead as well as files.
      * File-only finish stays separate so virtual I/O never changes console state. */
     function finishRuntime() {
-        finishFiles(); keyQueue = ''; keyOffset = 0;
+        finishFiles(); fileResults = []; fileLoadAllowed = false; keyQueue = ''; keyOffset = 0;
         lines = []; terminated = []; position = offset = 0; closed = true;
     }
     /* Stale heap owners release their bindings before any capacity/open-mode check.
@@ -748,6 +793,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
     }
     /* Validate the filename, lifetime and budgets before replacing a closed binding. */
     function assignFile(target, root, kind, type, size, name, pointer, line, column) {
+        fileLoadAllowed = false;
         if (target % 16 || root % 16) fail('R_POINTER','Unaligned file descriptor.',line,column);
         if (!Number.isInteger(type) || !Number.isInteger(size) || (kind !== 0 && kind !== 1) ||
             (kind === 1 ? type || size : type < 1 || size < 16 || size > 67108864 || size % 16))
@@ -795,7 +841,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
                 fail('R_FILE_LIMIT','Named virtual file budget exhausted.',line,column);
             const oldLength = file?.length || 0;
             file = {kind:binding.kind,type:binding.type,size:binding.size,data:new Uint8Array(0),
-                length:0,readers:new Set(),writer:binding.id,text:null};
+                length:0,readers:new Set(),writer:binding.id,text:null,generated:true};
             virtualFiles.set(binding.name,file); fileBytes -= oldLength;
             binding.mode = 1; binding.cursor = 0;
         } else {
@@ -939,7 +985,7 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
         file_text_discard(id, line, column) {
             return withFileCursor(id,line,column,()=>nextLine(line,column));
         },
-        file_finish:finishFiles,
+        file_finish:completeFiles,
         address_of:addressOf,
         address_view:addressView,
         variant_bind:variantBind,
@@ -1154,16 +1200,19 @@ function createPas2WasmRuntime(input, emit, limits = {}, requestLine = null) {
             fail(entry[0], entry[1], line, column);
         }
     };
-    return {imports, finish:finishRuntime,
+    return {imports, finish:finishRuntime, loadFiles,
+        /* Consume results once. The caller owns their buffers independently of finish. */
+        takeFiles() { const result = fileResults; fileResults = []; return result; },
         /* Bind only the freshly instantiated generated program's bounded memory. */
         attach(instance) {
-            finishFiles(); fileSequence = 0;
+            finishFiles(); fileResults = []; fileLoadAllowed = false; fileSequence = 0;
             memory = instance.exports.memory;
             variantSchemas.clear(); variantSchemaBytes = 0;
             references.clear(); referenceKeys.clear(); frames.clear(); referenceSequence = 0;
             keyQueue = ''; keyOffset = 0;
             if (!(memory instanceof WebAssembly.Memory) || memory.buffer.byteLength > 67108864)
                 fail('R_MEMORY', 'Program memory exceeds 64 MiB or is missing.');
+            fileLoadAllowed = true;
         }
     };
 }
@@ -1225,10 +1274,12 @@ function pas2WasmProgramWorker() {
             }
             const {instance} = await WebAssembly.instantiate(data.binary, {pas2wasm_v1:imports});
             runtime.attach(instance);
+            runtime.loadFiles(data.files === undefined ? [] : data.files);
             postMessage({type:'running', id:runId});
             if (data.interactive) await WebAssembly.promising(instance.exports.run)();
             else instance.exports.run();
-            flush(); postMessage({type:'done', id:runId});
+            const files = runtime.takeFiles();
+            flush(); postMessage({type:'done', id:runId, files}, files.map(file => file.data.buffer));
         } catch (error) {
             flush(); postMessage({type:'error', id:runId, diagnostic:{
                 code:error.code || 'R_TRAP', message:error.message,

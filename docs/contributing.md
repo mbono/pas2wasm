@@ -59,7 +59,12 @@ between Node and both browsers; `test/keyboard.js` checks on-demand CRT emission
 executables run in the temporary test directory so comparison file I/O stays there.
 `test/terminal.py` covers native editing, caret geometry,
 selection, draft/focus state, Backspace output/overwrite across chunks, and offline
-presentation. `console_output_*` shared records retain raw output plus display/cursor
+presentation. `test/file-transfer.json` shares seeded-program/raw-output/result-byte
+fixtures across both hosts, WAT and actual browser workers. `test/file-transfer-runtime.js`
+and `test/file-transfer-ui.js` cover ownership, exact limits, atomic rejection, stale
+reads and downloads; `test/file_transfer.py` exercises real native file selection,
+byte-exact downloads, cancellation and fresh offline exports without Node.
+`console_output_*` shared records retain raw output plus display/cursor
 expectations; the renderer checks Unicode, line boundaries, copy/draft preservation,
 bounded control chunks and unchanged byte budgets in both engines. Private heap boundary checks use
 test-only WAT exports; production exports stay unchanged. Profiles are temporary and
@@ -105,7 +110,7 @@ The following scenario groups preserve the integration acceptance contract:
 | WAT | Absent by default; enabling leaves binary bytes unchanged; complete helper/import/data/UTF-8 emission; independent reassembly validates and preserves execution/located failures. |
 | Language/storage | Every supported family, value/reference contrasts, partial initialization/copies, evaluation order, recursive frames/captures, counted-control protection, early-return cleanup, arithmetic/index/conversion boundaries, and memory budgets. |
 | Heap and addresses | Global/local/result/interior/character addresses, identity limits, stale/reused frame epochs, forwarded ownership, disposal and view identities; recursive structures and aliases; nil/uninitialized/stale/reused pointers; generation/fragmentation/growth limits; borrow/view/reference lifetime and counter-precedence checks; repeat boundary helper checks in both browsers. |
-| Virtual files | Typed/text snapshots, exact component identity, names/modes/independent cursors, EOF/EOLN, budgets, receiver evaluation and group borrows, frame/heap retirement, failure/cancellation/completion cleanup, fresh runs, live console interaction, and offline exports. |
+| Virtual files | Typed/text snapshots, exact component identity, names/modes/independent cursors, EOF/EOLN, budgets, receiver evaluation and group borrows, frame/heap retirement, failure/cancellation/completion cleanup, uploaded/generated text snapshots, metadata preflight, pending reads, real downloads, fresh runs, live console interaction, and offline exports. |
 | Input/output | Raw CRT keys, key/line cursor mixing, prefix accounting, chunk/EOF boundaries, LF/CRLF, empty/unterminated/trailing lines, invalid/range/EOF/encoding/capacity failures, multi-field reads, shared cursor and legacy imports, Unicode output and literal escaping. |
 | Live versus batch | Equivalent supplied lines/EOF yield identical program output and diagnostics without echo; synchronous hosts work without JSPI; actual worker JSPI waits/resumes the same instance; unsupported JSPI offers batch. |
 | Sessions/limits | Empty input, EOF closure, stale/duplicate delivery, Stop during compute/wait, compile/run timeouts, long human waits excluded, cumulative active budget not replenished, UTF-8 input/echo/output limits, and fresh recovery/reruns. |

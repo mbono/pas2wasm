@@ -35,7 +35,7 @@ jobs:
             build/pas2wasm.wasm build/supported-language.md build/LICENSE \
             build/THIRD_PARTY_NOTICES.txt _site/
           cp build/runtime/host.js build/runtime/terminal.js \
-            build/runtime/session.js _site/runtime/
+            build/runtime/files.js build/runtime/session.js _site/runtime/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

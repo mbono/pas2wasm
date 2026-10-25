@@ -4,6 +4,10 @@
 
 ### Added
 
+- Host-supplied UTF-8 input files and generated text-file downloads in the playground
+  and offline HTML, with reusable input selections, exact result bytes, atomic
+  validation and the shared 32-file / 1 MiB allowance. Compiler output is unchanged.
+
 - Complete 23-file tutorial compatibility corpus pinned to original Git blob hashes,
   with shared expected input/output and native/Wasm/browser verification.
 

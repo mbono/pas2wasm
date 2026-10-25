@@ -22,7 +22,7 @@ CORE = src/buffer.c src/compiler.c $(FRONTEND) \
 HEADERS = src/pas2wasm.h src/ir/program.h src/ir/number.h src/backend/backend.h \
           src/backend/wasm/layout.h src/backend/wasm/emitter.h src/backend/wasm/variant.h \
           src/backend/wasm/reference.h src/backend/wasm/file.h src/backend/wasm/crt.h
-WEB = index.html style.css app.js compiler.js compiler-worker.js export.js runtime/host.js runtime/terminal.js runtime/session.js
+WEB = index.html style.css app.js compiler.js compiler-worker.js export.js runtime/host.js runtime/terminal.js runtime/files.js runtime/session.js
 WEB_OUTPUTS = $(addprefix build/,$(WEB)) build/supported-language.md build/THIRD_PARTY_NOTICES.txt build/LICENSE
 
 .PHONY: all native wasm site test test-sanitize test-browser serve clean help

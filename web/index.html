@@ -12,6 +12,7 @@ SPDX-License-Identifier: MIT
   <script defer src="compiler.js"></script>
   <script defer src="runtime/host.js"></script>
   <script defer src="runtime/terminal.js"></script>
+  <script defer src="runtime/files.js"></script>
   <script defer src="runtime/session.js"></script>
   <script defer src="export.js"></script>
   <script defer src="app.js"></script>
@@ -37,6 +38,7 @@ SPDX-License-Identifier: MIT
         <section><h2>Diagnostics</h2><pre id="diagnostics" aria-live="polite"></pre></section>
       </div>
     </div>
+    <section id="program-files" aria-label="Program files"></section>
     <section class="artifacts"><h2>Take your program with you</h2>
       <p class="hint">Runnable HTML opens locally and works offline. Wasm needs a compatible host.</p>
       <div class="downloads"><button id="download-html" disabled>Download runnable HTML</button>

@@ -150,6 +150,46 @@ recovery. Share console/runtime helpers with the playground; release worker/Blob
 resources. No SharedArrayBuffer, isolation headers, Asyncify production transformation,
 or external terminal library is required.
 
+### Text-file input and download gate
+
+The host may supply UTF-8 text files before execution and retrieve generated text files
+after success. This adds runtime/worker/UI interfaces only: Pascal syntax, the C
+compiler, generated Wasm/import signatures and typed-file representation stay unchanged.
+Pascal still has no host/OS filesystem access. File selection and downloads are explicit
+user actions; there is no network transfer, persistence or automatic download.
+
+| Area | Resolved contract |
+| --- | --- |
+| Inputs | A Files panel accepts multiple local files by their exact case-sensitive basename. Validate all candidate names/counts/sizes before reading bytes, then strict UTF-8 before accepting the entire batch. Empty files, BOM, NUL and CRLF contents are preserved byte-for-byte. Reject duplicate names, including existing selections, rather than replacing them silently. Each input can be removed; Clear inputs removes all. |
+| Limits | Uploaded and generated virtual files share the existing 32-name / 1 MiB total-content budget. Each input is at most 1 MiB; names require 1..255 UTF-8 bytes without NUL or invalid Unicode. Display selected counts/bytes and the remaining allowance. Input contents do not consume console input/output allowances. |
+| Runs | Retain validated input selections only in page memory until removed/Reset/reload. Every Run receives fresh copies, including after a previous run rewrote an uploaded name. `assign` plus `reset` reads a supplied file synchronously; missing/type/mode checks and per-run budgets retain existing diagnostics. Invalid selection batches preserve previous accepted inputs and never seed partial contents. |
+| Results | After successful completion, list names/sizes of files last rewritten as text, including empty files and rewritten input names. Unchanged inputs and typed snapshots are not generated text results. Capture exact bytes before `file_finish` cleanup; a result is a bounded, host-owned snapshot, not a surviving live filesystem. Downloads preserve bytes, including control characters. |
+| Failure/cancellation | Publish no results on compile/runtime errors, Stop, timeout or stale messages. Clear previous results on a new Run, source/file-selection changes, Reset or input-mode cancellation. Disable file-selection changes while compiling/running/waiting. Pending file reads disable Run and use a generation guard; Reset discards stale reads. |
+| Rendering/download | Render filenames/status as text, never markup. Download only on a user's click; replace path separators, control characters and nonportable filename punctuation, and trim leading/trailing dots/spaces in the suggested disk name, retaining the original virtual name in the list. Release temporary Blob URLs. |
+| Offline exports | Embed the same Files controller in standalone HTML. It starts with no selected inputs/results, supports selection/download in both input modes under fresh offline `file://` profiles, and never embeds the playground's selected file bytes. |
+
+The runtime host API adds `loadFiles([{name,data:Uint8Array}])` after fresh attachment
+and before the entry call, plus `takeFiles()` to transfer generated snapshots after
+success. Loading validates/copies all entries before installing any, and consumes its
+one fresh-load opportunity even for an empty list. `file_finish` captures generated text
+then clears live bindings/contents; failures, attachment and `finish()` discard pending
+results. Taking results consumes them. Existing callers without files retain their
+behavior. No additional Wasm global/import/export or runtime dependency is required.
+
+Worker Run messages accept optional `files`, and successful done messages include the
+final `files` snapshots; omitted lists default to empty. Deliver results atomically with
+done, behind the existing run identity guard, before disposal. Never publish provisional
+results or retain failed worker state. Expose these host interfaces independently of
+the example UI. Reuse existing `R_FILE_NAME`, `R_FILE_LIMIT`, `R_FILE_STATE`,
+`R_FILE_TYPE` and `R_ENCODING` errors for invalid host file lists/names/budgets/encoding.
+
+Accept exact/over-limit counts and bytes, invalid/duplicate names and encoding, atomic
+selection/loading, immutable input copies, rewrite/truncate and generated-only results,
+empty/BOM/Unicode/CRLF/control bytes, name safety, fresh runs, stale reads/messages,
+failure/cancellation cleanup, real uploads/downloads and matching offline behavior in
+Chromium/Firefox. Preserve all existing cases and run the full acceptance gate, update
+owning references, and commit the completed feature separately.
+
 ## Implemented scope
 
 All milestones below are complete; these identifiers explain existing commits, not
@@ -283,14 +323,16 @@ activation state unchanged. Typed contents use backend-owned value snapshots inc
 initialization/arm state, not a portable external binary format. Pointer components
 retain their ordinary lifetime checks; files do not extend a pointer owner's lifetime.
 
-Every Run starts with an empty virtual filesystem. Bound it to 32 named files, 32
+Every Run starts with an empty virtual filesystem or explicit host-supplied text inputs
+under the [text-file gate](#text-file-input-and-download-gate). Bound it to 32 named files, 32
 simultaneously open handles, 256 assigned descriptors and 1 MiB total contents; typed
 snapshots count their full backend size. Preflight mutations and all budgets before
 committing them. Reassignment reclaims a closed binding. Retire a returning activation's
 own bindings/handles while preserving forwarded caller aliases; reclaim stale heap
 bindings before enforcing resource limits. Closing/retirement preserves named contents.
-Completion, failure, Stop and timeout release all contents, handles and bindings. No
-persistence, browser storage, uploads/downloads, host filesystem or network access.
+Completion, failure, Stop and timeout release all live contents, handles and bindings.
+Successful text results may be copied to the host before cleanup. No persistence,
+browser storage, direct host filesystem or network access is provided.
 
 Use located `R_FILE_NAME`, `R_FILE_STATE`, `R_FILE_NOT_FOUND`, `R_FILE_TYPE`,
 `R_FILE_EOF` and `R_FILE_LIMIT` for the respective name/state/existence/type/end/budget

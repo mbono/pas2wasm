@@ -11,6 +11,7 @@ import interactive
 import terminal
 import keyboard
 import tutorials
+import file_transfer
 import base64
 import functools
 import http.server
@@ -336,6 +337,8 @@ def verify_browser(kind, base_url, cases, directory):
         terminal.verify_ui(browser)
         key_examples = keyboard.verify_workers(browser, lambda source,name: native_result(source,directory,name))
         keyboard.verify_ui(browser)
+        transfer_cases = file_transfer.verify_workers(browser, lambda source,name: native_result(source,directory,name))
+        file_transfer.verify_ui(browser,directory)
         # Exercise the exact bundled worker implementation. Do not inspect app
         # lexical variables: Firefox WebDriver evaluates in a separate sandbox.
         results = browser.page_async('''const cases=arguments[0], done=arguments[arguments.length-1];
@@ -363,9 +366,14 @@ def verify_browser(kind, base_url, cases, directory):
                             {randomSeed:cases[i].randomSeed});
                         const {instance}=await WebAssembly.instantiate(result.binary,{pas2wasm_v1:host.imports});
                         host.attach(instance);
-                        try{instance.exports.run();}catch(error){diagnostic={code:error.code,line:error.line,column:error.column};}
-                        results.push({binary:Array.from(result.binary),wat:result.wat,
-                            output:cases[i].runtime?null:output,runtime:diagnostic});
+                        try{
+                            host.loadFiles((cases[i].files||[]).map(f=>({name:f.name,data:new TextEncoder().encode(f.text.repeat(f.repeat??1))})));
+                            instance.exports.run();
+                        }catch(error){diagnostic={code:error.code,line:error.line,column:error.column};}
+                        const executed={binary:Array.from(result.binary),wat:result.wat,
+                            output:cases[i].runtime?null:output,runtime:diagnostic};
+                        if('resultFiles' in cases[i])executed.files=host.takeFiles().map(f=>({name:f.name,data:Array.from(f.data)}));
+                        host.finish();results.push(executed);
                     }
                     done({version:ready.version, results});
                 } finally {worker.terminate();}
@@ -387,6 +395,8 @@ def verify_browser(kind, base_url, cases, directory):
                             assert result['runtime'][actual_key] == test[expected_key], (kind, test['name'], result)
                 else:
                     assert result['output'] == test['output'], (kind, test['name'], result)
+                if 'resultFiles' in test:
+                    assert result['files'] == file_transfer.expected_files(test['resultFiles']), (kind,test['name'],result)
         examples = {name:next(test for test in cases if test['name']==case_name)
                     for name, case_name in {
                         'identifiers':'identifier_underscore_declarations', 'streamio':'io_same_line',
@@ -534,6 +544,7 @@ def verify_browser(kind, base_url, cases, directory):
         export_sources.update({'live_'+case['name']:case['source'] for case in live_examples if case['name']!='invalid_unicode'})
         export_sources.update({'key_'+case['name']:case['source'] for case in key_examples})
         export_sources['crt_spin'] = keyboard.spin_source()
+        export_sources.update({'transfer_'+case['name']:case['source'] for case in transfer_cases})
         for name, source in export_sources.items():
             artifact = native_result(source,directory,f'export-{name}')
             html = browser.js('return exportPas2WasmHtml(Uint8Array.from(arguments[0]));',artifact['binary'])
@@ -579,6 +590,16 @@ def verify_browser(kind, base_url, cases, directory):
                 assert browser.js("return document.getElementById('output').textContent;") == case.get('display',case['output']),case['name']
             elif name=='crt_spin':
                 keyboard.verify_timeout(browser)
+            elif name.startswith('transfer_'):
+                case=next(c for c in transfer_cases if name=='transfer_'+c['name'])
+                if case['name']=='read_input':
+                    file_transfer.verify_boundaries(browser)
+                    file_transfer.verify_pending(browser)
+                file_transfer.select_files(browser,case['files'],directory/'offline-selected-files')
+                for mode in ('batch','interactive'):
+                    file_transfer.verify_case(browser,case,mode)
+                if case['name']=='rewrite_input':
+                    file_transfer.verify_case(browser,case,'batch')
             elif name=='terminal_editor':
                 terminal.verify(browser)
             elif name=='echo_limit':
@@ -630,6 +651,7 @@ def main():
     parser.add_argument('--browser',choices=['chromium','firefox','both'],default='both')
     args = parser.parse_args()
     cases = json.loads(Path(__file__).with_name('cases.json').read_text(encoding='utf-8'))
+    cases += [{**case,'name':'transfer_'+case['name']} for case in file_transfer.fixtures()]
     originals = tutorials.verify(cases)
     print(f'{len(originals)} unchanged tutorial source hashes verified.',flush=True)
     handler = functools.partial(QuietHandler, directory='build')

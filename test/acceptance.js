@@ -161,6 +161,7 @@ async function main() {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pas2wasm-test-'));
     let roundtrips = 0, comparisons = 0;
     try {
+        await require('./file-transfer.js')(compile, tool, directory, nativeExecutable);
         await require('./heap.js')(compile, tool, directory);
         await require('./reference.js')(compile, tool, directory);
         const legacy = path.join(directory, 'legacy-io.wasm');

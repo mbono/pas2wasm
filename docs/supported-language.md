@@ -887,10 +887,21 @@ remain in force. No ANSI sequences or broader terminal/library API are implement
 
 ## Virtual files
 
-Files exist only in bounded memory for one execution. Each Run starts empty, including
-repeated runs in the same HTML session. Closing a descriptor preserves named contents
-for reopening during that run. Completion, failure, Stop and timeout discard all files.
-No PC filesystem access, persistence, browser storage or import/download is provided.
+Live files exist only in bounded memory for one execution. Each Run starts empty or
+with explicit host-supplied UTF-8 text inputs. Closing a descriptor preserves named
+contents for reopening during that run. Completion, failure, Stop and timeout discard
+all live files. A successful host may retain generated text snapshots for download;
+failed/cancelled runs publish none. There is no direct PC filesystem access, persistence
+or browser storage.
+
+In the playground and offline HTML, use **Files** to select/remove inputs before Run.
+Their exact, case-sensitive basenames are available through ordinary `assign`/`reset`.
+Selections are copied afresh for each Run and share the 32-name / 1 MiB content budget
+with program-created files. Duplicate names, oversized batches and invalid UTF-8 are
+rejected before execution. BOM, NUL, CRLF and control bytes remain unchanged. After
+success, download files last rewritten as text, including empty files and overwritten
+input names. Unchanged inputs and typed-file snapshots are not output downloads. The
+original selections remain available for reruns; exported HTML starts with no files.
 
 ```pascal
 var f: file of integer; n: integer;
@@ -1049,7 +1060,7 @@ resolution also have bounded complexity. Exceeding a compiler work budget uses
 | Pointer operations | Pointer arithmetic/casts, ordering, and text I/O |
 | Whole arrays/records | Comparison and text output |
 | Numeric/string conversion | Implicit or built-in numeric-to-string/string-to-numeric conversion |
-| External file capabilities | Host/OS access, persistence, file import/export, untyped files and seek/append/erase/rename |
+| External file capabilities | Direct host/OS access, persistence, typed-file interchange, untyped files and seek/append/erase/rename |
 | Terminal protocols | ANSI terminal commands, extended navigation-key codes and CRT routines beyond `readkey` |
 
 Reserved built-ins include `trunc`, `round`, `length`, `char`, `chr`, `ord`, `copy`,

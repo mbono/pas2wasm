@@ -15,6 +15,7 @@ native CPU ABI.
 - [Runtime diagnostics](#runtime-diagnostics)
 - [Storage layouts and calling conventions](#storage-layouts-and-calling-conventions)
 - [Host input provider](#host-input-provider)
+- [Host text-file interchange](#host-text-file-interchange)
 - [Worker protocol and sessions](#worker-protocol-and-sessions)
 - [ABI compatibility](#abi-compatibility)
 
@@ -210,7 +211,7 @@ console imports keep their cursor and accounting.
 | `file_text_char` | `(id,mode,line,column) -> i32` | Existing Unicode scalar parsing. |
 | `file_text_string` | `(id,destination,capacity,mode,request,line,column) -> ()` | Atomically copy a text line remainder. |
 | `file_text_discard` | `(id,line,column) -> ()` | Discard one remaining text line/delimiter. |
-| `file_finish` | `() -> ()` | Invalidate all bindings and discard every named file. |
+| `file_finish` | `() -> ()` | Capture generated text results, then invalidate all bindings and discard every live named file. |
 
 Mode 0/1 retains read/readln field rules. File descriptors are 16-byte objects: opaque
 binding ID u32 at +0, initialized byte at +8, remaining bytes reserved/zero. They are
@@ -234,7 +235,8 @@ per file; positions are independent. The file-content budget is separate from th
 to 8,192 per binding; ordinary compiled nesting is bounded more tightly by call depth.
 File binding IDs never repeat within an attachment.
 
-Generated main calls `file_finish`; runtime failures also clear files, and workers call
+Generated main calls `file_finish`, capturing bounded text snapshots before cleanup.
+Runtime failures clear both live files and pending results, and workers call
 `runtime.finish()` in finally for unexpected host errors. Embeddings may call finish
 when abandoning execution. Stop/timeout terminate the worker. A fresh attach resets
 file and identity metadata; fresh Runs must still use fresh program memories/instances.
@@ -594,14 +596,41 @@ bytes once when charging a completed line plus LF. Empty/invalid key chunks use
 Parsing, storage, limits and cursor ownership are shared between modes. Program output
 never includes host-side input echo. JSPI wrapping is a host responsibility. Virtual
 file cursors never request a provider or consume pending console keys. `finish()` clears
-all files, buffered input and provider access; the narrower `file_finish` import clears
-only files. Each run owns fresh state.
+all live files, pending results, buffered input and provider access; the narrower
+`file_finish` import captures generated text and clears live files. Each run owns fresh state.
 
 The reference implementation is [web/runtime/host.js](../web/runtime/host.js). Call
 `attach(instance)` before `instance.exports.run()`; `emit(text)` receives program
 output. `writeln` emits arguments in source order then one newline. The [language I/O
 rules](supported-language.md#input-and-output) own numeric, Unicode, line, capacity, and
 partial-assignment semantics.
+
+## Host text-file interchange
+
+The runtime constructor and Wasm imports retain their existing signatures. Each run
+still uses a fresh runtime and instance; optional host files are independent of console
+input/output budgets and never expose a PC path to Pascal.
+
+| Host method | Contract |
+| --- | --- |
+| `loadFiles([{name, data: Uint8Array}])` | Call once after fresh `attach` and before entry, including an empty list. Preflight at most 32 unique case-sensitive names (1..255 UTF-8 bytes, no NUL/invalid Unicode) and 1 MiB total bytes, copy all contents, then validate strict UTF-8 before installing any. Empty/BOM/NUL/CRLF bytes are preserved. All seeds are text with component ID/size zero. Later calls use `R_FILE_STATE`. |
+| `takeFiles()` | After successful entry return, consume an array of caller-owned `{name,data:Uint8Array}` snapshots. Include only files last rewritten as text, including empty files and rewritten inputs. Unchanged inputs and typed snapshots are excluded. Repeated calls return empty lists. `finish`, failures and a new attachment discard untaken results. |
+
+File mutations retain the shared 32-name / 1 MiB content allowance, including supplied
+files and all typed snapshots. Rewriting releases the old content size before adding
+new bytes. Captured results are bounded to the same maximum and are detached copies;
+cleanup never changes buffers already taken by a host. Invalid host lists use existing
+`R_FILE_TYPE`, `R_FILE_NAME`, `R_FILE_LIMIT`, `R_FILE_STATE` or `R_ENCODING` diagnostics,
+with zero source locations. Pascal file-operation failures retain their source locations.
+No numeric failure mapping, layout, compiler API or generated artifact changes.
+
+The optional shared Files controller uses native File selection, validates metadata
+before reading bytes, and rejects selection batches atomically. It retains immutable
+page-owned input copies for subsequent Runs and exposes generated-file downloads only
+after success. Each download uses exact snapshot bytes and a suggested disk name with
+path separators/control/nonportable punctuation replaced and edge dots/spaces trimmed;
+names displayed in the UI remain exact text. The controller and all bytes stay
+local; selections/results are not embedded in exported HTML or saved in browser storage.
 
 ## Worker protocol and sessions
 
@@ -610,7 +639,11 @@ Interactive workers wrap input imports (legacy, stream, variant string and `key_
 `WebAssembly.Suspending` and await `WebAssembly.promising(instance.exports.run)()`. No
 module transformation or additional Wasm exports are needed. Workers detect both APIs; unsupported live mode yields `E_JSPI`, with batch mode available.
 
-The worker accepts `{type:'run',id,binary,input,interactive,limits?}` once per worker.
+The worker accepts `{type:'run',id,binary,input,interactive,limits?,files?}` once per worker.
+`files` uses the host byte-record format above and defaults to an empty list only when
+omitted. Load it after attachment and before entry. Successful `done` messages include
+`files`; the worker consumes/transfers their buffers before final cleanup. Errors publish
+no snapshots. Old hosts/messages omitting file lists retain empty-file behavior.
 It emits capabilities (`jspi`), running, output (`text`), input-request
 (`requestId,line,column,kind,prefix`), done, or error (`diagnostic`) with the same run id. An
 input-request accepts only a matching `{type:'input',id,requestId,text}` or
@@ -627,7 +660,16 @@ delivery/running, never replenishing the budget. UI input echo is text-only and 
 separately from program output. Console/session helpers are embedded with the
 runtime/worker in exported HTML. The [product contract](spec.md#console-behavior) and
 [language reference](supported-language.md#example-playground-console) define console
-editing and UI behavior. The shared renderer interprets output Backspace as scalar
+editing and UI behavior. A session's optional `files(snapshots)` callback runs only for
+a matching successful done message, before the Completed state. Stale/duplicate replies
+are ignored. The optional Files panel can be mounted in `#program-files` with
+`runtime/files.js` before `runtime/session.js`; its controller is embedded in offline
+exports. Upload reads disable Run; source/selection changes, new Runs, cancellation and
+Reset clear results, with generation guards against late file-read completions.
+Embeddings using `export.js` also load `runtime/files.js`, whose controller is included
+in the generated standalone runner even when no files are selected.
+
+The shared renderer interprets output Backspace as scalar
 cursor movement/overwrite on the current LF-delimited line. Runtime callbacks and worker
 output messages still carry the exact raw text, with every emitted UTF-8 byte charged
 before display. Virtual file bytes and all import signatures remain unchanged.

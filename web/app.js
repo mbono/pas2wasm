@@ -16,12 +16,13 @@ begin
 end.
 `;
 let compilerAssets, compilerWorker, timer;
-let operation = 0, busy = false, binary = null, wat = null;
+let operation = 0, busy = false, filesReady = true, binary = null, wat = null;
 ui.source.value = exampleSource;
 ui.input.value = '21';
 const programConsole = createPas2WasmConsole({
     state(text) { status(text, ['Running…','Waiting for input'].includes(text)); },
     error:showDiagnostic,
+    filesReady(value) { filesReady = value; ui.run.disabled = busy || !compilerAssets || !value; },
     cancel() { terminate(); status('Stopped — input mode changed'); }
 });
 
@@ -29,8 +30,9 @@ const programConsole = createPas2WasmConsole({
 function status(text, active = false) {
     busy = active;
     ui.status.textContent = text;
-    ui.run.disabled = active || !compilerAssets;
+    ui.run.disabled = active || !compilerAssets || !filesReady;
     ui.stop.disabled = !active;
+    programConsole.busy(active);
 }
 
 /* Format stable diagnostics using source byte locations. */
@@ -42,6 +44,7 @@ function showDiagnostic(diagnostic) {
 /* Invalidate artifacts immediately so edits cannot export a previous program. */
 function invalidate() {
     binary = null; wat = null;
+    programConsole.clearFiles();
     ui['wat-view'].textContent = '';
     for (const type of ['wasm','wat','html']) ui[`download-${type}`].disabled = true;
 }
@@ -61,6 +64,7 @@ function execute(bytes) {
 
 /* Compile in a fresh worker using cached assets, then execute only on success. */
 function run() {
+    if (!programConsole.ready()) return;
     terminate(); invalidate();
     programConsole.clear(); ui.diagnostics.textContent = '';
     const sourceBytes = new TextEncoder().encode(ui.source.value).length;
@@ -120,7 +124,7 @@ ui['generate-wat'].addEventListener('change', () => {
 });
 ui.reset.addEventListener('click', () => {
     terminate(); invalidate(); ui.source.value = exampleSource; ui.input.value = '21';
-    ui['generate-wat'].checked = false; programConsole.clear(); ui.diagnostics.textContent = ''; status('Ready');
+    ui['generate-wat'].checked = false; programConsole.clear(); programConsole.resetFiles(); ui.diagnostics.textContent = ''; status('Ready');
 });
 ui['download-wasm'].addEventListener('click', () => { if (binary) download('program.wasm', binary, 'application/wasm'); });
 ui['download-wat'].addEventListener('click', () => { if (wat) download('program.wat', wat, 'text/plain;charset=utf-8'); });

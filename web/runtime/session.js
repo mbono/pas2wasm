@@ -36,7 +36,7 @@ function createPas2WasmSession(events, budget = 5000) {
         }, Math.max(0, remaining));
     }
     /* Start a fresh program with either closed batch input or a live provider. */
-    function run(binary, input = '', interactive = false) {
+    function run(binary, input = '', interactive = false, files = []) {
         stop(); remaining = budget; inputBytes = 0;
         const id = generation;
         url = URL.createObjectURL(new Blob([pas2WasmWorkerSource()], {type:'text/javascript'}));
@@ -55,13 +55,16 @@ function createPas2WasmSession(events, budget = 5000) {
                     return;
                 }
                 request = data; events.state('Waiting for input'); events.waiting?.(true,data);
-            } else if (data.type === 'done') finish('Completed');
+            } else if (data.type === 'done') {
+                try { events.files?.(data.files === undefined ? [] : data.files); finish('Completed'); }
+                catch (error) { finish('Failed', {code:error.code || 'R_FILE_TYPE', message:error.message}); }
+            }
             else if (data.type === 'error') finish('Failed', data.diagnostic);
         };
         worker.onerror = event => {
             if (id === generation) finish('Failed', {code:'R_WORKER', message:event.message});
         };
-        worker.postMessage({type:'run', id, binary, input, interactive});
+        worker.postMessage({type:'run', id, binary, input, interactive, files});
     }
     /* Key chunks are accepted once without echo/delimiters. A later line may
      * contain an already charged raw suffix; credit those bytes, never its new LF. */
@@ -100,14 +103,22 @@ function createPas2WasmConsole(events) {
     const mode = get('io-mode'), batch = get('batch-input'), output = get('output');
     const input = get('console-input'), controls = get('console-controls');
     const eof = get('console-eof'), note = get('io-note');
+    const files = get('program-files') ? createPas2WasmFiles(get('program-files'), value => events.filesReady?.(value)) : null;
     const terminal = createPas2WasmTerminal(get('terminal'), output, input, text => session.submit(text));
     /* Reflect a pending input request and focus its single-line editor. */
     function waiting(value, request = {}) {
         terminal.waiting(value,request.kind || 'line',request.prefix,request.end); eof.disabled = !value;
     }
     const session = createPas2WasmSession({
-        state(text) { if (!['Running…','Waiting for input'].includes(text)) waiting(false); events.state(text); },
+        state(text) {
+            const active = ['Running…','Waiting for input'].includes(text);
+            if (!active) waiting(false);
+            files?.busy(active);
+            if (text === 'Failed') files?.clearOutputs();
+            events.state(text);
+        },
         error:events.error,
+        files(value) { files?.results(value); },
         output(text) { terminal.append(text); },
         waiting,
         capabilities(supported) {
@@ -120,13 +131,24 @@ function createPas2WasmConsole(events) {
         controls.hidden = input.hidden = mode.value !== 'interactive';
         waiting(false);
     }
-    mode.addEventListener('change', () => { session.stop(); events.cancel?.(); updateMode(); });
+    mode.addEventListener('change', () => {
+        session.stop(); files?.busy(false); files?.clearOutputs(); events.cancel?.(); updateMode();
+    });
     eof.addEventListener('click', () => session.submit(null));
     updateMode();
     return {
-        run(binary) { session.run(binary, mode.value === 'batch' ? get('input').value : '', mode.value === 'interactive'); },
-        stop() { session.stop(); waiting(false); },
-        clear() { terminal.clear(); waiting(false); },
+        run(binary) {
+            if (!files || files.ready()) {
+                files?.clearOutputs();
+                session.run(binary, mode.value === 'batch' ? get('input').value : '', mode.value === 'interactive', files?.inputs() ?? []);
+            }
+        },
+        stop() { session.stop(); waiting(false); files?.busy(false); files?.clearOutputs(); },
+        clear() { terminal.clear(); waiting(false); files?.clearOutputs(); },
+        busy(value) { files?.busy(value); },
+        ready() { return files?.ready() ?? true; },
+        clearFiles() { files?.clearOutputs(); },
+        resetFiles() { files?.reset(); },
         interactive() { return mode.value === 'interactive'; }
     };
 }

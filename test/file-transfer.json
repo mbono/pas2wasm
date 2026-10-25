@@ -1,0 +1,168 @@
+[
+  {
+    "name": "read_input",
+    "source": "program p; var f:text; s:string[64]; begin assign(f,'input.txt'); reset(f); while not eof(f) do begin readln(f,s); writeln(s) end; close(f) end.",
+    "files": [
+      {
+        "name": "input.txt",
+        "text": "\ufeff\u00e9\ud83d\ude00\r\nx\u0000y\n"
+      }
+    ],
+    "output": "\ufeff\u00e9\ud83d\ude00\nx\u0000y\n",
+    "resultFiles": []
+  },
+  {
+    "name": "rewrite_input",
+    "source": "program p; var f:text; s:string; begin assign(f,'input.txt'); reset(f); readln(f,s); close(f); writeln(s); rewrite(f); writeln(f,'changed'); close(f) end.",
+    "files": [
+      {
+        "name": "input.txt",
+        "text": "original\n"
+      }
+    ],
+    "output": "original\n",
+    "resultFiles": [
+      {
+        "name": "input.txt",
+        "text": "changed\n"
+      }
+    ]
+  },
+  {
+    "name": "empty_files",
+    "source": "program p; var f,g:text; begin assign(f,'empty.txt'); reset(f); writeln(eof(f)); close(f); assign(g,'out.txt'); rewrite(g); close(g) end.",
+    "files": [
+      {
+        "name": "empty.txt",
+        "text": ""
+      }
+    ],
+    "output": "TRUE\n",
+    "resultFiles": [
+      {
+        "name": "out.txt",
+        "text": ""
+      }
+    ]
+  },
+  {
+    "name": "exact_bytes",
+    "source": "program p; var f:text; begin assign(f,'out.txt'); rewrite(f); write(f,#65279,'\u00e9',#0,#13,#10,#8,#27,#128512); close(f) end.",
+    "files": [],
+    "output": "",
+    "resultFiles": [
+      {
+        "name": "out.txt",
+        "text": "\ufeff\u00e9\u0000\r\n\b\u001b\ud83d\ude00"
+      }
+    ]
+  },
+  {
+    "name": "typed_not_exported",
+    "source": "program p; var f:file of integer; begin assign(f,'numbers'); rewrite(f); write(f,42); close(f) end.",
+    "files": [
+      {
+        "name": "unused.txt",
+        "text": "untouched"
+      }
+    ],
+    "output": "",
+    "resultFiles": []
+  },
+  {
+    "name": "error_discards",
+    "source": "program p; var f:text; n:integer; begin assign(f,'out.txt'); rewrite(f); write(f,'partial'); n:=1 div 0 end.",
+    "files": [],
+    "output": "",
+    "runtime": "R_DIV_ZERO",
+    "resultFiles": []
+  },
+  {
+    "name": "input_budget",
+    "source": "program p; var f:text; begin assign(f,'out.txt'); rewrite(f); write(f,'x') end.",
+    "files": [
+      {
+        "name": "input.txt",
+        "text": "a",
+        "repeat": 1048576
+      }
+    ],
+    "output": "",
+    "runtime": "R_FILE_LIMIT",
+    "resultFiles": []
+  },
+  {
+    "name": "empty_output_at_budget",
+    "source": "program p; var f:text; begin assign(f,'out.txt'); rewrite(f); close(f) end.",
+    "files": [
+      {
+        "name": "input.txt",
+        "text": "a",
+        "repeat": 1048576
+      }
+    ],
+    "output": "",
+    "resultFiles": [
+      {
+        "name": "out.txt",
+        "text": ""
+      }
+    ]
+  },
+  {
+    "name": "live_copy",
+    "source": "program p; var f,g:text; s:string; begin assign(f,'input.txt'); reset(f); readln(f,s); close(f); write('Suffix: '); assign(g,'out.txt'); rewrite(g); write(g,s); readln(s); writeln(g,s); close(g) end.",
+    "files": [
+      {
+        "name": "input.txt",
+        "text": "prefix-\n"
+      }
+    ],
+    "lines": [
+      "\u00e9\ud83d\ude00"
+    ],
+    "input": "\u00e9\ud83d\ude00\n",
+    "output": "Suffix: ",
+    "transcript": "Suffix: \u00e9\ud83d\ude00\n",
+    "resultFiles": [
+      {
+        "name": "out.txt",
+        "text": "prefix-\u00e9\ud83d\ude00\n"
+      }
+    ]
+  },
+  {
+    "name": "unsafe_name",
+    "source": "program p; var f:text; begin assign(f,'../<img>'+ #10 +'.txt'); rewrite(f); write(f,'safe'); close(f) end.",
+    "files": [],
+    "output": "",
+    "resultFiles": [
+      {
+        "name": "../<img>\n.txt",
+        "text": "safe",
+        "downloadName": "__img__.txt"
+      }
+    ]
+  },
+  {
+    "name": "tutorial_textfiles",
+    "sourceCase": "tutorial_textfiles",
+    "files": [],
+    "input": "ab\bC\u001b",
+    "output": "inserire un testo (premere esc per terminare)\n\nab\bC\nil testo inserito \u00e8 il seguente :\n\nab\bC",
+    "display": "inserire un testo (premere esc per terminare)\n\naC\nil testo inserito \u00e8 il seguente :\n\naC",
+    "transcript": "inserire un testo (premere esc per terminare)\n\naC\nil testo inserito \u00e8 il seguente :\n\naC",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "ab\bC\u001b"
+      }
+    ],
+    "resultFiles": [
+      {
+        "name": "testo.txt",
+        "text": "ab\bC"
+      }
+    ]
+  }
+]

@@ -112,6 +112,18 @@ and run the program. `readln(n, m)` expects both numbers on the same line,
 separated by spaces or tabs. Use separate `readln` statements to consume separate
 lines, or `read(n, m)` to read numbers across line boundaries.
 
+### Use program files
+
+The playground's **Files** panel accepts UTF-8 input files before Run. Match the selected
+filename exactly in Pascal, for example `assign(t, 'input.txt'); reset(t);`. Each Run
+starts from fresh copies of your selections; remove individual inputs or use **Clear
+inputs** to change them.
+
+After a successful run, the panel lists generated text files with **Download** buttons.
+Downloads preserve the exact file bytes. Uploaded and generated files share a limit of
+32 names and 1 MiB of contents; the panel shows the allowance available at Run start.
+Typed files have no external interchange format. Pascal cannot access PC paths directly.
+
 ### Export a program that runs offline
 
 After compiling in the example playground, choose **Download runnable HTML**.
@@ -119,7 +131,9 @@ Open the single downloaded file directly in Chromium or Firefox and press
 **Run program**. It includes the compiled program and its runtime, supports
 interactive and batch input, and needs no server, installation, sibling files,
 or network connection. Interactive input requires browser JSPI support; batch
-mode remains available. The playground also offers raw Wasm downloads and
+mode remains available. The exported runner also supports text-file selection and
+downloads; it starts with no files and does not embed your playground selections.
+The playground also offers raw Wasm downloads and
 optional WAT viewing/downloading.
 
 ## Supported language and limits
