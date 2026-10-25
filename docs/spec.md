@@ -86,9 +86,9 @@ to reproduce the same UI.
 - Flush prompts without LF before requesting input. An open empty queue waits;
   explicit End input closes the provider, preserving buffered data until consumed.
   Stop works while computing or waiting; stale run/request replies are ignored.
-- Use one scrolling terminal surface with immutable history and an inline editable
-  tail directly after prompts, with a visible caret while waiting. No separate
-  input box or Send button. Keep Stop and End input outside transcript text.
+- Use one scrolling terminal surface with history protected from user editing
+  and inline input at the output cursor, with a visible caret while waiting.
+  No separate input box or Send button. Keep Stop and End input outside transcript text.
 - In line mode, Enter commits/echoes a line once with one transcript LF. Empty lines are valid.
   Typing, paste, and IME confirmation do not submit. Support Unicode editing,
   Backspace/Delete, arrows, Home/End, and selection without changing history.
@@ -101,6 +101,35 @@ to reproduce the same UI.
   human waits are excluded, and each submission must not replenish it. Count UTF-8
   submissions and delimiters toward input; program output has a separate allowance,
   and UI echo uses the input allowance. Exact limits are in the language/ABI references.
+
+### Backspace output display
+
+The shared playground/export renderer interprets program-output Backspace (`#8`) as
+moving its output cursor left by one Unicode scalar on the current logical line,
+clamped at that line's start. It does not erase. Subsequent output overwrites existing
+scalars before extending the line: `ab`, Backspace, `C` displays `aC`; `abc`, Backspace
+alone still displays `abc` with the waiting caret before `c`. The ordinary
+Backspace-space-Backspace sequence erases the previous scalar visibly and leaves the
+cursor at that position.
+LF preserves the rest of the current line and starts a new line at column zero.
+Browser soft wrapping does not create logical lines. Combining marks and wide/emoji
+characters retain scalar semantics; grapheme clusters and terminal-cell widths are not
+introduced. Other output controls retain their current behavior; no ANSI parser is added.
+
+Interpret output consistently across chunk boundaries, both input modes, both browsers
+and standalone offline HTML. Preserve text-only rendering, read-only output, native
+draft editing, composition, selection/focus, scrolling, Stop/recovery and fresh runs.
+The input caret sits at the output cursor while waiting, including before unoverwritten
+text. Line-submit echo remains literal input followed by LF; user Backspace edits only
+the draft in line mode and remains `#8` input in raw-key mode.
+
+This is display behavior only: compiler artifacts, raw runtime/worker output and virtual
+file bytes remain unchanged. All emitted bytes, including Backspaces and overwritten
+characters, still consume the existing cumulative output allowance; no budget is refunded.
+Process bounded chunks without per-character whole-transcript DOM replacements. Cover
+chunk splitting, Unicode, line/empty/start boundaries, overwrite/erase sequences, caret
+geometry, copy/history and draft preservation, raw tutorial file replay, limits and
+offline exports through the full acceptance gate before completion.
 
 ### Standalone HTML
 

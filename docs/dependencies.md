@@ -6,6 +6,8 @@ compiler libraries, frontend packages, JavaScript package dependencies, CDNs, or
 services. JSPI is a browser API, not an external dependency; synchronous batch mode
 requires no JSPI. Partial CRT uses directly emitted Wasm helpers plus standard keyboard,
 composition and paste events; no terminal library or precompiled CRT is shipped.
+Backspace display uses repository-owned scalar/chunk processing and native DOM text
+nodes/caret, without ANSI emulation or another terminal dependency.
 Fixed-decimal formatting uses built-in JavaScript BigInt and DataView,
 without a numeric library or locale dependency. Runtime programs gain no host/OS filesystem/network/DOM or
 arbitrary-JavaScript access.

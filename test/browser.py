@@ -436,6 +436,8 @@ def verify_browser(kind, base_url, cases, directory):
         existing_sources = {case['source'] for case in examples.values()}
         examples.update({case['name']:case for case in originals
                          if case['source'] not in existing_sources and 'randomSeed' not in case})
+        examples.update({case['name']:{**case,'output':case['display']} for case in cases
+                         if case['name'].startswith('console_output_')})
         for example in examples.values():
             assert run_ui(browser, example['source'], example.get('input',''), wat=True) == {
                 'output':example['output'], 'diagnostics':''}
@@ -567,12 +569,14 @@ def verify_browser(kind, base_url, cases, directory):
                 case=next(c for c in key_examples if name=='key_'+c['name'])
                 if name=='key_controls':
                     keyboard.verify_controls(browser)
+                if name=='key_output_cursor':
+                    keyboard.verify_cursor_stop(browser)
                 for _ in range(2):
                     keyboard.verify_console_case(browser,case)
                 interactive.select_mode(browser,'batch')
                 browser.js("document.getElementById('input').value=arguments[0];document.getElementById('run').click();",case['input'])
                 browser.wait("['Completed','Failed'].includes(document.getElementById('status').textContent)")
-                assert browser.js("return document.getElementById('output').textContent;") == case['output'],case['name']
+                assert browser.js("return document.getElementById('output').textContent;") == case.get('display',case['output']),case['name']
             elif name=='crt_spin':
                 keyboard.verify_timeout(browser)
             elif name=='terminal_editor':

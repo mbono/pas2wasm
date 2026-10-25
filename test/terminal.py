@@ -123,9 +123,86 @@ def verify_renderer(browser):
             done({preserved,historyCopy,restored,cleared:view.textContent==='',disabled:editor.contentEditable==='false'});
         }catch(error){done({error:error.message});}finally{view.remove();}''')
     assert result == dict(preserved=True,historyCopy=True,restored=True,cleared=True,disabled=True),result
+    verify_output(browser)
 
 
 def verify_ui(browser):
     """Compile the terminal fixture through ordinary playground controls."""
     browser.js("const source=document.getElementById('source');source.value=arguments[0];source.dispatchEvent(new Event('input'));",source())
     verify(browser)
+
+
+def verify_cursor(browser, prefix, suffix):
+    """Check the real inline caret before an unoverwritten output character."""
+    result=browser.js('''const e=document.getElementById('console-input'),h=document.getElementById('output');
+        const s=window.getSelection(),left=h.firstChild,right=h.lastChild;
+        const a=document.createRange();a.setStart(left,left.length-1);a.setEnd(left,left.length);
+        const b=document.createRange();b.setStart(right,0);b.setEnd(right,right.data.codePointAt(0)>65535?2:1);
+        const first=a.getBoundingClientRect(),last=b.getBoundingClientRect(),box=e.getBoundingClientRect();
+        return {prefix:left.data,suffix:right.data,inside:e.parentNode===h,
+            selection:e.contains(s.anchorNode)&&s.isCollapsed,
+            sameLine:Math.abs(first.top-last.top)<2,
+            caret:box.height>0&&Math.abs(box.left-first.right)<2&&Math.abs(box.right-last.left)<2};''')
+    assert result==dict(prefix=prefix,suffix=suffix,inside=True,selection=True,sameLine=True,caret=True),result
+    kind='offline' if browser.js('return location.protocol;')=='file:' else 'playground'
+    Path(f'build/output-cursor-{browser.kind}-{kind}.png').write_bytes(base64.b64decode(browser.command('GET','/screenshot')))
+
+
+def verify_output(browser):
+    """Verify display controls across valid chunk boundaries without changing raw I/O."""
+    import json
+    cases=[c for c in json.loads(Path(__file__).with_name('cases.json').read_text())
+           if c['name'].startswith('console_output_')]
+    result=browser.page_async('''const cases=arguments[0],done=arguments[arguments.length-1];
+        const view=document.createElement('pre'),history=document.createElement('span'),editor=document.createElement('span');
+        view.style.cssText='width:160px;white-space:pre-wrap;overflow-wrap:anywhere;font:16px monospace';
+        view.append(history,editor);document.body.append(view);
+        const renderer=createPas2WasmTerminal(view,history,editor,()=>true);
+        function check(value,message){if(!value)throw Error(message);}
+        const output=()=>Array.from(history.childNodes).filter(n=>n!==editor).map(n=>n.textContent).join('');
+        try{
+            for(const c of cases){
+                const scalars=Array.from(c.output);
+                // Whole chunks, every valid scalar boundary, and one scalar per chunk.
+                const divisions=[[c.output],scalars];
+                for(let at=0;at<=scalars.length;at++)divisions.push([scalars.slice(0,at).join(''),scalars.slice(at).join('')]);
+                for(const chunks of divisions){
+                    renderer.clear();for(const text of chunks)renderer.append(text);
+                    check(output()===c.display,c.name+': wrong display '+JSON.stringify(output()));
+                    renderer.waiting(true,'key');
+                    const line=c.display.lastIndexOf('\\n')+1;
+                    const expectedPrefix=c.display.slice(0,line)+Array.from(c.display.slice(line)).slice(0,c.displayCursor).join('');
+                    check(history.firstChild.data===expectedPrefix,c.name+': wrong output cursor');
+                    check(document.activeElement===editor,c.name+': caret lost focus');
+                    renderer.waiting(false);check(history.textContent===c.display,c.name+': completion lost output');
+                }
+            }
+            // An unchanged selection must survive moving text across the cursor.
+            renderer.clear();renderer.append('abc');renderer.waiting(true,'key');
+            const selected=document.createRange(),selection=window.getSelection();
+            selected.setStart(history.firstChild,1);selected.setEnd(history.firstChild,3);
+            selection.removeAllRanges();selection.addRange(selected);renderer.append('\\b');
+            check(selection.toString()==='bc','History copy changed after cursor movement');
+            renderer.append('C');check(output()==='abC','Overwrite after selection');
+            // Native draft nodes/selection/focus survive both editor reparentings.
+            renderer.clear();renderer.append('Prompt: ');renderer.waiting(true);editor.textContent='ab😀cd';
+            const draft=editor.firstChild;selection.setBaseAndExtent(draft,1,draft,5);
+            renderer.append('abc\\b');
+            check(document.activeElement===editor&&selection.anchorNode===draft&&selection.anchorOffset===1&&selection.focusOffset===5,
+                'Draft lost on backspace output');
+            renderer.append('Z');
+            check(editor.parentNode===view&&document.activeElement===editor&&selection.anchorNode===draft&&selection.toString()==='b😀c',
+                'Draft lost when overwriting the suffix');
+            // A large control chunk is processed as a chunk, not quadratic DOM edits.
+            renderer.clear();renderer.append('a'.repeat(65536));renderer.append('\\b'.repeat(65536)+'Z');
+            check(output()==='Z'+'a'.repeat(65535),'Large control chunk');
+            renderer.clear();renderer.append('Z');check(output()==='Z','Fresh cursor state');
+            // Hidden/replaced output bytes never replenish the actual runtime budget.
+            renderer.clear();let raw='';const runtime=createPas2WasmRuntime('',text=>{raw+=text;renderer.append(text);},{output:4});
+            for(const value of [97,8,98,8])runtime.imports.write_char(value,1,1);
+            let code;try{runtime.imports.write_char(99,1,1);}catch(error){code=error.code;}
+            check(code==='R_OUTPUT_LIMIT'&&raw==='a\\bb\\b'&&output()==='b','Output allowance was refunded');
+            check(!view.querySelector('img'),'Output was interpreted as markup');
+            done({ok:true,cases:cases.length});
+        }catch(error){done({error:error.stack});}finally{view.remove();}''',cases)
+    assert result==dict(ok=True,cases=len(cases)),result

@@ -276,13 +276,22 @@ contracts.
 
 ## Inline console and offline export
 
-The shared terminal renderer keeps a persistent read-only history text node and an
-adjacent plaintext editing root in one scrolling `pre`. Appending history does not
-replace draft nodes or selection. Native browser editing handles Unicode; boundary
-checks protect history, and composition guards prevent an IME-confirming Enter
-(including a late line-break event) from submitting. Empty editors reserve a minimal
-caret box using CSS without inserting input data. Paste is plain text; scroll following
-respects existing history selection and scroll position.
+The shared terminal renderer keeps two persistent read-only text nodes around a logical
+output cursor in one scrolling `pre`. Program-output Backspace moves left by one Unicode
+scalar within the current LF-delimited line; later output overwrites scalars. LF commits
+the unoverwritten suffix and starts the next line. Ordinary forward output retains its
+single-append path; control chunks are reduced in memory and patch only changed text
+ranges, avoiding a DOM operation per emitted character. Copy selections retain logical
+output offsets across fragment moves.
+
+While waiting behind line end, the same plaintext editing root sits between these
+fragments; otherwise it follows the output wrapper. Moving it retains its draft nodes,
+native selection and focus, placing the real input caret at the output cursor. Native
+browser editing, boundary and composition guards keep human edits inside that root.
+Line-submit echo remains literal. Empty editors reserve a minimal caret box using CSS
+without inserting input data. Plain-text paste and scroll following preserve history
+selection and scroll position. Program/worker output remains raw and byte-accounted;
+virtual-file contents and compiler artifacts are independent of display controls.
 
 Renderer, console/session, runtime, and worker functions are embedded in exported HTML
 using their function source. Base64 module data prevents source strings from breaking

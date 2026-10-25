@@ -48,6 +48,10 @@
 
 ### Fixed
 
+- Render program-output Backspace as Unicode-scalar cursor movement and overwrite
+  in the playground and offline HTML, preserving the waiting caret, raw output/file
+  contents, input editing and cumulative byte allowances.
+
 - Preserve variant storage when a write/input through a saved string-character
   pointer cannot retain an initialized string owner after activation.
 

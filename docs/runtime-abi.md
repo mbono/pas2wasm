@@ -627,7 +627,10 @@ delivery/running, never replenishing the budget. UI input echo is text-only and 
 separately from program output. Console/session helpers are embedded with the
 runtime/worker in exported HTML. The [product contract](spec.md#console-behavior) and
 [language reference](supported-language.md#example-playground-console) define console
-editing and UI behavior.
+editing and UI behavior. The shared renderer interprets output Backspace as scalar
+cursor movement/overwrite on the current LF-delimited line. Runtime callbacks and worker
+output messages still carry the exact raw text, with every emitted UTF-8 byte charged
+before display. Virtual file bytes and all import signatures remain unchanged.
 
 ## ABI compatibility
 

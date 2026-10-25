@@ -974,6 +974,17 @@ runnable HTML supports both modes offline via `file://` in a compatible browser.
 a line/key console; [readkey](#partial-crt-unit) has no automatic input echo or ANSI
 terminal emulation.
 
+Program output `#8` moves the display cursor left by one Unicode scalar within its
+current LF-delimited line, without erasing. Later output overwrites there: `ab` + `#8`
++ `C` displays `aC`; `abc` + `#8` alone leaves `abc` with the waiting caret before `c`.
+`#8` + space + `#8` provides visible erasure. The cursor stops at line start, including
+across browser soft wraps; LF preserves remaining text and starts the next line.
+Combining marks and emoji use scalar positions, not grapheme clusters or terminal-cell
+widths. This affects the playground and exported HTML in either input mode. Raw runtime
+output and virtual files retain every character, including Backspace. Overwriting never
+refunds output bytes. Input delivery, line editing and literal submitted-line echo keep
+their existing rules. Other output controls remain unchanged.
+
 ## Storage, limits, and diagnostics
 
 Variables and initialization flags use bounded addressable program storage. Each routine

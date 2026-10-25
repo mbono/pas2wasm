@@ -211,5 +211,90 @@
         "keys": "\ue00c"
       }
     ]
+  },
+  {
+    "name": "output_cursor",
+    "source": "program p; uses crt; var c:char; begin write('abc',#8); c:=readkey; write(c); c:=readkey end.",
+    "input": "X\u001b",
+    "output": "abc\bX",
+    "display": "abX",
+    "transcript": "abX",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "X",
+        "keys": "X",
+        "cursorPrefix": "ab",
+        "cursorSuffix": "c"
+      },
+      {
+        "kind": "key",
+        "text": "\u001b",
+        "keys": "\ue00c"
+      }
+    ]
+  },
+  {
+    "name": "output_cursor_eof",
+    "source": "program p; uses crt; var c:char; begin write('abc',#8); c:=readkey end.",
+    "input": "",
+    "output": "abc\b",
+    "display": "abc",
+    "transcript": "abc",
+    "runtime": "R_INPUT_EOF",
+    "steps": [
+      {
+        "kind": "key",
+        "text": null,
+        "cursorPrefix": "ab",
+        "cursorSuffix": "c"
+      }
+    ]
+  },
+  {
+    "name": "output_cursor_line",
+    "source": "program p; var s:string; begin write('abc',#8); readln(s); writeln('[',s,']') end.",
+    "input": "XY\n",
+    "output": "abc\b[XY]\n",
+    "display": "ab[XY]\n",
+    "transcript": "abXY\n[XY]\n",
+    "steps": [
+      {
+        "kind": "line",
+        "text": "XY",
+        "editKeys": "XZ\ue003Y\ue007",
+        "cursorPrefix": "ab",
+        "cursorSuffix": "c"
+      }
+    ]
+  },
+  {
+    "name": "tutorial_output_backspace",
+    "sourceCase": "tutorial_textfiles",
+    "input": "ab\bC\u001b",
+    "output": "inserire un testo (premere esc per terminare)\n\nab\bC\nil testo inserito \u00e8 il seguente :\n\nab\bC",
+    "display": "inserire un testo (premere esc per terminare)\n\naC\nil testo inserito \u00e8 il seguente :\n\naC",
+    "transcript": "inserire un testo (premere esc per terminare)\n\naC\nil testo inserito \u00e8 il seguente :\n\naC",
+    "steps": [
+      {
+        "kind": "key",
+        "text": "ab"
+      },
+      {
+        "kind": "key",
+        "text": "\b",
+        "keys": "\ue003"
+      },
+      {
+        "kind": "key",
+        "text": "C",
+        "keys": "C"
+      },
+      {
+        "kind": "key",
+        "text": "\u001b",
+        "keys": "\ue00c"
+      }
+    ]
   }
 ]

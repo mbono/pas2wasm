@@ -164,6 +164,8 @@ def verify_console_case(browser, case):
             assert browser.js('return document.activeElement.id;') == 'console-input'
             label = 'Console key input' if step['kind']=='key' else 'Console input line'
             assert browser.js("return document.getElementById('console-input').getAttribute('aria-label');") == label
+            if 'cursorPrefix' in step:
+                terminal.verify_cursor(browser,step['cursorPrefix'],step['cursorSuffix'])
             if step.get('prefix'):
                 assert browser.js("return document.getElementById('console-input').textContent;") == step['prefix']
                 assert browser.js("const s=window.getSelection(),e=document.getElementById('console-input');return s.isCollapsed&&e.contains(s.anchorNode);")
@@ -173,7 +175,7 @@ def verify_console_case(browser, case):
                 browser.click('console-eof')
             elif step['kind']=='line':
                 # Append to the existing prefix with native keyboard editing.
-                terminal.keys(browser,step['text'][len(step.get('prefix','')):]+'\ue007')
+                terminal.keys(browser,step.get('editKeys',step['text'][len(step.get('prefix','')):]+'\ue007'))
             elif step.get('composition'):
                 browser.page_async('''const e=document.getElementById('console-input'),text=arguments[0];
                     e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));e.textContent=text;
@@ -211,6 +213,8 @@ def verify_ui(browser):
         browser.js("const s=document.getElementById('source');s.value=arguments[0];s.dispatchEvent(new Event('input'));",case['source'])
         if case['name']=='controls':
             verify_controls(browser)
+        if case['name']=='output_cursor':
+            verify_cursor_stop(browser)
         verify_console_case(browser,case)
     browser.js("const s=document.getElementById('source');s.value=arguments[0];s.dispatchEvent(new Event('input'));",spin_source())
     verify_timeout(browser)
@@ -219,6 +223,23 @@ def verify_ui(browser):
 def spin_source():
     """Resume from one real key wait into a noncooperative computation."""
     return 'program p; uses crt; var c:char; begin c:=readkey; while true do begin end end.'
+
+
+def verify_cursor_stop(browser):
+    """Cancelling a wait behind line end preserves output and detaches the editor."""
+    interactive.select_mode(browser,'interactive')
+    for mode in ('stop','batch'):
+        browser.click('run')
+        browser.wait("document.getElementById('status').textContent==='Waiting for input'")
+        terminal.verify_cursor(browser,'ab','c')
+        if mode=='stop':
+            browser.click('stop')
+            assert browser.js("return document.getElementById('status').textContent;")=='Stopped'
+        else:
+            interactive.select_mode(browser,'batch')
+        assert browser.js("const e=document.getElementById('console-input');return e.parentNode.id==='terminal'&&e.getAttribute('aria-disabled')==='true';")
+        assert browser.js("return document.getElementById('output').textContent;")=='abc'
+    interactive.select_mode(browser,'interactive')
 
 
 def verify_timeout(browser):

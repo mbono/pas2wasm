@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* One immutable transcript and one inline editing root share a scrolling pre.
- * Native browser editing owns Unicode/caret/IME; only submitted text is committed. */
+/* Read-only output and one native editing root share a scrolling pre. Output BS
+ * moves a scalar cursor; raw program/file bytes and input editing stay independent. */
 function createPas2WasmTerminal(view, history, editor, submit) {
     if (!document.getElementById('pas2wasm-terminal-style')) {
         const style = document.createElement('style');
@@ -23,8 +23,10 @@ function createPas2WasmTerminal(view, history, editor, submit) {
 `;
         document.head.appendChild(style);
     }
-    const committed = document.createTextNode('');
-    history.replaceChildren(committed);
+    // Two output fragments straddle the logical cursor. Only the current line may
+    // occupy the suffix; LF commits it. Both fragments remain read-only text.
+    const committed = document.createTextNode(''), suffix = document.createTextNode('');
+    history.replaceChildren(committed, suffix);
     let active = false, composing = false, compositionEnter = false;
     let inputKind = 'line', prefilled = false, compositionCommit = null;
     /* A selection is editable only when both endpoints belong to the tail. */
@@ -44,10 +46,79 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         focus();
         return window.getSelection().getRangeAt(0);
     }
-    /* Follow the tail only when the user was already reading the latest text. */
-    function append(text, force = false) {
+    /* Change only the affected text range, retaining earlier history selections. */
+    function patch(node, text) {
+        const old = node.data;
+        if (old === text) return;
+        let start = 0, end = 0;
+        while (start < old.length && start < text.length && old[start] === text[start]) start++;
+        while (end < old.length - start && end < text.length - start &&
+               old[old.length - end - 1] === text[text.length - end - 1]) end++;
+        node.replaceData(start, old.length - start - end, text.slice(start, text.length - end));
+    }
+    /* Keep the native caret between output fragments only when behind line end.
+     * Reparenting must retain draft nodes, native selection and keyboard focus. */
+    function placeEditor() {
+        const parent = active && suffix.length ? history : view;
+        if (editor.parentNode === parent) return;
+        const selected = window.getSelection(), editing = inside(selected);
+        const saved = editing ? [selected.anchorNode, selected.anchorOffset,
+                                 selected.focusNode, selected.focusOffset] : null;
+        const focused = document.activeElement === editor;
+        if (parent === history) history.insertBefore(editor, suffix);
+        else history.after(editor);
+        if (focused) editor.focus({preventScroll:true});
+        if (saved) selected.setBaseAndExtent(...saved);
+    }
+    /* Retain copy selections when moving unchanged output between fragments. */
+    function outputSelection() {
+        const selected = window.getSelection();
+        if (!selected?.rangeCount || inside(selected)) return null;
+        function position(node, offset) {
+            if (node === committed) return offset;
+            if (node === suffix) return committed.length + offset;
+            if (node !== history) return null;
+            let size = 0;
+            for (let i = 0; i < offset; i++) {
+                const child = history.childNodes[i];
+                if (child === committed || child === suffix) size += child.length;
+            }
+            return size;
+        }
+        const anchor = position(selected.anchorNode, selected.anchorOffset);
+        const focus = position(selected.focusNode, selected.focusOffset);
+        return anchor === null || focus === null ? null : [anchor, focus];
+    }
+    /* Apply cursor controls in memory once per chunk, rather than rewriting the DOM
+     * for every scalar. Ordinary append-only output retains its single-append path. */
+    function display(text, backspace) {
+        if (!suffix.length && (!backspace || !text.includes('\b'))) {
+            committed.appendData(text); return;
+        }
+        const old = committed.data + suffix.data, start = old.lastIndexOf('\n') + 1;
+        let line = Array.from(old.slice(start));
+        let cursor = Array.from(committed.data.slice(start)).length;
+        const completed = [];
+        for (const scalar of text) {
+            if (backspace && scalar === '\b') cursor = Math.max(0, cursor - 1);
+            else if (scalar === '\n') {
+                completed.push(line.join(''), '\n'); line = []; cursor = 0;
+            } else line[cursor++] = scalar;
+        }
+        patch(committed, old.slice(0, start) + completed.join('') + line.slice(0, cursor).join(''));
+        patch(suffix, line.slice(cursor).join(''));
+    }
+    /* Program output interprets BS; submitted-line echo stays literal. Both use the
+     * same overwrite position and preserve a draft/copy selection while scrolling. */
+    function append(text, force = false, backspace = true) {
         const follow = view.scrollHeight - view.clientHeight - view.scrollTop <= 4;
-        committed.appendData(text);
+        const saved = outputSelection();
+        display(text, backspace); placeEditor();
+        if (saved) {
+            const point = offset => offset <= committed.length ? [committed, offset] :
+                [suffix, Math.min(offset - committed.length, suffix.length)];
+            window.getSelection().setBaseAndExtent(...point(saved[0]), ...point(saved[1]));
+        }
         if (follow || force) view.scrollTop = view.scrollHeight;
     }
     /* Toggle only the editing root; a disabled tail has no active caret/tab stop. */
@@ -61,6 +132,7 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         // A new worker request can arrive before an IME's final Enter event.
         // Keep that guard until keyup/new keydown, including across suspension.
         active = value; composing = false;
+        placeEditor();
         editor.contentEditable = value ? 'plaintext-only' : 'false';
         editor.setAttribute('aria-disabled', String(!value));
         editor.setAttribute('aria-label',inputKind === 'key' ? 'Console key input' : 'Console input line');
@@ -84,7 +156,7 @@ function createPas2WasmTerminal(view, history, editor, submit) {
     function enter() {
         if (!active || composing) return;
         const text = editor.textContent;
-        if (submit(text)) { append(text + '\n', true); editor.replaceChildren(); }
+        if (submit(text)) { append(text + '\n', true, false); editor.replaceChildren(); }
     }
     /* Detect an editing boundary without splitting Unicode characters inside it. */
     function edge(end) {
@@ -195,6 +267,10 @@ function createPas2WasmTerminal(view, history, editor, submit) {
     waiting(false);
     return {
         append, waiting,
-        clear() { committed.data = ''; editor.replaceChildren(); compositionEnter = false; compositionCommit = null; prefilled = false; waiting(false); view.scrollTop = 0; }
+        clear() {
+            committed.data = suffix.data = ''; editor.replaceChildren();
+            compositionEnter = false; compositionCommit = null; prefilled = false;
+            waiting(false); view.scrollTop = 0;
+        }
     };
 }

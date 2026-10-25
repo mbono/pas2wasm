@@ -9504,5 +9504,114 @@
         "source": "program stringhe;\nvar s1,s2,s3: string;\nbegin\n\ts1 := 'rossi';\n\ts2 := ''; {stringa vuota}\n\ts3 := 'carlo';\n\ts2 := s3 + ' ' + s1; {s2='carlo rossi'}\n\twriteln(s2);\nend.\n",
         "output": "carlo rossi\n",
         "portable": true
+    },
+    {
+        "name": "console_output_overwrite",
+        "source": "program p; begin write('ab',#8,'C') end.",
+        "output": "ab\bC",
+        "display": "aC",
+        "displayCursor": 2
+    },
+    {
+        "name": "console_output_move_only",
+        "source": "program p; begin write('abc',#8) end.",
+        "output": "abc\b",
+        "display": "abc",
+        "displayCursor": 2
+    },
+    {
+        "name": "console_output_erase",
+        "source": "program p; begin write('abc',#8,' ',#8) end.",
+        "output": "abc\b \b",
+        "display": "ab ",
+        "displayCursor": 2
+    },
+    {
+        "name": "console_output_left_boundary",
+        "source": "program p; begin write('x',#10,#8,#8,'Y') end.",
+        "output": "x\n\b\bY",
+        "display": "x\nY",
+        "displayCursor": 1
+    },
+    {
+        "name": "console_output_newline",
+        "source": "program p; begin write('abc',#8,#10,'D') end.",
+        "output": "abc\b\nD",
+        "display": "abc\nD",
+        "displayCursor": 1
+    },
+    {
+        "name": "console_output_repeated",
+        "source": "program p; begin write('abc',#8,#8,'XY') end.",
+        "output": "abc\b\bXY",
+        "display": "aXY",
+        "displayCursor": 3
+    },
+    {
+        "name": "console_output_astral",
+        "source": "program p; begin write('A\ud83d\ude00',#8,'Z') end.",
+        "output": "A\ud83d\ude00\bZ",
+        "display": "AZ",
+        "displayCursor": 2
+    },
+    {
+        "name": "console_output_astral_replace",
+        "source": "program p; begin write('abc',#8,'\ud83d\ude00') end.",
+        "output": "abc\b\ud83d\ude00",
+        "display": "ab\ud83d\ude00",
+        "displayCursor": 3
+    },
+    {
+        "name": "console_output_combining",
+        "source": "program p; begin write('e\u0301',#8,'X') end.",
+        "output": "e\u0301\bX",
+        "display": "eX",
+        "displayCursor": 2
+    },
+    {
+        "name": "console_output_empty",
+        "source": "program p; begin write(#8,#8) end.",
+        "output": "\b\b",
+        "display": "",
+        "displayCursor": 0
+    },
+    {
+        "name": "console_output_html",
+        "source": "program p; begin write('<img>',#8,'X') end.",
+        "output": "<img>\bX",
+        "display": "<imgX",
+        "displayCursor": 5
+    },
+    {
+        "name": "console_output_soft_wrap",
+        "source": "program p; begin write('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,#8,'Z') end.",
+        "output": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\bZ",
+        "display": "Zaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayCursor": 1
+    },
+    {
+        "name": "console_live_output_cursor",
+        "source": "program p; uses crt; var c:char; begin write('abc',#8); c:=readkey; write(c); c:=readkey end.",
+        "input": "X\u001b",
+        "output": "abc\bX"
+    },
+    {
+        "name": "console_live_output_cursor_eof",
+        "source": "program p; uses crt; var c:char; begin write('abc',#8); c:=readkey end.",
+        "input": "",
+        "output": "abc\b",
+        "runtime": "R_INPUT_EOF"
+    },
+    {
+        "name": "console_live_output_cursor_line",
+        "source": "program p; var s:string; begin write('abc',#8); readln(s); writeln('[',s,']') end.",
+        "input": "XY\n",
+        "output": "abc\b[XY]\n"
+    },
+    {
+        "name": "console_live_tutorial_output_backspace",
+        "source": "program prova_text;\nuses crt;\nvar\n\tt: text;\n\tc: char;\nbegin\n\t(*creazione e apertura in scrittura*)\n\tassign(t,'testo.txt');\n\trewrite(t);\n\t(*fase di scrittura testo*)\n\twriteln('inserire un testo (premere esc per terminare)');\n\twriteln;\n\tc:= readkey;\n\t(* #27 e #13 corrispondono a esc ed invio*)\n\twhile (c <> #27) do begin\n\t\tif ( c = #13) then begin\n\t\t\twriteln(t);\n\t\t\twriteln;\n\t\tend\n\t\telse begin\n\t\t\twrite(t,c);\n\t\t\twrite(c);\n\t\tend;\n\t\tc := readkey;\n\tend;\n\tclose(t);\n\t(*apertura in lettura*)\n\treset(t);\n\t(*lettura del testo*)\n\twriteln;\n\twriteln('il testo inserito \u00e8 il seguente :');\n\twriteln;\n\twhile (not eof(t)) do begin\n\t\tif (eoln(t)) then begin\n\t\t\treadln(t);\n\t\t\twriteln;\n\t\tend\n\t\telse begin\n\t\t\tread(t,c);\n\t\t\twrite(c);\n\t\tend;\n\tend;\n\tclose(t);\nend.\n",
+        "input": "ab\bC\u001b",
+        "output": "inserire un testo (premere esc per terminare)\n\nab\bC\nil testo inserito \u00e8 il seguente :\n\nab\bC"
     }
 ]
