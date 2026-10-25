@@ -1,7 +1,7 @@
 # Pas2Wasm
 
-Pas2Wasm is a Pascal-to-WebAssembly compiler written in portable C. The compiler
-itself builds as both a **native executable** and a **WebAssembly module**:
+Pas2Wasm is a **Pascal-to-WebAssembly compiler with first-class browser integration**,
+written in portable C. The compiler itself builds as both a **native executable** and a **WebAssembly module**:
 
 | Compiler build | Artifacts | Usage |
 | --- | --- | --- |
@@ -16,6 +16,50 @@ The repository includes a playground demonstrating how to integrate the compiler
 run generated programs, and provide console input/output and downloads.
 Try the [online playground on GitHub Pages](https://mbono.github.io/pas2wasm/)
 without installing any tools.
+
+## Embed compilation and execution in a browser
+
+Build with `make site`, then copy `engine.js`, `pas2wasm.js`, `pas2wasm.wasm`,
+`compiler-worker.js`, `LICENSE`, and `THIRD_PARTY_NOTICES.txt` from `build/` into a
+`pas2wasm/` directory beside your HTML page. Serve these static files over HTTP(S):
+
+```html
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Pascal in the browser</title>
+<script src="pas2wasm/engine.js"></script>
+<pre id="result"></pre>
+<script>
+(async () => {
+  const output = document.getElementById('result');
+  let engine;
+  try {
+    engine = await Pas2WasmEngine.create({assetBaseUrl:'./pas2wasm/'});
+    const compiled = await engine.compile("program hello; begin writeln('Hello, world') end.");
+    if (compiled.diagnostic) {
+      output.textContent = JSON.stringify(compiled.diagnostic);
+      return;
+    }
+    const session = engine.run(compiled.binary, {
+      mode:'batch',
+      onOutput(text) { output.textContent += text; }
+    });
+    const outcome = await session.done;
+    if (outcome.status === 'failed') output.textContent = JSON.stringify(outcome.diagnostic);
+  } catch (error) {
+    output.textContent = `${error.code || error.name}: ${error.message}`;
+  } finally { engine?.dispose(); }
+})();
+</script>
+```
+
+The headless API runs compilation and programs in separate workers. It supports batch
+input, interactive line/key callbacks, optional WAT, cancellation and text-file exchange.
+See the [browser embedding guide](docs/browser-embedding.md) for the full contract and
+[standalone integration example](web/examples/embedding.html). No packages or compiler
+server are required. Each engine permits one active program; create separate engines
+for independent concurrent examples.
 
 ## Build the compiler
 
@@ -68,24 +112,7 @@ A raw `.wasm` file needs a host runtime; opening it directly in a browser does
 not run the Pascal program. The included browser runtime supplies console I/O
 and the other [host imports](docs/runtime-abi.md) that generated programs need.
 
-## Use the compiler in a browser
-
-Build with `make wasm` to obtain `pas2wasm.js`, the compiler loader, and
-`pas2wasm.wasm`, the compiler itself. These artifacts can be embedded in your own
-web application. The [JavaScript wrapper](web/compiler.js) accepts Pascal source
-and returns compiled Wasm bytes or a compilation diagnostic. The
-[C API](src/pas2wasm.h) provides the underlying memory-only compiler interface.
-
-To execute a compiled program, instantiate its Wasm module with the included
-[JavaScript runtime](web/runtime/host.js), attach its memory, and call its `run`
-export. Your application supplies input and receives output through the runtime.
-The [runtime documentation](docs/runtime-abi.md) describes integration and limits.
-
-The example playground in `web/` demonstrates the complete integration, including
-separate compiler/program workers, cancellation, interactive and batch input,
-optional WAT, and standalone HTML export.
-
-### Try the example playground
+## Example playground
 
 Open the [hosted playground](https://mbono.github.io/pas2wasm/) in Chromium or
 Firefox to compile and run Pascal directly in your browser. It demonstrates the
@@ -152,9 +179,16 @@ a five-second limit.
 
 ## Further information
 
+- [Browser embedding](docs/browser-embedding.md): public API, input/output, files, and cleanup.
+- [Runtime ABI](docs/runtime-abi.md): low-level C/JavaScript integration and generated-module contracts.
+- [Architecture](docs/architecture.md): design and ownership.
 - [Contributor and developer guide](docs/contributing.md): architecture, tests, and hosting.
 - [Changelog](docs/changelog.md): release history.
 - [License](LICENSE): repository-owned code and documentation use MIT.
+
+The motivating application is the author’s [Pascal tutorial](https://github.com/mbono/pascal_tutorial).
+Its 23 pinned examples are regression-tested; integrating execution into the tutorial
+is separate work.
 
 You choose the license for your own Pascal programs. Redistributed Pas2Wasm
 runtime code, including the runtime embedded in exported HTML, retains its MIT

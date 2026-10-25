@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Copyright (c) 2026 Mariano Bono; SPDX-License-Identifier: MIT -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Embed Pas2Wasm</title>
+  <script src="../engine.js"></script>
+  <style>
+    body { max-width:48rem; margin:2rem auto; padding:1rem; font:1rem/1.5 system-ui; }
+    textarea, pre { box-sizing:border-box; width:100%; padding:1rem; font:1rem monospace; }
+    label { display:block; } button { margin:1rem .5rem 1rem 0; }
+    pre { white-space:pre-wrap; background:#eee; }
+  </style>
+</head>
+<body>
+  <h1>Embed Pas2Wasm</h1>
+  <p>This independent example uses the public headless API and batch input.</p>
+  <label for="pascal">Pascal source</label>
+  <textarea id="pascal" rows="6">program hello;
+begin
+  writeln('Hello, world')
+end.</textarea>
+  <label for="stdin">Batch input</label><textarea id="stdin" rows="2"></textarea>
+  <button id="execute" disabled>Compile and run</button><button id="cancel" disabled>Stop</button>
+  <span id="progress" role="status">Loading…</span>
+  <pre id="transcript" aria-live="polite"></pre>
+  <script>
+    const source = document.getElementById('pascal'), input = document.getElementById('stdin');
+    const output = document.getElementById('transcript'), progress = document.getElementById('progress');
+    const execute = document.getElementById('execute'), cancel = document.getElementById('cancel');
+    let engine, session, compilation;
+    /* Render diagnostics as text, preserving source locations. */
+    function diagnostic(value) {
+      output.textContent += `${value.code} (${value.line || 0}:${value.column || 0}): ${value.message}\n`;
+    }
+    /* Cancellation covers both compilation and execution; finally restores controls. */
+    execute.onclick = async () => {
+      execute.disabled = true; cancel.disabled = false; output.textContent = '';
+      compilation = new AbortController(); progress.textContent = 'Compiling…';
+      try {
+        const compiled = await engine.compile(source.value, {signal:compilation.signal});
+        if (compiled.diagnostic) { diagnostic(compiled.diagnostic); progress.textContent = 'failed'; return; }
+        session = engine.run(compiled.binary, {
+          mode:'batch', input:input.value,
+          onOutput(text) { output.textContent += text; },
+          onStateChange(state) { progress.textContent = state; }
+        });
+        const outcome = await session.done;
+        if (outcome.status === 'failed') diagnostic(outcome.diagnostic);
+      } catch (error) {
+        progress.textContent = error.name === 'AbortError' ? 'stopped' : 'failed';
+        if (error.name !== 'AbortError') diagnostic(error);
+      } finally { compilation = session = null; execute.disabled = false; cancel.disabled = true; }
+    };
+    cancel.onclick = () => { compilation?.abort(); session?.stop(); };
+    /* Asset URLs are relative to this document, one directory below the bundle. */
+    Pas2WasmEngine.create({assetBaseUrl:'../'}).then(value => {
+      engine = value; progress.textContent = `Ready (v${engine.version})`; execute.disabled = false;
+    }).catch(error => { diagnostic(error); progress.textContent = 'failed'; });
+    window.addEventListener('pagehide', event => { if (!event.persisted) engine?.dispose(); });
+  </script>
+</body>
+</html>

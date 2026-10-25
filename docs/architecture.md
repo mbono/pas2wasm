@@ -26,7 +26,7 @@ Pascal source -> lexer/parser -> semantic analysis -> typed representation
 | `src/backend/wasm/` | Concrete layouts, calling convention, checked heap, lowering, and binary/text encoding |
 | `src/compiler.c`, `src/pas2wasm.h` | Memory-only compilation, artifact/diagnostic ownership, and version accessor |
 | `src/driver/` | Native file/CLI adapter |
-| `web/` | JavaScript compiler wrapper and example browser integration/runtime/exporter |
+| `web/` | Public headless browser engine, compiler wrapper, runtime and example UI/exporter |
 
 Both hosts use the same frontend and backend source lists. The native executable is a
 compiler host, not a native-code output backend. Logical descriptors contain no Wasm
@@ -249,8 +249,25 @@ unbounded host ownership. Standalone exports embed the same self-contained runti
 
 ## Browser compilation, execution, and input
 
-The example page fetches same-deployment compiler assets once, caches them in memory,
-and supplies their bytes/source to replacement workers. The Emscripten loader explicitly
+The headless engine fetches same-deployment compiler assets once, caches them in memory,
+and supplies their bytes/source to replacement workers. A classic `engine.js` bundle
+concatenates the existing wrapper, runtime and headless session with `web/engine.js`;
+there is no package/bundler or DOM dependency. The playground consumes this public API
+instead of owning another compiler worker implementation. Fresh compiler workers keep
+C memory/reset assumptions unchanged; serialized requests have independent cancellation,
+and disposal settles both queued and active promises. Initialization probes and every
+request release their worker/URL/timer. One active run per engine keeps ownership explicit;
+separate engines permit independent applications.
+
+Runtime sessions adapt the existing worker controller to raw callbacks, request-bound
+input submission and one completion promise. Callback failure, synchronous reentry,
+stop/disposal and stale-message guards share terminal cleanup. Inputs are snapshotted
+before deferred startup, successful files become caller-owned, and no widget/echo policy
+enters this layer. `runtime/console.js` contains the existing private DOM controller:
+the playground supplies the public runner, while compiler-free exports retain the
+same lower-level session. Extracting a general terminal widget remains separate work.
+
+The Emscripten loader explicitly
 enables incoming `wasmBinary`; workers do not need a filesystem or a second asset fetch.
 The JavaScript wrapper copies artifacts before freeing C result/source storage. VERSION
 generates a shared build header, so both hosts and the loaded UI report one embedded

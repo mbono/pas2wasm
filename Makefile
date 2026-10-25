@@ -22,10 +22,11 @@ CORE = src/buffer.c src/compiler.c $(FRONTEND) \
 HEADERS = src/pas2wasm.h src/ir/program.h src/ir/number.h src/backend/backend.h \
           src/backend/wasm/layout.h src/backend/wasm/emitter.h src/backend/wasm/variant.h \
           src/backend/wasm/reference.h src/backend/wasm/file.h src/backend/wasm/crt.h
-WEB = index.html style.css app.js compiler.js compiler-worker.js export.js runtime/host.js runtime/terminal.js runtime/files.js runtime/session.js
-WEB_OUTPUTS = $(addprefix build/,$(WEB)) build/supported-language.md build/THIRD_PARTY_NOTICES.txt build/LICENSE
+WEB = index.html style.css app.js compiler.js compiler-worker.js export.js runtime/host.js runtime/terminal.js runtime/files.js runtime/session.js runtime/console.js examples/embedding.html
+ENGINE = web/compiler.js web/runtime/host.js web/runtime/session.js web/engine.js
+WEB_OUTPUTS = $(addprefix build/,$(WEB)) build/engine.js build/supported-language.md build/THIRD_PARTY_NOTICES.txt build/LICENSE
 
-.PHONY: all native wasm site test test-sanitize test-browser serve clean help
+.PHONY: all native wasm site test test-sanitize test-browser test-embedding serve clean help
 all: native site
 native: build/pas2wasm
 wasm: build/pas2wasm.js build/pas2wasm.wasm
@@ -49,6 +50,10 @@ build/pas2wasm.js build/pas2wasm.wasm &: $(CORE) $(HEADERS) build/version.h Make
 build/%: web/%
 	mkdir -p $(dir $@)
 	cp $< $@
+
+# Concatenate shared sources: one classic script, no bundler or duplicated runtime.
+build/engine.js: $(ENGINE) Makefile | build
+	cat $(ENGINE) > $@
 
 build/supported-language.md: docs/supported-language.md | build
 	cp $< $@
@@ -94,6 +99,9 @@ test-sanitize: all build/pas2wasm-sanitize build/layout-test-sanitize build/numb
 test-browser: all
 	$(PYTHON) test/browser.py
 
+test-embedding: site
+	$(PYTHON) test/embedding.py
+
 serve: site
 	$(PYTHON) -m http.server 8000 --directory build
 
@@ -105,5 +113,6 @@ help:
 	 'make test: frontend, native/Wasm parity, runtime, WAT, and FPC checks' \
 	 'make test-sanitize: repeat acceptance with C memory/undefined-behavior checks' \
 	 'make test-browser: actual browser-worker and UI acceptance checks' \
+	 'make test-embedding: independent headless API and documented examples in both browsers' \
 	 'make serve: serve the playground at http://localhost:8000' \
 	 'make clean: remove generated files'

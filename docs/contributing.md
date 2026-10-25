@@ -14,7 +14,7 @@ inventory](dependencies.md) lists tool versions/licenses.
 | `src/frontend/`, `src/ir/` | Target-independent analysis, types, storage paths, and typed nodes |
 | `src/backend/wasm/` | Layouts, direct binary/optional WAT, and checked heap helpers |
 | `src/driver/`, `src/pas2wasm.h` | Native CLI adapter and memory-only compiler API |
-| `web/` | Example playground, workers, runtime, and HTML exporter |
+| `web/` | Public headless engine, example playground, workers, runtime and HTML exporter |
 | `test/` | Shared fixtures, independent helper tests, and acceptance runners |
 | `docs/` | Current requirements, language/API references, architecture, and development guidance |
 | `build/` | Ignored generated artifacts/screenshots; do not hand-edit or publish wholesale |
@@ -36,6 +36,8 @@ toolchains/SDK components are installed, ordinary builds work offline.
 | `make test` | Frontend/layout/numeric helpers, native/Wasm binary/WAT/diagnostic parity, execution, WAT reassembly, compatible FPC comparisons | Node.js, Binaryen `wasm-as`, Free Pascal |
 | `make test-sanitize` | Instrumented native acceptance and layout/numeric helper checks | Same tools and C address/undefined-behavior sanitizers |
 | `make test-browser` | Actual Chromium/Firefox compiler workers, execution, UI, live/batch input, cancellation/timeouts, and offline exports | Python 3, `wasm-as`, Chromium/chromedriver, Firefox/geckodriver |
+| `make test-embedding` | Published headless API, nested static layout, independent example, README/guide HTML, cancellation/input/files/cleanup and performance baseline | Python 3, Chromium/chromedriver, Firefox/geckodriver |
+| `python3 test/documents.py` | Maintained local Markdown links and heading anchors | Python 3 |
 | `git diff --check` | Whitespace before review | Git |
 
 Add descriptively named positive/negative and boundary records to `test/cases.json`.
@@ -149,8 +151,8 @@ issues where available, and screenshots for UI changes.
 ## Static hosting
 
 Run `make site` and publish only the following `build/` assets together: `index.html`,
-`style.css`, `app.js`, `compiler.js`, `compiler-worker.js`, `export.js`, `pas2wasm.js`,
-`pas2wasm.wasm`, `supported-language.md`, `runtime/`, `LICENSE`, and
+`style.css`, `app.js`, `engine.js`, `compiler.js`, `compiler-worker.js`, `export.js`,
+`pas2wasm.js`, `pas2wasm.wasm`, `examples/embedding.html`, `supported-language.md`, `runtime/`, `LICENSE`, and
 `THIRD_PARTY_NOTICES.txt`. Do not publish native executables, test binaries, or
 screenshots. The language reference is copied from docs while preserving its public URL.
 Preserve relative paths and serve Wasm as `application/wasm`.
@@ -161,6 +163,27 @@ requests to `main` do not publish. In repository settings, choose **Settings →
 → Build and deployment → Source → GitHub Actions**. The deploy job publishes to the
 `github-pages` environment using the workflow token; no personal access token is needed.
 The site is the example playground, while the compiler remains the project.
+
+For independent embedding, copy the smaller asset set listed in
+[browser-embedding.md](browser-embedding.md), including LICENSE and third-party
+notices. `make site` concatenates headless sources into the engine; edit their maintained
+sources in `web/`, never `build/engine.js`. The playground uses that same public API.
+
+`test/embedding.py` copies only documented public assets under a nested static URL,
+executes `test/engine.js` in both actual browsers and runs the README/guide HTML snippets.
+It runs standalone or through the full browser gate. Measurement JSON stays under
+`build/embedding-{chromium,firefox}.json`; record conditions and distinguish startup,
+total execution (including deliberate waits/timeouts) and warm-worker comparison data.
+`P2W_CHROME_BINARY` optionally selects an explicit Chrome binary, useful in CI.
+
+The separate `checks.yml` workflow runs local-link checks on PRs/main pushes. Source,
+web, test, toolchain or workflow changes additionally run native/Wasm acceptance and
+sanitizers in separate jobs, plus independent embedding in stable Chrome with a matching
+driver. Toolchain Emscripten 6.0.12 is pinned; browser/driver versions evolve together
+to exercise current Web APIs. Documentation-only changes need no SDK/browser downloads.
+The complete Chromium/Firefox trusted-input, UI and offline-export gate remains required
+locally before feature acceptance; the shorter CI browser job does not replace it.
+Validation has read-only repository permissions and never deploys. Pages remains tag-only.
 
 Static hosting such as GitHub Pages needs no compiler service. The standalone export is
 different: it embeds an already compiled program, runtime, worker, console/styles, and

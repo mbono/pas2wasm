@@ -41,7 +41,9 @@ function createPas2WasmSession(events, budget = 5000) {
         const id = generation;
         url = URL.createObjectURL(new Blob([pas2WasmWorkerSource()], {type:'text/javascript'}));
         worker = new Worker(url);
-        events.state('Running…'); resume();
+        events.state('Running…');
+        if (id !== generation) return;
+        resume();
         worker.onmessage = ({data}) => {
             if (id !== generation || data.id !== id) return;
             if (data.type === 'output') events.output(data.text);
@@ -54,7 +56,8 @@ function createPas2WasmSession(events, budget = 5000) {
                     finish('Failed', {code:'R_TIMEOUT', message:'Execution exceeded 5 seconds of active time.'});
                     return;
                 }
-                request = data; events.state('Waiting for input'); events.waiting?.(true,data);
+                request = data; events.state('Waiting for input');
+                if (id === generation) events.waiting?.(true,data);
             } else if (data.type === 'done') {
                 try { events.files?.(data.files === undefined ? [] : data.files); finish('Completed'); }
                 catch (error) { finish('Failed', {code:error.code || 'R_FILE_TYPE', message:error.message}); }
@@ -94,63 +97,6 @@ function createPas2WasmSession(events, budget = 5000) {
         return true;
     }
     return {run, stop, submit};
-}
-
-/* Bind the same keyboard-accessible console to either page. All transcript text
- * is inert; input echo is separate from the program's bounded output callback. */
-function createPas2WasmConsole(events) {
-    const get = id => document.getElementById(id);
-    const mode = get('io-mode'), batch = get('batch-input'), output = get('output');
-    const input = get('console-input'), controls = get('console-controls');
-    const eof = get('console-eof'), note = get('io-note');
-    const files = get('program-files') ? createPas2WasmFiles(get('program-files'), value => events.filesReady?.(value)) : null;
-    const terminal = createPas2WasmTerminal(get('terminal'), output, input, text => session.submit(text));
-    /* Reflect a pending input request and focus its single-line editor. */
-    function waiting(value, request = {}) {
-        terminal.waiting(value,request.kind || 'line',request.prefix,request.end); eof.disabled = !value;
-    }
-    const session = createPas2WasmSession({
-        state(text) {
-            const active = ['Running…','Waiting for input'].includes(text);
-            if (!active) waiting(false);
-            files?.busy(active);
-            if (text === 'Failed') files?.clearOutputs();
-            events.state(text);
-        },
-        error:events.error,
-        files(value) { files?.results(value); },
-        output(text) { terminal.append(text); },
-        waiting,
-        capabilities(supported) {
-            note.textContent = supported ? '' : 'Live console needs a browser with JSPI support. Batch input remains available.';
-        }
-    });
-    /* Switch explicitly between interactive delivery and preloaded input. */
-    function updateMode() {
-        batch.hidden = mode.value !== 'batch';
-        controls.hidden = input.hidden = mode.value !== 'interactive';
-        waiting(false);
-    }
-    mode.addEventListener('change', () => {
-        session.stop(); files?.busy(false); files?.clearOutputs(); events.cancel?.(); updateMode();
-    });
-    eof.addEventListener('click', () => session.submit(null));
-    updateMode();
-    return {
-        run(binary) {
-            if (!files || files.ready()) {
-                files?.clearOutputs();
-                session.run(binary, mode.value === 'batch' ? get('input').value : '', mode.value === 'interactive', files?.inputs() ?? []);
-            }
-        },
-        stop() { session.stop(); waiting(false); files?.busy(false); files?.clearOutputs(); },
-        clear() { terminal.clear(); waiting(false); files?.clearOutputs(); },
-        busy(value) { files?.busy(value); },
-        ready() { return files?.ready() ?? true; },
-        clearFiles() { files?.clearOutputs(); },
-        resetFiles() { files?.reset(); },
-        interactive() { return mode.value === 'interactive'; }
-    };
 }
 
 if (typeof module !== 'undefined' && module.exports)

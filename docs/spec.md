@@ -46,6 +46,33 @@ implementation is accepted, and references are updated.
 | Licensing | Repository-owned code/docs use MIT. Include the full license with site assets and inside standalone HTML; preserve third-party notices. |
 | Maintainability | Keep code small, readable, documented, and free of speculative backend frameworks or unused dependencies. Follow contributor conventions. |
 
+## Headless browser embedding
+
+`Pas2WasmEngine` is a small orchestration layer over the existing compiler
+wrapper, compiler worker, runtime and execution controller. The resolved initial scope
+is a headless API plus an independent HTML example; a reusable terminal widget is deferred.
+The playground must consume the same engine. Native/C interfaces and Pascal semantics
+remain unchanged. The API implements the following resolved contract.
+
+| Area | Resolved contract |
+| --- | --- |
+| Delivery | One classic `engine.js` script bundles repository-owned headless helpers without a package manager. `create({assetBaseUrl})` resolves a directory relative to the document, fetches matching same-origin compiler loader/Wasm/bootstrap assets once, initializes a disposable probe worker, and reports the loaded `.version`. Initialization has a bounded timeout; no source/input is fetched or sent. |
+| Compilation | `compile(source, {emitWat=false,target='wasm32',signal})` serializes requests, using a fresh compiler worker/memory per request and cached assets. The five-second timeout starts when a queued request begins. Results preserve binary/WAT/target/format and located compiler diagnostics. Abort/disposal reject with `AbortError`; infrastructure failures reject with `Pas2WasmEngineError` and `ENGINE_*` codes rather than Pascal diagnostics. Queued cancellation removes that request without delaying later work. |
+| Execution | One active run per engine; overlap throws `ENGINE_BUSY`. Compilation may coexist with a run. `run(binary,{mode='batch',input='',files=[],onOutput,onInputRequest,onStateChange,onCapabilities})` returns a session before delivering callbacks. Each run owns fresh worker/memory/runtime/budgets/files. No caller buffers are detached. |
+| Session | `.done` resolves once to `{status:'completed',files}`, `{status:'failed',diagnostic}` or `{status:'stopped'}`; disposal uses stopped. `.stop()` is idempotent. `.submit(value,requestId?)` returns whether a pending request accepted delivery; null is EOF, line text excludes CR/LF and includes any supplied prefix, key text is a nonempty raw chunk. Optional request IDs reject delayed answers to older requests; requests also expose a bound `submit(value)` for asynchronous applications. |
+| Events | States are `running`, `waiting`, `completed`, `failed`, `stopped`. Input requests carry `requestId`, `kind`, `prefix`, `line`, `column`; output is raw text without UI echo. `onCapabilities({jspi})` reports worker support; unsupported interactive mode retains `E_JSPI` while batch works. Events precede done settlement; no events follow a terminal outcome. Throwing callbacks terminate the run with `ENGINE_CALLBACK` (zero location) and discard file results. Async callback returns are not awaited. |
+| Ownership/limits | Preserve all existing limits, human-wait exclusions, generation/request guards and text-file byte/name ownership. Only UTF-8 text files are exchanged; Pascal typed files stay internal. A successful result owns its snapshots. Stop/failure/timeout yields no file results. |
+| Disposal | Stop active sessions, abort queued/active compiles, clear timers/listeners, terminate workers, release Blob URLs/cached assets. Repeated disposal is harmless. Later compile rejects and run throws `ENGINE_DISPOSED`. |
+| Compatibility | Ship compiler/runtime/engine assets from the same release together. Keep the `pas2wasm_v1` ABI and all expected diagnostic codes/locations. Offline exports embed only their existing program/runtime/UI functions and make no sibling requests. Blob workers require suitable CSP; static-worker/CSP optimization and warm compiler reuse are follow-ups requiring measurements. |
+
+Acceptance includes independent subpath-hosted HTML and exercised README/guide examples,
+both actual browsers, line/key/EOF/prefix input, diagnostics/WAT parity, callback and
+worker failures, queued/active abort, overlapping runs, stop/dispose/recovery, bounded
+file ownership, resource release/stale replies, offline reruns and existing exports.
+The browser suite records cold/repeated compile and startup timings, asset sizes and
+retained workers before optimization. Change-time CI is separate from the existing
+tag-only Pages deployment.
+
 ## Example browser integration and exports
 
 The included playground demonstrates the compiler's integration requirements. These

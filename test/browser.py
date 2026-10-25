@@ -12,10 +12,12 @@ import terminal
 import keyboard
 import tutorials
 import file_transfer
+import embedding
 import base64
 import functools
 import http.server
 import json
+import os
 import re
 from pathlib import Path
 import shutil
@@ -84,6 +86,8 @@ class Browser:
                     '--no-default-browser-check', '--disable-background-networking',
                     f'--user-data-dir={directory / "chrome-profile"}'
                 ]}
+                if os.environ.get('P2W_CHROME_BINARY'):
+                    options['goog:chromeOptions']['binary'] = os.environ['P2W_CHROME_BINARY']
             else:
                 options['moz:firefoxOptions'] = {'args': ['-headless'], 'prefs': {
                     'browser.download.dir':str(self.downloads), 'browser.download.folderList':2,
@@ -302,6 +306,7 @@ def verify_browser(kind, base_url, cases, directory):
     assert Path('build/THIRD_PARTY_NOTICES.txt').read_text() == Path('docs/third-party-notices.txt').read_text()
     browser = Browser(kind, directory)
     try:
+        embedding.verify_browser(browser, directory)
         browser.navigate(base_url)
         browser.wait("document.getElementById('status').textContent === 'Ready'")
         assert browser.js("return document.getElementById('io-mode').value;") == 'interactive'

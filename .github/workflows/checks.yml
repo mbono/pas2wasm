@@ -1,0 +1,81 @@
+name: Validate compiler and browser embedding
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  documents:
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check document links
+        run: python3 test/documents.py
+      - name: Select compiler checks
+        id: changes
+        env:
+          BASE_REV: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if ! git cat-file -e "$BASE_REV^{commit}" 2>/dev/null; then
+            echo 'code=true' >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only "$BASE_REV" "$GITHUB_SHA" > "$RUNNER_TEMP/changed-files"
+            if grep -qE '^(src/|web/|test/|\.github/|Makefile$|VERSION$)' "$RUNNER_TEMP/changed-files"; then
+              echo 'code=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'code=false' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  compiler:
+    needs: documents
+    if: needs.documents.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [test, test-sanitize]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: emscripten-core/setup-emsdk@v15
+        with:
+          version: 6.0.12
+      - name: Install comparison tools
+        run: sudo apt-get update && sudo apt-get install -y binaryen fp-compiler
+      - name: Verify both compiler hosts
+        run: make ${{ matrix.target }}
+
+  embedding:
+    needs: documents
+    if: needs.documents.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: emscripten-core/setup-emsdk@v15
+        with:
+          version: 6.0.12
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+        with:
+          chrome-version: stable
+          install-chromedriver: true
+      - name: Build public assets
+        run: make site
+      - name: Test independent browser integration
+        env:
+          P2W_CHROME_BINARY: ${{ steps.chrome.outputs.chrome-path }}
+        run: python3 test/embedding.py --browser chromium

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- Headless `Pas2WasmEngine` browser API with cached static assets, serialized off-thread
+  compilation, cancellation, one active run per engine, request-bound interactive input,
+  raw output, text-file snapshots and explicit disposal. The playground uses the same API.
+- Independent HTML embedding example and tested README/browser-embedding quick starts,
+  nested-URL distribution checks and recorded performance/resource baselines.
+- PR/main validation for document links, native/Wasm acceptance, sanitizers and independent
+  Chrome embedding, separate from tag-triggered GitHub Pages deployment.
+
+### Changed
+
+- The DOM console controller lives in `runtime/console.js`; low-level UI/export
+  integrations must load it alongside their terminal/files scripts. The headless
+  session controller remains in `runtime/session.js`.
+
 ## [0.5.0] - 2026-10-25
 
 ### Added

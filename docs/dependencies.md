@@ -10,6 +10,9 @@ Backspace display uses repository-owned scalar/chunk processing and native DOM t
 nodes/caret, without ANSI emulation or another terminal dependency.
 Host text-file selection/download uses native File/Blob APIs, UTF-8 TextDecoder,
 structured-clone messages and temporary Blob URLs; no filesystem package or service.
+The headless engine uses the same runtime/controller, Fetch, AbortController and Blob
+workers. Make concatenates its classic script from maintained sources; no JavaScript
+bundler, UI package, module loader or runtime dependency is added.
 Fixed-decimal formatting uses built-in JavaScript BigInt and DataView,
 without a numeric library or locale dependency. Runtime programs gain no host/OS filesystem/network/DOM or
 arbitrary-JavaScript access.
@@ -35,6 +38,7 @@ required to produce release compiler builds.
 | Chromium + chromedriver | Browser acceptance tests | 154.0.8037.97 | BSD and bundled notices |
 | Firefox + geckodriver | Browser acceptance tests | 158.0 / 0.37.1 | MPL-2.0 and bundled notices |
 | clang-format | Optional C formatting | Installed developer tool | Apache-2.0 with LLVM exception |
+| browser-actions/setup-chrome | CI-only stable Chrome and matching driver setup | Action v2; installed versions recorded by CI | MIT |
 
 ## Delivery and dependency policy
 
@@ -60,6 +64,10 @@ required to produce release compiler builds.
 - Include root LICENSE in site assets. Standalone HTML embeds the full MIT notice
   and only the generated program plus repository-owned runtime; it ships no
   Emscripten compiler/loader. Preserve other third-party components' own licenses.
+- CI setup actions download development toolchains/browsers on GitHub runners only;
+  this does not change offline production builds or ship those actions to consumers.
+  [setup-chrome](https://github.com/browser-actions/setup-chrome) is used only by the
+  browser validation job; Emscripten setup retains the existing pinned SDK.
 
 Detailed browser/export contracts are in [SPEC](spec.md); architecture and exact runtime
 ownership/layouts are documented separately rather than repeated here.

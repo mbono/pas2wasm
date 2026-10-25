@@ -54,6 +54,33 @@ Native `--version` prints `Pas2Wasm <version>`. The example heading and browser 
 the loaded identity. Compiler version does not version generated Pascal programs or the
 ABI namespace.
 
+### Headless browser engine
+
+The classic `build/engine.js` distribution exposes `Pas2WasmEngine.create`, bundling
+the same wrapper, runtime and headless controller. It owns compiler asset loading,
+serialized fresh compiler workers, one active program, cancellation and disposal.
+The [embedding guide](browser-embedding.md) owns the complete high-level API and examples.
+
+`compile(source,{emitWat,target,signal})` preserves the wrapper's artifact and Pascal
+diagnostic shapes. Abort uses `AbortError`; infrastructure failures reject with
+`Pas2WasmEngineError` and `ENGINE_LOAD`, `ENGINE_ASSET_URL`, `ENGINE_WORKER`,
+`ENGINE_VERSION`, `ENGINE_TIMEOUT` or `ENGINE_DISPOSED`. Invalid JS types use TypeError.
+Unsupported string targets are normalized to a bounded unsupported sentinel before
+cwrap, preserving C's `E_TARGET` without NUL truncation or unbounded temporary strings.
+
+`run(binary,options)` snapshots caller bytes/files, returns a session before callbacks,
+and uses the worker protocol below. A second active run throws `ENGINE_BUSY`.
+Its `done` resolves once with completed/files, failed/diagnostic or stopped status;
+stop/disposal publish no file results. Existing runtime errors retain codes/locations.
+Callback failures use `ENGINE_CALLBACK` at location zero. Input requests expose the
+worker's kind/prefix/location and a request-bound submit function rejecting stale answers.
+The optional raw `session.submit(value,requestId)` uses the current request when the ID
+is omitted. No terminal echo, DOM lookup or editor offset conversion is performed.
+
+The bundle needs same-origin HTTP(S) assets and Blob-worker/Wasm CSP support. All matching
+compiler/runtime assets must come from one release; no changes to generated modules,
+`pas2wasm_v1`, native/C APIs or the synchronous low-level host are introduced.
+
 ## Compiler limits
 
 | Resource | Bound |
@@ -663,11 +690,12 @@ runtime/worker in exported HTML. The [product contract](spec.md#console-behavior
 editing and UI behavior. A session's optional `files(snapshots)` callback runs only for
 a matching successful done message, before the Completed state. Stale/duplicate replies
 are ignored. The optional Files panel can be mounted in `#program-files` with
-`runtime/files.js` before `runtime/session.js`; its controller is embedded in offline
+`runtime/files.js` before `runtime/console.js`; its controller is embedded in offline
 exports. Upload reads disable Run; source/selection changes, new Runs, cancellation and
 Reset clear results, with generation guards against late file-read completions.
-Embeddings using `export.js` also load `runtime/files.js`, whose controller is included
-in the generated standalone runner even when no files are selected.
+Embeddings using `export.js` load `engine.js` (or the low-level wrapper/host/session),
+`runtime/terminal.js`, `runtime/files.js` and `runtime/console.js`. Their matching
+controllers are included in the generated standalone runner even when no files are selected.
 
 The shared renderer interprets output Backspace as scalar
 cursor movement/overwrite on the current LF-delimited line. Runtime callbacks and worker
