@@ -179,11 +179,18 @@ total execution (including deliberate waits/timeouts) and warm-worker comparison
 The separate `checks.yml` workflow runs local-link checks on PRs/main pushes. Source,
 web, test, toolchain or workflow changes additionally run native/Wasm acceptance and
 sanitizers in separate jobs, plus independent embedding in stable Chrome with a matching
-driver. Toolchain Emscripten 6.0.12 is pinned; browser/driver versions evolve together
+driver. Emscripten 6.0.12 and Binaryen 133 are pinned; the latter's release archive is
+checksum-verified because Ubuntu 24.04's Binaryen 108 cannot parse our linear WAT.
+Node acceptance explicitly uses the SDK's `EMSDK_NODE` rather than ambient PATH lookup.
+Browser/driver versions evolve together
 to exercise current Web APIs. Documentation-only changes need no SDK/browser downloads.
 The complete Chromium/Firefox trusted-input, UI and offline-export gate remains required
 locally before feature acceptance; the shorter CI browser job does not replace it.
 Validation has read-only repository permissions and never deploys. Pages remains tag-only.
+Ubuntu's AppArmor policy grants the downloaded Chrome executable access to user
+namespaces through a profile matching that exact path, preserving browser sandboxing
+and the runner's global restrictions. Browser startup failures preserve a driver log
+under `build/*-driver-failure.log` and include its tail in CI output.
 
 Static hosting such as GitHub Pages needs no compiler service. The standalone export is
 different: it embeds an already compiled program, runtime, worker, console/styles, and

@@ -18,6 +18,12 @@
   integrations must load it alongside their terminal/files scripts. The headless
   session controller remains in `runtime/session.js`.
 
+### Fixed
+
+- Ubuntu CI tool setup now selects the SDK's Node executable explicitly, verifies and
+  installs Binaryen 133 for linear WAT, and permits the downloaded Chrome sandbox through
+  a dedicated AppArmor profile. Browser startup failures retain useful driver diagnostics.
+
 ## [0.5.0] - 2026-10-25
 
 ### Added

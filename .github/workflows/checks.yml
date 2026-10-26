@@ -54,9 +54,24 @@ jobs:
         with:
           version: 6.0.12
       - name: Install comparison tools
-        run: sudo apt-get update && sudo apt-get install -y binaryen fp-compiler
+        run: sudo apt-get update && sudo apt-get install -y fp-compiler
+      - name: Install pinned WAT assembler
+        run: |
+          # Ubuntu 24.04's Binaryen 108 cannot parse our linear WAT syntax.
+          archive="$RUNNER_TEMP/binaryen.tar.gz"
+          curl --fail --location --retry 3 --silent --show-error \
+            https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz \
+            --output "$archive"
+          echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  $archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/binaryen-version_133/bin/wasm-as" --version
       - name: Verify both compiler hosts
-        run: make ${{ matrix.target }}
+        run: |
+          # setup-emsdk's PATH need not expose its bundled Node executable.
+          export PATH="$RUNNER_TEMP/binaryen-version_133/bin:$PATH"
+          "$EMSDK_NODE" --version
+          wasm-as --version
+          make ${{ matrix.target }} NODE="$EMSDK_NODE"
 
   embedding:
     needs: documents
@@ -73,9 +88,32 @@ jobs:
         with:
           chrome-version: stable
           install-chromedriver: true
+      - name: Allow the downloaded Chrome sandbox on Ubuntu
+        env:
+          CHROME_BINARY: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          # Grant user namespaces to this browser only, as Ubuntu does for its
+          # packaged Chrome. Retain Chrome's sandbox and the runner's global policy.
+          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] && \
+             [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == 1 ]]; then
+            chrome_path="$(readlink -f "$CHROME_BINARY")"
+            sudo tee /etc/apparmor.d/pas2wasm-ci-chrome > /dev/null <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile pas2wasm-ci-chrome "$chrome_path" flags=(unconfined) {
+            userns,
+          }
+          EOF
+            sudo apparmor_parser -r /etc/apparmor.d/pas2wasm-ci-chrome
+          fi
       - name: Build public assets
         run: make site
       - name: Test independent browser integration
         env:
           P2W_CHROME_BINARY: ${{ steps.chrome.outputs.chrome-path }}
-        run: python3 test/embedding.py --browser chromium
+          P2W_CHROMEDRIVER_BINARY: ${{ steps.chrome.outputs.chromedriver-path }}
+        run: |
+          export PATH="$(dirname "$P2W_CHROMEDRIVER_BINARY"):$PATH"
+          "$P2W_CHROME_BINARY" --version
+          chromedriver --version
+          python3 test/embedding.py --browser chromium

@@ -67,6 +67,8 @@ class Browser:
         driver_args = [executable, f'--port={port}']
         if kind == 'firefox':
             driver_args.append('--allow-system-access')
+        else:
+            driver_args.append('--verbose')
         self.process = subprocess.Popen(driver_args, stdout=self.log, stderr=self.log)
         try:
             for _ in range(150):
@@ -97,8 +99,16 @@ class Browser:
             self.session = self.request('POST', '/session', {'capabilities': {'alwaysMatch': options}})['sessionId']
             self.command('POST', '/timeouts', {'script': 120000, 'pageLoad': 30000, 'implicit': 0})
             self.command('POST', '/window/rect', {'width':1280, 'height':1000})
-        except BaseException:
+        except BaseException as error:
             self.close()
+            # Temporary profiles disappear on failure. Preserve startup diagnostics
+            # and print the tail so CI exposes the browser's actual launch error.
+            saved_log = Path('build') / f'{kind}-driver-failure.log'
+            saved_log.parent.mkdir(exist_ok=True)
+            shutil.copyfile(self.log.name, saved_log)
+            if isinstance(error, Exception):
+                details = saved_log.read_text(errors='replace')[-12000:]
+                raise RuntimeError(f'{error}\nDriver log: {saved_log}\n{details}') from error
             raise
 
     def request(self, method, path, data=None):

@@ -31,7 +31,7 @@ required to produce release compiler builds.
 | GNU Make | Build orchestration | 4.4.1 | GPL-3.0 |
 | Emscripten / Clang | C-to-Wasm build and generated loader | 6.0.12 | MIT or NCSA; LLVM components have their own notices |
 | musl / compiler-rt | Standard C support linked by Emscripten | SDK-bundled | MIT / LLVM license, see notices |
-| Node.js | Cross-host test harness only | 26.8.2 | MIT and bundled notices |
+| Node.js | Cross-host test harness only | 26.8.2 locally; SDK-bundled 24.19.0 verified for CI via `EMSDK_NODE` | MIT and bundled notices |
 | Binaryen wasm-as | Independent WAT and private-heap browser tests only | 133 | Apache-2.0 |
 | Free Pascal | Portable program comparison tests only | 3.2.2 | GPL and runtime library exceptions |
 | Python | Browser test harness / local development server | 3.14 | PSF |
@@ -67,7 +67,11 @@ required to produce release compiler builds.
 - CI setup actions download development toolchains/browsers on GitHub runners only;
   this does not change offline production builds or ship those actions to consumers.
   [setup-chrome](https://github.com/browser-actions/setup-chrome) is used only by the
-  browser validation job; Emscripten setup retains the existing pinned SDK.
+  browser validation job; Emscripten setup retains the existing pinned SDK. CI uses the
+  official [Binaryen 133 release](https://github.com/WebAssembly/binaryen/releases/tag/version_133)
+  with its recorded SHA-256 rather than Ubuntu's older assembler. The browser runner
+  follows Chromium's [AppArmor guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md)
+  to allow sandbox user namespaces for its exact downloaded executable.
 
 Detailed browser/export contracts are in [SPEC](spec.md); architecture and exact runtime
 ownership/layouts are documented separately rather than repeated here.
