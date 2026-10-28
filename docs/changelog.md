@@ -5,7 +5,7 @@
 ### Added
 
 - Optional `Pas2WasmConsole` component with per-run event adapters, independent widgets,
-  inline line/key input, End input, configurable focus, scoped CSS variables and disposal.
+  inline line/key input, configurable focus, scoped CSS variables and disposal.
   The playground and self-contained offline exports share the component; a two-console
   integration example and real-browser lifecycle/isolation tests exercise its public API.
 
@@ -19,6 +19,10 @@
 
 ### Changed
 
+- Remove the built-in End input button from the console and shipped UIs. There is no
+  console EOF method or Ctrl+D shortcut; Enter submits lines and application-owned
+  Stop cancels execution. Headless EOF submissions, batch exhaustion and virtual-file
+  EOF remain available.
 - The DOM console controller lives in `runtime/console.js`; low-level UI/export
   integrations must load it alongside `console.js` and `runtime/files.js`. The headless
   session controller remains in `runtime/session.js`.

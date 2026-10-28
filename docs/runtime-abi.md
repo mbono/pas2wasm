@@ -90,6 +90,8 @@ message, Wasm import, program output byte accounting or runtime ABI changes are 
 The [console guide](browser-embedding.md#reusable-console) defines DOM ownership, focus,
 clear/disposal behavior, CSS customization and integration. Engines and execution controls
 remain application-owned; standalone exports embed the same factory/renderer.
+The component has no EOF button, method or shortcut. Headless null submissions and
+the existing worker EOF protocol remain unchanged.
 
 ## Compiler limits
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* Mount a terminal and EOF button without owning an engine or execution session.
+/* Mount a terminal without owning an engine or execution session.
  * Kept self-contained except for the renderer so offline exports embed this factory. */
 function createPas2WasmConsoleWidget(container, {autoFocus = true} = {}) {
     if (!container || container.nodeType !== 1 || container.ownerDocument !== document)
@@ -22,11 +22,6 @@ function createPas2WasmConsoleWidget(container, {autoFocus = true} = {}) {
 .p2w-console .p2w-console-input[contenteditable="plaintext-only"]:empty{display:inline-block;min-width:1px}
 .p2w-console .p2w-console-input[contenteditable="plaintext-only"]:empty::before{content:"\\200b"}
 .p2w-console .p2w-console-input[contenteditable="false"]{caret-color:transparent}
-.p2w-console .p2w-console-controls{margin-top:8px}
-.p2w-console .p2w-console-eof{font:inherit;font-size:.86rem;cursor:pointer;padding:8px 12px;
- border:1px solid #9dac9d;border-radius:5px;background:#fffdf7;color:#213b37}
-.p2w-console .p2w-console-eof:disabled{opacity:.45;cursor:default}
-.p2w-console .p2w-console-eof:focus-visible{outline:3px solid #d28542;outline-offset:3px}
 `;
     const view = document.createElement('pre'); view.className = 'p2w-console-terminal';
     view.setAttribute('aria-label', 'Program console');
@@ -35,13 +30,9 @@ function createPas2WasmConsoleWidget(container, {autoFocus = true} = {}) {
     const editor = document.createElement('span'); editor.className = 'p2w-console-input';
     editor.setAttribute('role', 'textbox'); editor.setAttribute('aria-multiline', 'false');
     editor.spellcheck = false; editor.setAttribute('autocapitalize', 'off');
-    const controls = document.createElement('div'); controls.className = 'p2w-console-controls';
-    const eof = document.createElement('button'); eof.className = 'p2w-console-eof';
-    eof.type = 'button'; eof.textContent = 'End input'; eof.disabled = true;
-    controls.appendChild(eof); view.append(history, editor); root.append(style, view, controls);
+    view.append(history, editor); root.append(style, view);
     container.appendChild(root);
     let disposed = false, generation = 0, pending = null;
-    const listeners = new AbortController();
     const terminal = createPas2WasmTerminal(view, history, editor, submit, autoFocus);
     /* A pending request is borrowed from one connection; always use its bound
      * submit rather than whichever request an application session currently has. */
@@ -50,13 +41,11 @@ function createPas2WasmConsoleWidget(container, {autoFocus = true} = {}) {
         const request = pending, at = generation;
         const accepted = request.submit(value);
         if (accepted && at === generation && !disposed) {
-            pending = null; eof.disabled = true;
-            if (value === null) editor.replaceChildren();
-            terminal.waiting(false, request.kind, undefined, value === null);
+            pending = null;
+            terminal.waiting(false, request.kind);
         }
         return accepted;
     }
-    eof.addEventListener('click', () => submit(null), {signal:listeners.signal});
     /* Public operations fail consistently after disposal; stale event callbacks
      * instead become inert so removing a widget never crashes an application run. */
     function assertLive() {
@@ -68,22 +57,22 @@ function createPas2WasmConsoleWidget(container, {autoFocus = true} = {}) {
         assertLive();
         const at = ++generation;
         let lastRequest = 0;
-        pending = null; eof.disabled = true; terminal.clear();
+        pending = null; terminal.clear();
         return Object.freeze({
             onOutput(text) { if (!disposed && at === generation) terminal.append(text); },
             onInputRequest(request) {
                 if (disposed || at !== generation || request.requestId <= lastRequest) return;
                 if (!Number.isSafeInteger(request.requestId) || request.requestId < 1 || typeof request.submit !== 'function')
                     throw new TypeError('Expected an engine input request with a bound submit function.');
-                lastRequest = request.requestId; pending = request; eof.disabled = false;
+                lastRequest = request.requestId; pending = request;
                 terminal.waiting(true, request.kind || 'line', request.prefix);
             },
             onStateChange(state) {
                 if (disposed || at !== generation) return;
                 if (state === 'running') {
-                    pending = null; eof.disabled = true; terminal.waiting(false);
+                    pending = null; terminal.waiting(false);
                 } else if (['completed', 'failed', 'stopped'].includes(state)) {
-                    generation++; pending = null; eof.disabled = true;
+                    generation++; pending = null;
                     editor.replaceChildren(); terminal.waiting(false);
                 }
             }
@@ -95,7 +84,7 @@ function createPas2WasmConsoleWidget(container, {autoFocus = true} = {}) {
         dispose() {
             if (disposed) return;
             disposed = true; generation++; pending = null;
-            listeners.abort(); terminal.dispose(); root.remove();
+            terminal.dispose(); root.remove();
         }
     });
 }

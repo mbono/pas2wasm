@@ -566,7 +566,7 @@ def verify_browser(kind, base_url, cases, directory):
             assert '<!--\n' + project_license + '-->' in html, (kind, name, 'MIT notice')
             target = directory / f'{kind}-{name}.html'
             target.write_text(html)
-            exports.append((name,target))
+            exports.append((name,target,artifact['binary']))
         # Use an entirely fresh profile, with networking disabled before opening
         # relocated files. This rules out a dependency on playground caches.
         browser.close()
@@ -577,17 +577,20 @@ def verify_browser(kind, base_url, cases, directory):
         browser.offline()
         relocated = directory / 'relocated programs'
         relocated.mkdir()
-        for name, target in exports:
+        for name, target, binary in exports:
             target = Path(shutil.copy2(target, relocated / target.name))
             browser.navigate(target.as_uri())
             assert browser.js("return document.getElementById('input').value === '' && document.getElementById('status').textContent === 'Ready';")
             assert browser.js("return document.getElementById('io-mode').value;") == 'interactive'
+            assert browser.js("return !document.querySelector('#console-eof, .p2w-console-controls, .p2w-console button');")
             if not (name.startswith(('live_','key_')) or name in ('terminal_editor','echo_limit')):
                 interactive.select_mode(browser,'batch')
             if name.startswith('live_'):
                 interactive.select_mode(browser,'interactive')
                 case=next(c for c in live_examples if name=='live_'+c['name'])
                 for _ in range(2):
+                    if case.get('runtime') == 'R_INPUT_EOF':
+                        interactive.verify_session_case(browser,case,binary)
                     interactive.verify_console_case(browser,case)
                 if name in ('live_prompts','live_file_group_wait'):
                     interactive.verify_offline_controls(browser,case)
@@ -598,6 +601,8 @@ def verify_browser(kind, base_url, cases, directory):
                 if name=='key_output_cursor':
                     keyboard.verify_cursor_stop(browser)
                 for _ in range(2):
+                    if any(step['text'] is None for step in case['steps']):
+                        interactive.verify_session_case(browser,case,binary)
                     keyboard.verify_console_case(browser,case)
                 interactive.select_mode(browser,'batch')
                 browser.js("document.getElementById('input').value=arguments[0];document.getElementById('run').click();",case['input'])

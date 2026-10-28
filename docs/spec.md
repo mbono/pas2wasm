@@ -77,17 +77,18 @@ tag-only Pages deployment.
 
 The component is `Pas2WasmConsole.create(container,{autoFocus:true})`, shipped
 in a separate classic `console.js` bundle. It appends owned light DOM containing only
-the terminal and End input button. Applications own engines, Run/Stop, modes, batch
-input, diagnostics and files. It needs no engine, fixed DOM IDs, framework or fetches.
+the terminal. Applications own engines, Run/Stop, modes, batch input, diagnostics
+and files. It needs no engine, fixed DOM IDs, framework or fetches.
 
 `createHandlers()` resets output/draft state and returns `onOutput`, `onInputRequest`
 and `onStateChange`. Each connection invalidates older callbacks, including after
 terminal states. Applications stop previous sessions before replacing connections.
 Requests use their bound submit method; preserve line echo, raw keys, prefetched
-prefixes, EOF, limits and native editing. End input submits null once and clears the
-pending draft. `clear()` clears output while preserving a pending request/draft;
-`focus()` focuses an active editor without losing its selection. `autoFocus:false`
-suppresses request-driven focus but retains explicit/user focus.
+prefixes, limits and native editing. The component has no EOF control, public EOF
+method or Ctrl+D shortcut. Programmatic EOF remains available through the headless
+engine's existing null submission. `clear()` clears output while preserving a pending
+request/draft; `focus()` focuses an active editor without losing its selection.
+`autoFocus:false` suppresses request-driven focus but retains explicit/user focus.
 
 `dispose()` is idempotent, invalidates callbacks and removes owned DOM/styles/listeners;
 it never stops or disposes an application-owned session/engine. Other public calls after
@@ -97,7 +98,7 @@ must remain independent. Styles are scoped and use `--p2w-console-background`, `
 
 The playground and compiler-free offline exports must share this component. Accept
 two-instance isolation, stale/repeated bindings, cleanup, focus/clear during waits,
-trusted line/key/paste/IME input, EOF, native selection/caret, style customization,
+trusted line/key/paste/IME input, native selection/caret, style customization,
 batch/JSPI fallback and fresh offline exports through the full acceptance gate. Update
 owning references and static allowlists.
 
@@ -138,12 +139,13 @@ to reproduce the same UI.
   mode reports `E_JSPI` and offers batch mode. Do not substitute prompt dialogs,
   program replay, or silently preloaded input. Suspend/resume the same instance,
   retaining its stack, frames, heap, cursor, and borrows.
-- Flush prompts without LF before requesting input. An open empty queue waits;
-  explicit End input closes the provider, preserving buffered data until consumed.
+- Flush prompts without LF before requesting input. An open empty queue waits.
+  The shipped UIs provide no manual EOF action; programs requesting more input wait
+  for delivery or Stop. Headless EOF preserves buffered data until consumed.
   Stop works while computing or waiting; stale run/request replies are ignored.
 - Use one scrolling terminal surface with history protected from user editing
   and inline input at the output cursor, with a visible caret while waiting.
-  No separate input box or Send button. Keep Stop and End input outside transcript text.
+  No separate input box or Send button. Keep application-owned Stop outside transcript text.
 - In line mode, Enter commits/echoes a line once with one transcript LF. Empty lines are valid.
   Typing, paste, and IME confirmation do not submit. Support Unicode editing,
   Backspace/Delete, arrows, Home/End, and selection without changing history.
@@ -435,11 +437,11 @@ must retain binary/WAT parity, opt-in WAT and unchanged production exports.
 Line-mode editing/paste/Enter and existing batch fixtures retain their current behavior.
 Raw-key paste is a key stream, so its queued CR may complete a later line; line-mode
 paste still normalizes breaks to spaces and never submits. When an accepted raw suffix
-becomes a line prefix, Enter commits the edited line with ordinary UI echo. End input
-instead delivers only the already accepted suffix as an unterminated final line,
-without echoing unsubmitted edits; remove that prefilled draft from the editor. Empty
-queues at End input use ordinary EOF. Typed keys/committed compositions remain inert
-text; no ANSI emulation, arbitrary key hooks, DOM or JavaScript capability is granted.
+becomes a line prefix, Enter commits the edited line with ordinary UI echo. A headless
+null submission instead delivers only the already accepted suffix as an unterminated
+final line, without submitting or echoing editor drafts. Empty queues at programmatic
+EOF use ordinary EOF. Typed keys/committed compositions remain inert text; no ANSI
+emulation, arbitrary key hooks, DOM or JavaScript capability is granted.
 
 Input requests distinguish `line` and `key` (legacy requests default to line), retaining
 run/request IDs and stale-reply rejection. The optional host provider gains backward
@@ -452,8 +454,8 @@ A virtual-file cursor never consumes raw console input or requests a human key/l
 
 Keep one console with an inline visible caret while waiting, protected history, focus,
 selection and normal copy behavior. Do not echo raw keys or create a separate keyboard
-input control. Stop, End input, source/mode changes, errors, timeouts and new Runs must
-clean up input queues/workers and preserve recovery. Both input modes and all behavior
+input control. Stop, source/mode changes, errors, timeouts and new Runs must clean up
+input queues/workers and preserve recovery. Both input modes and all behavior
 must also work in standalone offline `file://` exports in Chromium and Firefox.
 
 Accept unchanged `textfiles.pas`, plus key/line mixing, Unicode/controls, chunking,

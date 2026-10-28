@@ -85,6 +85,9 @@ def verify_workers(browser, compile_native):
     assert boundary == {'ok':True}, boundary
     verify_session_budget(browser)
     verify_composition_boundary(browser)
+    for case, artifact in zip(cases, artifacts, strict=True):
+        if any(step['text'] is None for step in case['steps']):
+            interactive.verify_session_case(browser, case, artifact['binary'])
     return cases
 
 
@@ -145,7 +148,7 @@ def paste(browser, text):
 
 
 def verify_console_case(browser, case):
-    """Use real key events, inert paste/IME and preserved line-prefix editing."""
+    """Use real keys/paste/IME; EOF fixtures check the waiting editor then Stop."""
     interactive.select_mode(browser,'interactive')
     # Observe actual worker requests; each next action must wait for a new request,
     # even when consecutive reads have identical mode/status/output.
@@ -170,9 +173,16 @@ def verify_console_case(browser, case):
                 assert browser.js("return document.getElementById('console-input').textContent;") == step['prefix']
                 assert browser.js("const s=window.getSelection(),e=document.getElementById('console-input');return s.isCollapsed&&e.contains(s.anchorNode);")
             if step['text'] is None:
+                # EOF is programmatic only; retain caret/draft/cancellation UI checks.
+                output = browser.js("return document.getElementById('output').textContent;")
                 if step.get('draft'):
                     terminal.keys(browser,step['draft'])
-                browser.click('console-eof')
+                assert browser.js("return !document.querySelector('#console-eof, .p2w-console-controls, .p2w-console button');")
+                browser.click('stop')
+                browser.wait("document.getElementById('status').textContent==='Stopped'")
+                assert browser.js("return document.getElementById('output').textContent;") == output
+                assert browser.js("const e=document.getElementById('console-input');return e.textContent===''&&e.getAttribute('aria-disabled')==='true';")
+                return
             elif step['kind']=='line':
                 # Append to the existing prefix with native keyboard editing.
                 terminal.keys(browser,step.get('editKeys',step['text'][len(step.get('prefix','')):]+'\ue007'))

@@ -199,14 +199,19 @@ terminal.dispose();
 
 The component appends its own light-DOM subtree to the supplied element and preserves
 other host content. It contains a scrolling terminal, protected output, an inline native
-editor, and an End input button. It adds no Run/Stop, mode selector, file panel or
-compiler. End input is enabled only during input waits and delivers EOF once. Lines echo
+editor. It adds no buttons, mode selector, file panel or compiler. Lines echo
 literally on Enter; raw keys do not echo. Program-output Backspace retains the existing
 [scalar cursor behavior](spec.md#backspace-output-display). Messages are rendered as text.
 
+The component provides no EOF method or keyboard shortcut, including Ctrl+D. The
+playground and exported HTML use Enter for lines and application-owned Stop to cancel
+execution; programs requesting further input keep waiting. Headless applications can
+still send EOF with the engine's `session.submit(null)` or `request.submit(null)`.
+Batch exhaustion and virtual-file EOF are unchanged.
+
 | Method/option | Contract |
 | --- | --- |
-| `createHandlers()` | Start a fresh connection, clearing output/draft and invalidating previous callbacks. Returns `onOutput`, `onInputRequest`, `onStateChange`; stop a previous application-owned session before rebinding. Terminal states invalidate this connection and disable editing/EOF. |
+| `createHandlers()` | Start a fresh connection, clearing output/draft and invalidating previous callbacks. Returns `onOutput`, `onInputRequest`, `onStateChange`; stop a previous application-owned session before rebinding. Terminal states invalidate this connection and disable editing. |
 | `clear()` | Clear output without changing a pending input request, draft, caret or focus. |
 | `focus()` | Focus an active editor, preserving its existing selection. Inactive consoles do not acquire focus. |
 | `autoFocus` | Boolean, default true. False suppresses input-request-driven focus; explicit focus/user clicks still work. |

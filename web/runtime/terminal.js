@@ -110,8 +110,8 @@ function createPas2WasmTerminal(view, history, editor, submit, autoFocus = true)
         if (follow || force) view.scrollTop = view.scrollHeight;
     }
     /* Toggle only the editing root; a disabled tail has no active caret/tab stop. */
-    function waiting(value, kind = 'line', prefix, end = false) {
-        if (!value && (inputKind === 'key' || (prefilled && end))) editor.replaceChildren();
+    function waiting(value, kind = 'line', prefix) {
+        if (!value && inputKind === 'key') editor.replaceChildren();
         if (value) {
             inputKind = kind;
             prefilled = kind === 'line' && typeof prefix === 'string' && prefix.length > 0;

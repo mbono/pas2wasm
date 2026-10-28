@@ -62,7 +62,7 @@ server are required. Each engine permits one active program; create separate eng
 for independent concurrent examples.
 
 The optional `console.js` bundle provides the existing interactive terminal as a
-reusable component, including inline input and End input. Applications keep their own
+reusable component with inline input. Applications keep their own
 Run/Stop controls, editors and file UI. See the [console API](docs/browser-embedding.md#reusable-console)
 and [two-console example](web/examples/console.html).
 
@@ -134,8 +134,9 @@ files; compilation and execution happen in your browser. After the assets load,
 compilation and execution need no network connection.
 
 Paste the example above and press **Run**. **Interactive console** is the default:
-type `2 3` after the prompt and press Enter to see `Sum: 5`. **End input** signals
-that no more input is available; **Stop** cancels a running or waiting program.
+type `2 3` after the prompt and press Enter to see `Sum: 5`. **Stop** cancels a running
+or waiting program. There is no manual EOF control or Ctrl+D shortcut; a program
+requesting further input waits for another submission or Stop.
 Interactive input requires built-in WebAssembly JSPI support. Batch input works
 without JSPI.
 

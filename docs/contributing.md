@@ -56,6 +56,9 @@ epoch exhaustion in Node and both browsers. `test/file-runtime.js` and `test/fil
 cover virtual-file ownership, modes, cursor isolation, cleanup and atomic input.
 `test/keyboard.json` / `test/keyboard.py` cover raw-key worker requests, trusted controls,
 Unicode chunks, paste/IME, mixed line prefixes, EOF/limits and offline reruns.
+EOF fixtures use worker/headless or compiler-free session submissions, including in
+relocated exports. The UI has no EOF action; its corresponding wait/draft/caret tests
+finish with Stop instead of a button click.
 `test/keyboard-runtime.js` shares cursor/accounting and forged-scalar boundary checks
 between Node and both browsers; `test/keyboard.js` checks on-demand CRT emission. FPC
 executables run in the temporary test directory so comparison file I/O stays there.
@@ -174,7 +177,8 @@ sources in `web/`, never `build/engine.js`. The playground uses that same public
 executes `test/engine.js` in both actual browsers and runs the README/guide HTML snippets.
 It runs standalone or through the full browser gate. `test/console.js` checks the
 published console's independent instances, binding generations, native DOM input,
-EOF/focus/clear, styles and disposal. The two-console example additionally exercises
+empty-line submission, focus/clear, unhandled Ctrl+D, styles and disposal. The
+two-console example additionally exercises
 simultaneous engines with trusted browser input, batch mode and Stop. Existing terminal,
 keyboard and offline-export suites cover the same component through the example
 adapters. Measurement JSON stays under

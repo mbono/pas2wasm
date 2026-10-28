@@ -13,8 +13,7 @@ function createPas2WasmConsole(events, runProgram = null) {
     const mount = get('console-mount');
     const widget = Pas2WasmConsole.create(mount);
     // Keep the example pages' existing selectors; the public widget owns no IDs.
-    for (const [part, id] of [['terminal','terminal'],['output','output'],['input','console-input'],
-                              ['controls','console-controls'],['eof','console-eof']])
+    for (const [part, id] of [['terminal','terminal'],['output','output'],['input','console-input']])
         mount.querySelector('.p2w-console-' + part).id = id;
     let connection = widget.createHandlers(), currentRun = null, activeRequest = null;
     const controller = runProgram ? null : createPas2WasmSession({
@@ -81,7 +80,7 @@ function createPas2WasmConsole(events, runProgram = null) {
     /* Switch explicitly between interactive delivery and preloaded input. */
     function updateMode() {
         batch.hidden = mode.value !== 'batch';
-        get('console-controls').hidden = get('console-input').hidden = mode.value !== 'interactive';
+        get('console-input').hidden = mode.value !== 'interactive';
     }
     mode.addEventListener('change', () => {
         session.stop(); files?.busy(false); files?.clearOutputs(); events.cancel?.(); updateMode();

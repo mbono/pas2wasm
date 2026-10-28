@@ -302,6 +302,8 @@ callbacks without retaining an unbounded request collection. Scoped CSS variable
 fixed renderer selectors. AbortController owns listeners; disposal removes those and the
 owned subtree/styles without touching application-owned sessions. Output-only clear keeps
 pending input, draft nodes and selection. Automatic request focus is configurable.
+The component contains no buttons and registers no EOF shortcut or public EOF method.
+Batch exhaustion and headless null submissions retain the existing runtime EOF behavior.
 
 The private example controller assigns legacy example IDs and retains mode/files/status
 integration around the public widget. The offline adapter gives the same widget equivalent
@@ -397,8 +399,8 @@ Pascal interface. Unknown units/routines remain compile-time errors.
 The runtime owns a bounded raw chunk/offset alongside its line cursor. Buffered lines
 have priority; LF/CRLF delimiters become Enter for key reads. A later line read promotes
 a complete queued CR-delimited line synchronously, or transfers its unterminated suffix
-to a provider/editor prefix. Prefix credit prevents double input accounting; End input
-preserves only already accepted bytes. Closed virtual-file cursor contexts cannot drain
+to a provider/editor prefix. Prefix credit prevents double input accounting; programmatic
+EOF preserves only already accepted bytes. Closed virtual-file cursor contexts cannot drain
 the console queue. Runtime completion and worker disposal release typeahead.
 
 The worker requests distinguish line/key and carry a prefix without changing run/request

@@ -876,9 +876,9 @@ end.
 Key and line reads share accepted input. A key read first consumes any existing line
 remainder/delimiter. Complete CR-delimited raw chunks satisfy subsequent line reads
 without waiting; an unterminated raw suffix appears as the next line editor prefix.
-Enter commits the edited line with normal echo. End input instead delivers the original
-accepted suffix as an unterminated final line, clears the prefilled draft and ignores
-unsubmitted edits without echo. Virtual-file input never consumes console typeahead.
+Enter commits the edited line with normal echo. A headless provider returning null
+instead delivers the original accepted suffix as an unterminated final line; unsubmitted
+editor drafts are not input. Virtual-file input never consumes console typeahead.
 
 Normalized raw chunks count UTF-8 bytes once, without an extra delimiter. A later line
 credits its already charged prefix once and charges new bytes plus LF. The cumulative
@@ -973,9 +973,12 @@ These controls belong to the example browser integration and exported HTML.
 | Backspace/Delete, arrows, Home/End (line reads) | Edit the active input; previous transcript text stays read-only. |
 | Paste (line reads) | Insert plain text; line breaks become spaces; do not submit automatically. |
 | IME confirmation (line reads) | Confirm composition without submitting the line. |
-| **End input** | Close input; a subsequent read without available data reports `R_INPUT_EOF`. |
 | **Stop** | Cancel computing or waiting. |
 | **Batch input** | Supply complete input before Run; no JSPI requirement. |
+
+The shipped UIs have no manual EOF action or Ctrl+D shortcut. A program requesting
+more interactive input keeps waiting until another submission or Stop. Batch input
+still ends automatically, and headless providers can still return null for EOF.
 
 Prompts from `write` appear before waiting, even without a newline. Interactive input
 requires built-in browser JSPI; choose batch input when it is unavailable. Input waits

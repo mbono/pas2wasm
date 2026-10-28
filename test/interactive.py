@@ -25,23 +25,60 @@ def submit(browser, text, keyboard=False):
 
 
 def verify_console_case(browser, case, start=True):
-    """Drive one real console run, including echo, EOF and inert markup."""
+    """Drive normal console input; use Stop when a fixture requires manual EOF."""
     if case['name'] == 'invalid_unicode':
         return
     if start:
         browser.js("document.getElementById('run').click();")
     for line in case['lines']:
         submit(browser, line)
+    expected = 'Failed' if case.get('runtime') else 'Completed'
     if case.get('runtime') == 'R_INPUT_EOF':
         browser.wait("document.getElementById('status').textContent==='Waiting for input'")
-        browser.click('console-eof')
-    expected = 'Failed' if case.get('runtime') else 'Completed'
+        browser.click('stop')
+        expected = 'Stopped'
     browser.wait(f"document.getElementById('status').textContent==={json.dumps(expected)}")
     assert browser.js("return document.getElementById('output').textContent;") == case['transcript'],case['name']
     diagnostic = browser.js("return document.getElementById('diagnostics').textContent;")
-    assert (case['runtime'] in diagnostic) if case.get('runtime') else not diagnostic, (case['name'],diagnostic)
+    assert (case['runtime'] in diagnostic) if expected == 'Failed' else not diagnostic, (case['name'],diagnostic)
     assert browser.js("return document.querySelectorAll('img').length;") == 0
+    assert browser.js("return !document.querySelector('#console-eof, .p2w-console-controls, .p2w-console button');")
     assert browser.js("return document.getElementById('console-input').getAttribute('aria-disabled')==='true';")
+
+
+def verify_session_case(browser, case, binary):
+    """Exercise EOF through the compiler-free session, including relocated exports.
+
+    Shared fixtures retain their runtime meaning without a user-facing EOF action.
+    Only accepted text is delivered; any fixture draft remains outside the runtime.
+    """
+    steps = case.get('steps')
+    if steps is None:
+        steps = [dict(kind='line', text=text) for text in case['lines']]
+        steps.append(dict(kind='line', text=None))
+    result = browser.page_async('''const steps=arguments[0],binary=arguments[1],done=arguments[arguments.length-1];
+        (async()=>{
+            let session,timer;
+            try{return await new Promise((resolve,reject)=>{
+                let output='',diagnostic=null,cursor=0;
+                timer=setTimeout(()=>reject(Error('EOF session timeout')),15000);
+                session=createPas2WasmSession({
+                    output(text){output+=text;},error(value){diagnostic=value;},
+                    state(state){if(state==='Completed'||state==='Failed')
+                        resolve({output,code:diagnostic?.code||null,requests:cursor});},
+                    waiting(value,request){if(value){try{
+                        const step=steps[cursor++];
+                        if(!step||step.kind!==(request.kind||'line')||(step.prefix||'')!==(request.prefix||''))
+                            throw Error('Incorrect EOF session request '+JSON.stringify(request));
+                        if(!session.submit(step.text)||session.submit(step.text))
+                            throw Error('EOF session accepted a missing or duplicate response');
+                    }catch(error){reject(error);}}}
+                });
+                if(session.submit(null))throw Error('Idle session accepted EOF');
+                session.run(Uint8Array.from(binary),'',true);
+            });}finally{clearTimeout(timer);session?.stop();}
+        })().then(done,error=>done({error:error.stack}));''', steps, binary)
+    assert result == dict(output=case['output'], code=case.get('runtime'), requests=len(steps)), (case['name'], result)
 
 
 def select_mode(browser, mode):
@@ -111,6 +148,9 @@ def verify_workers(browser, compile_native, legacy):
     assert result['inputLimited']['code'] == 'R_INPUT_LIMIT',result
     assert result['outputLimited']['code'] == 'R_OUTPUT_LIMIT',result
     assert result['outputBytes'] <= 1048576
+    for case, artifact in zip(examples, artifacts, strict=True):
+        if case.get('runtime') == 'R_INPUT_EOF':
+            verify_session_case(browser, case, artifact['binary'])
     return examples
 
 
@@ -143,7 +183,7 @@ def verify_clock(browser, kind='line'):
 
 
 def verify_ui(browser):
-    """Check Enter, waiting over five seconds, Stop, EOF and unsupported recovery."""
+    """Check Enter, waiting over five seconds, Stop and unsupported recovery."""
     example = fixtures()[0]
     browser.js("const source=document.getElementById('source');source.value=arguments[0];source.dispatchEvent(new Event('input'));",example['source'])
     select_mode(browser,'interactive')
