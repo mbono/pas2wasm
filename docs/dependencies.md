@@ -12,7 +12,10 @@ Host text-file selection/download uses native File/Blob APIs, UTF-8 TextDecoder,
 structured-clone messages and temporary Blob URLs; no filesystem package or service.
 The headless engine uses the same runtime/controller, Fetch, AbortController and Blob
 workers. Make concatenates its classic script from maintained sources; no JavaScript
-bundler, UI package, module loader or runtime dependency is added.
+bundler, UI package, module loader or runtime dependency is added. The optional console
+bundle concatenates the repository's renderer and DOM adapter, using native editing,
+scoped inline CSS, CSS variables and AbortController-based listener cleanup. It fetches
+no assets, owns no execution worker and adds no external terminal library.
 Fixed-decimal formatting uses built-in JavaScript BigInt and DataView,
 without a numeric library or locale dependency. Runtime programs gain no host/OS filesystem/network/DOM or
 arbitrary-JavaScript access.

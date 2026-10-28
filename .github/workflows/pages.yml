@@ -30,13 +30,13 @@ jobs:
       - name: Stage site assets
         run: |
           mkdir -p _site/runtime _site/examples
-          cp build/index.html build/style.css build/app.js build/compiler.js build/engine.js \
+          cp build/index.html build/style.css build/app.js build/compiler.js build/engine.js build/console.js \
             build/compiler-worker.js build/export.js build/pas2wasm.js \
             build/pas2wasm.wasm build/supported-language.md build/LICENSE \
             build/THIRD_PARTY_NOTICES.txt _site/
           cp build/runtime/host.js build/runtime/terminal.js \
             build/runtime/files.js build/runtime/session.js build/runtime/console.js _site/runtime/
-          cp build/examples/embedding.html _site/examples/
+          cp build/examples/embedding.html build/examples/console.html _site/examples/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

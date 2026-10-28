@@ -81,6 +81,16 @@ The bundle needs same-origin HTTP(S) assets and Blob-worker/Wasm CSP support. Al
 compiler/runtime assets must come from one release; no changes to generated modules,
 `pas2wasm_v1`, native/C APIs or the synchronous low-level host are introduced.
 
+### Optional console adapter
+
+The separate classic `console.js` bundle exposes `Pas2WasmConsole.create(container,
+{autoFocus:true})`. Its `createHandlers()` returns headless engine-compatible output,
+input-request and state callbacks. Requests use their bound submit function; no worker
+message, Wasm import, program output byte accounting or runtime ABI changes are introduced.
+The [console guide](browser-embedding.md#reusable-console) defines DOM ownership, focus,
+clear/disposal behavior, CSS customization and integration. Engines and execution controls
+remain application-owned; standalone exports embed the same factory/renderer.
+
 ## Compiler limits
 
 | Resource | Bound |
@@ -694,7 +704,7 @@ are ignored. The optional Files panel can be mounted in `#program-files` with
 exports. Upload reads disable Run; source/selection changes, new Runs, cancellation and
 Reset clear results, with generation guards against late file-read completions.
 Embeddings using `export.js` load `engine.js` (or the low-level wrapper/host/session),
-`runtime/terminal.js`, `runtime/files.js` and `runtime/console.js`. Their matching
+`console.js`, `runtime/files.js` and the private `runtime/console.js` adapter. Their matching
 controllers are included in the generated standalone runner even when no files are selected.
 
 The shared renderer interprets output Backspace as scalar

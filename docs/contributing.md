@@ -151,8 +151,9 @@ issues where available, and screenshots for UI changes.
 ## Static hosting
 
 Run `make site` and publish only the following `build/` assets together: `index.html`,
-`style.css`, `app.js`, `engine.js`, `compiler.js`, `compiler-worker.js`, `export.js`,
-`pas2wasm.js`, `pas2wasm.wasm`, `examples/embedding.html`, `supported-language.md`, `runtime/`, `LICENSE`, and
+`style.css`, `app.js`, `engine.js`, `console.js`, `compiler.js`, `compiler-worker.js`,
+`export.js`, `pas2wasm.js`, `pas2wasm.wasm`, `examples/embedding.html`,
+`examples/console.html`, `supported-language.md`, `runtime/`, `LICENSE`, and
 `THIRD_PARTY_NOTICES.txt`. Do not publish native executables, test binaries, or
 screenshots. The language reference is copied from docs while preserving its public URL.
 Preserve relative paths and serve Wasm as `application/wasm`.
@@ -171,7 +172,12 @@ sources in `web/`, never `build/engine.js`. The playground uses that same public
 
 `test/embedding.py` copies only documented public assets under a nested static URL,
 executes `test/engine.js` in both actual browsers and runs the README/guide HTML snippets.
-It runs standalone or through the full browser gate. Measurement JSON stays under
+It runs standalone or through the full browser gate. `test/console.js` checks the
+published console's independent instances, binding generations, native DOM input,
+EOF/focus/clear, styles and disposal. The two-console example additionally exercises
+simultaneous engines with trusted browser input, batch mode and Stop. Existing terminal,
+keyboard and offline-export suites cover the same component through the example
+adapters. Measurement JSON stays under
 `build/embedding-{chromium,firefox}.json`; record conditions and distinguish startup,
 total execution (including deliberate waits/timeouts) and warm-worker comparison data.
 `P2W_CHROME_BINARY` optionally selects an explicit Chrome binary, useful in CI.

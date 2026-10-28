@@ -152,7 +152,8 @@ const session = engine.run(compiled.binary, {
 ```
 
 The `appendRawOutput`, `requestLineFromUser` and `requestKeyFromUser` functions above
-are application UI code. The engine supplies no terminal widget. `read`/`readln` request
+are application UI code. The optional console component below supplies a ready-made
+terminal. `read`/`readln` request
 editable lines; CRT `readkey` requests raw key chunks, including controls such as
 Backspace (`\b`), Enter (`\r`) and Escape (`\x1b`). Keys normalize LF/CRLF to CR.
 A key chunk may leave typeahead that becomes a later line request's `prefix`.
@@ -170,6 +171,76 @@ to batch. Applications can offer an explicit batch fallback. Human waits do not 
 toward the five-second cumulative active budget; submitting input never replenishes it.
 Console input and raw output each retain a 1 MiB allowance. Memory is capped at 64 MiB
 for compiler-generated programs, with checked routine/frame/heap limits.
+
+## Reusable console
+
+Copy `console.js` from `build/` alongside `engine.js` and load it with a classic script
+include. It bundles the renderer and component, uses no framework or fetches, and can
+also be used without the engine by supplying equivalent callbacks/requests.
+
+```js
+const terminal = Pas2WasmConsole.create(document.getElementById('my-console'), {
+  autoFocus: true
+});
+const handlers = terminal.createHandlers();
+const session = engine.run(compiled.binary, {
+  mode: 'interactive',
+  ...handlers,
+  onStateChange(state) {
+    handlers.onStateChange(state);
+    showStatus(state); // Application UI.
+  }
+});
+const outcome = await session.done;
+// The application owns Stop, diagnostics, files, and engine cleanup.
+if (outcome.status === 'failed') showDiagnostic(outcome.diagnostic);
+terminal.dispose();
+```
+
+The component appends its own light-DOM subtree to the supplied element and preserves
+other host content. It contains a scrolling terminal, protected output, an inline native
+editor, and an End input button. It adds no Run/Stop, mode selector, file panel or
+compiler. End input is enabled only during input waits and delivers EOF once. Lines echo
+literally on Enter; raw keys do not echo. Program-output Backspace retains the existing
+[scalar cursor behavior](spec.md#backspace-output-display). Messages are rendered as text.
+
+| Method/option | Contract |
+| --- | --- |
+| `createHandlers()` | Start a fresh connection, clearing output/draft and invalidating previous callbacks. Returns `onOutput`, `onInputRequest`, `onStateChange`; stop a previous application-owned session before rebinding. Terminal states invalidate this connection and disable editing/EOF. |
+| `clear()` | Clear output without changing a pending input request, draft, caret or focus. |
+| `focus()` | Focus an active editor, preserving its existing selection. Inactive consoles do not acquire focus. |
+| `autoFocus` | Boolean, default true. False suppresses input-request-driven focus; explicit focus/user clicks still work. |
+| `dispose()` | Idempotently invalidate callbacks, remove listeners and owned DOM/styles. It does not stop/dispose application sessions or engines. Other public calls afterward throw `InvalidStateError`; delayed event callbacks are inert. |
+
+Each widget has independent state and no fixed element IDs. Requests require the engine's
+positive increasing `requestId`, kind/prefix and bound `submit` function. Duplicate/stale
+requests are ignored. Keep your status/diagnostics outside the component and forward
+state changes if wrapping its handlers. Batch runs can use the same output callbacks;
+interactive suspension still requires JSPI and unsupported runs retain `E_JSPI`.
+
+Styles are scoped to each widget and removed with it. Override these inherited CSS
+variables on the host container (values shown are defaults):
+
+```css
+#my-console {
+  --p2w-console-background: #18362f;
+  --p2w-console-color: #f4f2e8;
+  --p2w-console-caret-color: #ffd58a;
+  --p2w-console-font: .9rem/1.65 ui-monospace, monospace;
+  --p2w-console-min-height: 160px;
+  --p2w-console-max-height: 360px;
+}
+```
+
+The bundle inserts a scoped style element per widget. CSP must permit those styles
+under the same inline-style constraints as the current playground/offline renderer.
+A separate strict-CSP style delivery mode remains future work. Replacing scoped styles
+with host-wide selectors can affect native editing layout and should be tested.
+
+`build/examples/console.html` demonstrates two independent engines/consoles and
+application-owned source, Run/Stop and mode controls. The playground and standalone
+exports use this same component; exported HTML embeds its code/styles without fetching
+`console.js`, compiler assets or any sibling files.
 
 ## Text files and ownership
 

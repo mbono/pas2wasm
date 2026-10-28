@@ -61,6 +61,11 @@ See the [browser embedding guide](docs/browser-embedding.md) for the full contra
 server are required. Each engine permits one active program; create separate engines
 for independent concurrent examples.
 
+The optional `console.js` bundle provides the existing interactive terminal as a
+reusable component, including inline input and End input. Applications keep their own
+Run/Stop controls, editors and file UI. See the [console API](docs/browser-embedding.md#reusable-console)
+and [two-console example](web/examples/console.html).
+
 ## Build the compiler
 
 You need GNU Make 4.3+ and a C11 compiler. Building the WebAssembly compiler also

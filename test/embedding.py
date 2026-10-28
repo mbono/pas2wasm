@@ -44,12 +44,13 @@ def verify_browser(browser, directory):
     root = directory / 'embedding-site'
     assets = root / 'deep' / 'pas2wasm'
     (assets / 'examples').mkdir(parents=True)
-    names = ['engine.js', 'pas2wasm.js', 'pas2wasm.wasm', 'compiler-worker.js',
+    names = ['console.js', 'engine.js', 'pas2wasm.js', 'pas2wasm.wasm', 'compiler-worker.js',
              'LICENSE', 'THIRD_PARTY_NOTICES.txt']
     for name in names:
         shutil.copyfile(Path('build') / name, assets / name)
-    (assets / 'checks.html').write_text('<!doctype html><title>Headless API checks</title><script src="engine.js"></script>')
+    (assets / 'checks.html').write_text('<!doctype html><title>Headless API checks</title><script src="engine.js"></script><script src="console.js"></script>')
     shutil.copyfile('build/examples/embedding.html', assets / 'examples' / 'embedding.html')
+    shutil.copyfile('build/examples/console.html', assets / 'examples' / 'console.html')
     handler = functools.partial(EmbeddingHandler, directory=str(root))
     server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -90,6 +91,35 @@ def verify_browser(browser, directory):
         browser.wait("document.getElementById('progress').textContent==='running'")
         browser.click('cancel')
         browser.wait("document.getElementById('progress').textContent==='stopped'")
+
+        browser.navigate(base + 'checks.html')
+        checks = Path('test/console.js').read_text()
+        result_console = browser.page_async(checks + "const done=arguments[arguments.length-1]; verifyPas2WasmConsole(arguments[0]).then(done,error=>done({error:error.stack}));", base)
+        assert 'error' not in result_console, result_console
+        browser.navigate(base + 'examples/console.html')
+        browser.wait("['first','second'].every(n=>document.getElementById(n+'-state').textContent==='Ready')")
+        if result['metrics']['jspi']:
+            browser.click('first-run')
+            browser.wait("document.getElementById('first-state').textContent==='waiting'")
+            browser.click('second-run')
+            browser.wait("document.getElementById('second-state').textContent==='waiting'")
+            browser.js("for(const n of ['first','second']) document.querySelector('#'+n+'-console .p2w-console-input').id=n+'-input';")
+            from terminal import keys
+            keys(browser, 'Ada\ue007', 'first-input')
+            browser.wait("document.getElementById('first-state').textContent==='completed'")
+            assert browser.js("return document.getElementById('second-state').textContent;") == 'waiting'
+            assert browser.js("return document.querySelector('#first-console .p2w-console-output').textContent;") == 'Name: Ada\nHello, Ada\n'
+            browser.click('second-stop')
+            browser.wait("document.getElementById('second-state').textContent==='stopped'")
+        else:
+            browser.click('first-run')
+            browser.wait("document.getElementById('first-state').textContent==='failed'")
+            assert 'E_JSPI' in browser.js("return document.querySelector('#first-console').parentElement.innerText;")
+        browser.js("const s=document.querySelector('#second-console').parentElement;s.querySelector('select').value='batch';")
+        browser.click('second-run')
+        browser.wait("document.getElementById('second-state').textContent==='completed'")
+        assert browser.js("return document.querySelector('#second-console .p2w-console-output').textContent;") == 'Name: Hello, second\n'
+        print(f'{browser.kind}: {result_console["checks"]} reusable console assertions and two independent engine/console panels passed.', flush=True)
 
         # Both quick starts are complete HTML, run unchanged under their documented
         # relative asset layout. A missing snippet is a failure, not a skipped test.

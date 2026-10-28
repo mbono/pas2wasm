@@ -22,9 +22,9 @@ CORE = src/buffer.c src/compiler.c $(FRONTEND) \
 HEADERS = src/pas2wasm.h src/ir/program.h src/ir/number.h src/backend/backend.h \
           src/backend/wasm/layout.h src/backend/wasm/emitter.h src/backend/wasm/variant.h \
           src/backend/wasm/reference.h src/backend/wasm/file.h src/backend/wasm/crt.h
-WEB = index.html style.css app.js compiler.js compiler-worker.js export.js runtime/host.js runtime/terminal.js runtime/files.js runtime/session.js runtime/console.js examples/embedding.html
+WEB = index.html style.css app.js compiler.js compiler-worker.js export.js runtime/host.js runtime/terminal.js runtime/files.js runtime/session.js runtime/console.js examples/embedding.html examples/console.html
 ENGINE = web/compiler.js web/runtime/host.js web/runtime/session.js web/engine.js
-WEB_OUTPUTS = $(addprefix build/,$(WEB)) build/engine.js build/supported-language.md build/THIRD_PARTY_NOTICES.txt build/LICENSE
+WEB_OUTPUTS = $(addprefix build/,$(WEB)) build/engine.js build/console.js build/supported-language.md build/THIRD_PARTY_NOTICES.txt build/LICENSE
 
 .PHONY: all native wasm site test test-sanitize test-browser test-embedding serve clean help
 all: native site
@@ -52,6 +52,9 @@ build/%: web/%
 	cp $< $@
 
 # Concatenate shared sources: one classic script, no bundler or duplicated runtime.
+build/console.js: web/runtime/terminal.js web/console.js Makefile | build
+	cat web/runtime/terminal.js web/console.js > $@
+
 build/engine.js: $(ENGINE) Makefile | build
 	cat $(ENGINE) > $@
 

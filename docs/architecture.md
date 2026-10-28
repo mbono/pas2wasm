@@ -265,7 +265,8 @@ stop/disposal and stale-message guards share terminal cleanup. Inputs are snapsh
 before deferred startup, successful files become caller-owned, and no widget/echo policy
 enters this layer. `runtime/console.js` contains the existing private DOM controller:
 the playground supplies the public runner, while compiler-free exports retain the
-same lower-level session. Extracting a general terminal widget remains separate work.
+same lower-level session. The optional public console owns its DOM/editing state
+independently of those application controls.
 
 The Emscripten loader explicitly
 enables incoming `wasmBinary`; workers do not need a filesystem or a second asset fetch.
@@ -291,7 +292,21 @@ waits. Run/request identities prevent stopped sessions or duplicate submissions 
 delivering input to a new execution. The ABI reference owns message shapes and provider
 contracts.
 
-## Inline console and offline export
+## Reusable console and offline export
+
+`console.js` concatenates the renderer with the self-contained public widget factory.
+It has no engine dependency. Each instance appends owned light DOM/styles, keeps a single
+pending request and a monotonic connection generation, and routes input through the
+request's bound submit method. Rebinding, terminal states and disposal invalidate stale
+callbacks without retaining an unbounded request collection. Scoped CSS variables replace
+fixed renderer selectors. AbortController owns listeners; disposal removes those and the
+owned subtree/styles without touching application-owned sessions. Output-only clear keeps
+pending input, draft nodes and selection. Automatic request focus is configurable.
+
+The private example controller assigns legacy example IDs and retains mode/files/status
+integration around the public widget. The offline adapter gives the same widget equivalent
+request-bound callbacks from its compiler-free controller. Exports embed the factory and
+renderer function sources, requiring no module loader, external stylesheet or compiler.
 
 The shared terminal renderer keeps two persistent read-only text nodes around a logical
 output cursor in one scrolling `pre`. Program-output Backspace moves left by one Unicode

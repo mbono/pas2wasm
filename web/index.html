@@ -10,7 +10,7 @@ SPDX-License-Identifier: MIT
   <title>Pas2Wasm — Pascal in your browser</title>
   <link rel="stylesheet" href="style.css">
   <script defer src="engine.js"></script>
-  <script defer src="runtime/terminal.js"></script>
+  <script defer src="console.js"></script>
   <script defer src="runtime/files.js"></script>
   <script defer src="runtime/console.js"></script>
   <script defer src="export.js"></script>
@@ -33,7 +33,7 @@ SPDX-License-Identifier: MIT
       <div class="results">
         <section><label for="io-mode">Input mode</label><select id="io-mode"><option value="batch">Batch input</option><option value="interactive" selected>Interactive console</option></select><p id="io-note" class="hint" role="status"></p></section>
         <section id="batch-input"><label for="input">Program input</label><p class="hint">Enter all input before Run. Each readln consumes one line.</p><textarea id="input" spellcheck="false" rows="4"></textarea></section>
-        <section class="console"><h2>Console</h2><pre id="terminal" tabindex="0" aria-label="Program console"><span id="output" role="log" aria-live="polite"></span><span id="console-input" role="textbox" aria-label="Console input line" aria-multiline="false" contenteditable="false" aria-disabled="true" tabindex="-1" spellcheck="false" autocapitalize="off"></span></pre><div id="console-controls" hidden><button id="console-eof" type="button" disabled>End input</button></div></section>
+        <section class="console"><h2>Console</h2><div id="console-mount"></div></section>
         <section><h2>Diagnostics</h2><pre id="diagnostics" aria-live="polite"></pre></section>
       </div>
     </div>

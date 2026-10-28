@@ -5,23 +5,11 @@
 
 /* Read-only output and one native editing root share a scrolling pre. Output BS
  * moves a scalar cursor; raw program/file bytes and input editing stay independent. */
-function createPas2WasmTerminal(view, history, editor, submit) {
-    if (!document.getElementById('pas2wasm-terminal-style')) {
-        const style = document.createElement('style');
-        style.id = 'pas2wasm-terminal-style';
-        style.textContent = `
-#terminal{display:block;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;
- min-height:160px;max-height:360px;padding:15px;margin:0;border-radius:6px;
- background:#18362f;color:#f4f2e8;font:.9rem/1.65 ui-monospace,monospace;cursor:text}
-#terminal:focus-visible{outline:3px solid #d28542;outline-offset:3px}
-#console-input{display:inline;white-space:pre-wrap;font:inherit;color:inherit;
- background:transparent;border:0;padding:0;margin:0;outline:none;caret-color:#ffd58a}
-#console-input[contenteditable="plaintext-only"]:empty{display:inline-block;min-width:1px}
-#console-input[contenteditable="plaintext-only"]:empty::before{content:"\\200b"}
-#console-input[contenteditable="false"]{caret-color:transparent}
-#console-controls{margin-top:8px}
-`;
-        document.head.appendChild(style);
+function createPas2WasmTerminal(view, history, editor, submit, autoFocus = true) {
+    const listeners = new AbortController();
+    /* Every listener belongs to this renderer and is removed together on disposal. */
+    function listen(node, type, handler) {
+        node.addEventListener(type, handler, {signal:listeners.signal});
     }
     // Two output fragments straddle the logical cursor. Only the current line may
     // occupy the suffix; LF commits it. Both fragments remain read-only text.
@@ -68,7 +56,7 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         if (parent === history) history.insertBefore(editor, suffix);
         else history.after(editor);
         if (focused) editor.focus({preventScroll:true});
-        if (saved) selected.setBaseAndExtent(...saved);
+        if (saved && focused) selected.setBaseAndExtent(...saved);
     }
     /* Retain copy selections when moving unchanged output between fragments. */
     function outputSelection() {
@@ -139,8 +127,9 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         editor.tabIndex = value ? 0 : -1;
         view.tabIndex = value ? -1 : 0;
         if (value) {
-            focus();
-            if (prefilled) window.getSelection().collapse(editor,editor.childNodes.length);
+            if (autoFocus) focus();
+            if (prefilled && document.activeElement === editor)
+                window.getSelection().collapse(editor,editor.childNodes.length);
             view.scrollTop = view.scrollHeight;
         }
         else if (document.activeElement === editor) editor.blur();
@@ -174,7 +163,7 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         editor.replaceChildren();
         if (document.activeElement === editor) window.getSelection().collapse(editor, 0);
     }
-    editor.addEventListener('keydown', event => {
+    listen(editor, 'keydown', event => {
         if (!active) return;
         if (composing || event.isComposing || event.keyCode === 229) {
             if (event.key === 'Enter' || event.keyCode === 229) compositionEnter = true;
@@ -205,7 +194,7 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         } else if (((event.key === 'Backspace' || event.key === 'ArrowLeft') && edge(false)) ||
                    ((event.key === 'Delete' || event.key === 'ArrowRight') && edge(true))) event.preventDefault();
     });
-    editor.addEventListener('beforeinput', event => {
+    listen(editor, 'beforeinput', event => {
         // Some engines deliver the final committed insertion after compositionend.
         if (compositionCommit !== null && !event.isComposing && event.data === compositionCommit &&
             ['insertText','insertFromComposition'].includes(event.inputType)) {
@@ -227,10 +216,10 @@ function createPas2WasmTerminal(view, history, editor, submit) {
             event.preventDefault(); focus();
         }
     });
-    editor.addEventListener('compositionstart', () => {
+    listen(editor, 'compositionstart', () => {
         composing = true; compositionEnter = false; compositionCommit = null;
     });
-    editor.addEventListener('compositionend', event => {
+    listen(editor, 'compositionend', event => {
         composing = false;
         if (inputKind === 'key') {
             const text = typeof event.data === 'string' ? event.data : editor.textContent;
@@ -240,11 +229,11 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         } else normalizeEmpty();
     });
     /* Some IMEs end composition before delivering the same Enter's beforeinput. */
-    editor.addEventListener('keyup', event => {
+    listen(editor, 'keyup', event => {
         if (event.key === 'Enter' || event.keyCode === 229) compositionEnter = false;
     });
-    editor.addEventListener('input', normalizeEmpty);
-    editor.addEventListener('paste', event => {
+    listen(editor, 'input', normalizeEmpty);
+    listen(editor, 'paste', event => {
         event.preventDefault();
         if (!active) return;
         compositionCommit = null;
@@ -256,17 +245,23 @@ function createPas2WasmTerminal(view, history, editor, submit) {
         const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(selected);
         normalizeEmpty();
     });
-    editor.addEventListener('cut', event => {
+    listen(editor, 'cut', event => {
         if (!inside(window.getSelection())) event.preventDefault();
     });
-    view.addEventListener('click', event => {
+    listen(view, 'click', event => {
         const selection = window.getSelection();
         if (!editor.contains(event.target) && selection.isCollapsed) focus();
     });
-    view.addEventListener('focus', () => { if (active) focus(); });
+    listen(view, 'focus', () => { if (active) focus(); });
     waiting(false);
     return {
-        append, waiting,
+        append, waiting, focus,
+        /* Erase only output; editor nodes, selection and provider state survive. */
+        clearOutput() {
+            committed.data = suffix.data = ''; placeEditor(); view.scrollTop = 0;
+        },
+        /* Releasing a renderer never submits input or controls its program. */
+        dispose() { waiting(false); listeners.abort(); },
         clear() {
             committed.data = suffix.data = ''; editor.replaceChildren();
             compositionEnter = false; compositionCommit = null; prefilled = false;

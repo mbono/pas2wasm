@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Copyright (c) 2026 Mariano Bono; SPDX-License-Identifier: MIT -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Two independent Pascal consoles</title>
+<script src="../engine.js"></script>
+<script src="../console.js"></script>
+<style>
+body{max-width:1000px;margin:2rem auto;padding:1rem;font:1rem/1.5 system-ui}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
+textarea{box-sizing:border-box;width:100%;font:1rem monospace}button,select{margin:.5rem .5rem .5rem 0;padding:.5rem}
+#second-console{--p2w-console-background:#182d4b;--p2w-console-caret-color:#91cfff}
+</style>
+<h1>Two independent Pascal consoles</h1>
+<p>The application owns the engines and execution controls. Each console handles its own input and output.</p>
+<div class="panels"></div>
+<script>
+const examples = [];
+/* Build each application panel around the optional public console component. */
+async function addExample(name) {
+  const panel = document.createElement('section');
+  const heading = document.createElement('h2'); heading.textContent = name + ' example';
+  const source = document.createElement('textarea'); source.rows = 5; source.setAttribute('aria-label', name + ' Pascal source');
+  source.value = "program hello; var s:string; begin write('Name: '); readln(s); writeln('Hello, ',s) end.";
+  const mode = document.createElement('select'); mode.setAttribute('aria-label', name + ' input mode');
+  for (const value of ['interactive','batch']) { const option = document.createElement('option'); option.value = value; option.textContent = value; mode.append(option); }
+  const batch = document.createElement('input'); batch.placeholder = 'Batch input'; batch.setAttribute('aria-label', name + ' batch input'); batch.value = name;
+  const run = document.createElement('button'); run.id = name + '-run'; run.textContent = 'Compile and run'; run.disabled = true;
+  const stop = document.createElement('button'); stop.id = name + '-stop'; stop.textContent = 'Stop'; stop.disabled = true;
+  const status = document.createElement('p'); status.id = name + '-state'; status.textContent = 'Loading…'; status.setAttribute('role','status');
+  const mount = document.createElement('div'); mount.id = name + '-console';
+  const diagnostic = document.createElement('pre'); diagnostic.setAttribute('aria-live','polite');
+  panel.append(heading, source, mode, batch, run, stop, status, mount, diagnostic); document.querySelector('.panels').append(panel);
+  const terminal = Pas2WasmConsole.create(mount);
+  const engine = await Pas2WasmEngine.create({assetBaseUrl:'../'});
+  let session, compilation;
+  examples.push({engine, terminal}); status.textContent = 'Ready'; run.disabled = false;
+  /* Clear/rebind only after canceling the previous session owned by this panel. */
+  run.onclick = async () => {
+    run.disabled = true; stop.disabled = false; diagnostic.textContent = ''; terminal.clear();
+    compilation = new AbortController(); status.textContent = 'compiling';
+    try {
+      const compiled = await engine.compile(source.value, {signal:compilation.signal});
+      if (compiled.diagnostic) { diagnostic.textContent = JSON.stringify(compiled.diagnostic); status.textContent = 'failed'; return; }
+      const handlers = terminal.createHandlers();
+      session = engine.run(compiled.binary, {mode:mode.value, input:mode.value === 'batch' ? batch.value : '', ...handlers,
+        onStateChange(state) { handlers.onStateChange(state); status.textContent = state; }
+      });
+      const outcome = await session.done;
+      if (outcome.status === 'failed') diagnostic.textContent = JSON.stringify(outcome.diagnostic);
+    } catch (error) {
+      status.textContent = error.name === 'AbortError' ? 'stopped' : 'failed';
+      if (error.name !== 'AbortError') diagnostic.textContent = error.message;
+    } finally { compilation = session = null; run.disabled = false; stop.disabled = true; }
+  };
+  stop.onclick = () => { compilation?.abort(); session?.stop(); };
+}
+Promise.all([addExample('first'), addExample('second')]).catch(error => { document.querySelector('.panels').append(error.message); });
+window.addEventListener('pagehide', event => {
+  if (!event.persisted) for (const {engine, terminal} of examples) { engine.dispose(); terminal.dispose(); }
+});
+</script>
+</html>

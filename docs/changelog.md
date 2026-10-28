@@ -4,6 +4,11 @@
 
 ### Added
 
+- Optional `Pas2WasmConsole` component with per-run event adapters, independent widgets,
+  inline line/key input, End input, configurable focus, scoped CSS variables and disposal.
+  The playground and self-contained offline exports share the component; a two-console
+  integration example and real-browser lifecycle/isolation tests exercise its public API.
+
 - Headless `Pas2WasmEngine` browser API with cached static assets, serialized off-thread
   compilation, cancellation, one active run per engine, request-bound interactive input,
   raw output, text-file snapshots and explicit disposal. The playground uses the same API.
@@ -15,7 +20,7 @@
 ### Changed
 
 - The DOM console controller lives in `runtime/console.js`; low-level UI/export
-  integrations must load it alongside their terminal/files scripts. The headless
+  integrations must load it alongside `console.js` and `runtime/files.js`. The headless
   session controller remains in `runtime/session.js`.
 
 ### Fixed

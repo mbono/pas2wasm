@@ -32,9 +32,9 @@ function exportPas2WasmHtml(binary) {
     for (const byte of binary) raw += String.fromCharCode(byte);
     const encoded = btoa(raw);
     const script = [createPas2WasmRuntime, pas2WasmProgramWorker, pas2WasmWorkerSource,
-        createPas2WasmTerminal, createPas2WasmFiles, createPas2WasmSession, createPas2WasmConsole,
+        createPas2WasmTerminal, createPas2WasmConsoleWidget, createPas2WasmFiles, createPas2WasmSession, createPas2WasmConsole,
         exportedPas2WasmRunner].map(fn => fn.toString()).join('\n') +
-        `\nexportedPas2WasmRunner(${JSON.stringify(encoded)});`;
+        `\nconst Pas2WasmConsole = {create:createPas2WasmConsoleWidget};\nexportedPas2WasmRunner(${JSON.stringify(encoded)});`;
     return `<!doctype html>
 <!--
 MIT License
@@ -69,7 +69,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#e9ede2;padding:16px;
 <label for="io-mode">Input mode</label><select id="io-mode"><option value="batch">Batch input</option><option value="interactive" selected>Interactive console</option></select><p id="io-note" role="status"></p>
 <section id="batch-input"><label for="input">Program input</label><textarea id="input" rows="5" spellcheck="false"></textarea></section>
 <button id="run">Run program</button><button id="stop" disabled>Stop</button><span id="status" role="status" aria-live="polite">Ready</span>
-<h2>Console</h2><pre id="terminal" tabindex="0" aria-label="Program console"><span id="output" role="log" aria-live="polite"></span><span id="console-input" role="textbox" aria-label="Console input line" aria-multiline="false" contenteditable="false" aria-disabled="true" tabindex="-1" spellcheck="false" autocapitalize="off"></span></pre><div id="console-controls" hidden><button id="console-eof" type="button" disabled>End input</button></div><h2>Diagnostics</h2><pre id="diagnostics" aria-live="polite"></pre>
+<h2>Console</h2><div id="console-mount"></div><h2>Diagnostics</h2><pre id="diagnostics" aria-live="polite"></pre>
 <section id="program-files" aria-label="Program files"></section>
 <p>Limits: 1 MiB console input/output, 32 virtual files with 1 MiB combined contents, 64 MiB memory, 5 seconds active execution (input waiting excluded). No network connection is needed.</p>
 <script>${script}<` + `/script></body></html>`;

@@ -50,7 +50,7 @@ implementation is accepted, and references are updated.
 
 `Pas2WasmEngine` is a small orchestration layer over the existing compiler
 wrapper, compiler worker, runtime and execution controller. The resolved initial scope
-is a headless API plus an independent HTML example; a reusable terminal widget is deferred.
+is a headless API plus an independent HTML example and an optional console adapter.
 The playground must consume the same engine. Native/C interfaces and Pascal semantics
 remain unchanged. The API implements the following resolved contract.
 
@@ -72,6 +72,34 @@ file ownership, resource release/stale replies, offline reruns and existing expo
 The browser suite records cold/repeated compile and startup timings, asset sizes and
 retained workers before optimization. Change-time CI is separate from the existing
 tag-only Pages deployment.
+
+## Reusable console
+
+The component is `Pas2WasmConsole.create(container,{autoFocus:true})`, shipped
+in a separate classic `console.js` bundle. It appends owned light DOM containing only
+the terminal and End input button. Applications own engines, Run/Stop, modes, batch
+input, diagnostics and files. It needs no engine, fixed DOM IDs, framework or fetches.
+
+`createHandlers()` resets output/draft state and returns `onOutput`, `onInputRequest`
+and `onStateChange`. Each connection invalidates older callbacks, including after
+terminal states. Applications stop previous sessions before replacing connections.
+Requests use their bound submit method; preserve line echo, raw keys, prefetched
+prefixes, EOF, limits and native editing. End input submits null once and clears the
+pending draft. `clear()` clears output while preserving a pending request/draft;
+`focus()` focuses an active editor without losing its selection. `autoFocus:false`
+suppresses request-driven focus but retains explicit/user focus.
+
+`dispose()` is idempotent, invalidates callbacks and removes owned DOM/styles/listeners;
+it never stops or disposes an application-owned session/engine. Other public calls after
+disposal throw InvalidStateError; delayed callbacks become harmless. Multiple consoles
+must remain independent. Styles are scoped and use `--p2w-console-background`, `-color`,
+`-caret-color`, `-font`, `-min-height` and `-max-height` variables with current defaults.
+
+The playground and compiler-free offline exports must share this component. Accept
+two-instance isolation, stale/repeated bindings, cleanup, focus/clear during waits,
+trusted line/key/paste/IME input, EOF, native selection/caret, style customization,
+batch/JSPI fallback and fresh offline exports through the full acceptance gate. Update
+owning references and static allowlists.
 
 ## Example browser integration and exports
 
