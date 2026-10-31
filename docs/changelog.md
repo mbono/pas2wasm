@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.6.0] - 2026-10-31
+
 ### Added
 
 - Optional `Pas2WasmConsole` component with per-run event adapters, independent widgets,
